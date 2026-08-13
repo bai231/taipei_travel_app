@@ -1,0 +1,5 @@
+- basic UI like google map
+- default:  origin: 桃園總圖, destination: 北車 using Latitude and Longtitude in Decimal Degrees(DD)
+- shows 10 possible routes, excluding taxi, youbike
+- minimize walking time
+- each route shows the detail of bus/metro's intermediate stops
