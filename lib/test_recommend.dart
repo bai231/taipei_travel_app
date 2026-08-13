@@ -12,6 +12,7 @@ void main() {
     people: 5,
     budget: 8000,
     preferences: ['購物'],
+    aiPrompt: '',
   );
 
   // 建立推薦服務

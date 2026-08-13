@@ -1,52 +1,52 @@
 import 'package:flutter/material.dart';
 
-class PeopleCounter extends StatefulWidget {
-  const PeopleCounter({super.key});
+class PeopleCounter extends StatelessWidget {
+  final int people;
+  final ValueChanged<int> onChanged;
 
-  @override
-  State<PeopleCounter> createState() => _PeopleCounterState();
-}
-
-class _PeopleCounterState extends State<PeopleCounter> {
-  int people = 1;
+  const PeopleCounter({
+    super.key,
+    required this.people,
+    required this.onChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return InputDecorator(
-      decoration: InputDecoration(
-        labelText: "旅遊人數",
-
-        prefixIcon: const Icon(Icons.people),
-
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey.shade400),
+        borderRadius: BorderRadius.circular(12),
       ),
-
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-
         children: [
-          IconButton(
-            icon: const Icon(Icons.remove),
+          const Icon(Icons.people),
 
-            onPressed: () {
-              if (people > 1) {
-                setState(() {
-                  people--;
-                });
-              }
-            },
+          const SizedBox(width: 12),
+
+          const Expanded(child: Text("旅遊人數", style: TextStyle(fontSize: 16))),
+
+          IconButton(
+            onPressed: people > 1
+                ? () {
+                    onChanged(people - 1);
+                  }
+                : null,
+            icon: const Icon(Icons.remove),
           ),
 
-          Text("$people 人", style: const TextStyle(fontSize: 18)),
+          Text(
+            "$people 人",
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          ),
 
           IconButton(
+            onPressed: people < 20
+                ? () {
+                    onChanged(people + 1);
+                  }
+                : null,
             icon: const Icon(Icons.add),
-
-            onPressed: () {
-              setState(() {
-                people++;
-              });
-            },
           ),
         ],
       ),

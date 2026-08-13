@@ -15,6 +15,8 @@ final List<Place> fakePlaces = [
     tags: ["攝影", "夜景", "地標", "購物"],
     priceLevel: 2,
     estimatedCost: 600.0,
+    openMinutes: 11 * 60,
+    closeMinutes: 21 * 60,
   ),
   const Place(
     id: "002",
@@ -30,6 +32,8 @@ final List<Place> fakePlaces = [
     tags: ["文化", "歷史", "藝術", "展覽"],
     priceLevel: 2,
     estimatedCost: 350.0,
+    openMinutes: 9 * 60,
+    closeMinutes: 17 * 60,
   ),
   const Place(
     id: "003",
@@ -45,6 +49,8 @@ final List<Place> fakePlaces = [
     tags: ["歷史", "地標", "文化", "散步"],
     priceLevel: 0,
     estimatedCost: 0.0,
+    openMinutes: 9 * 60,
+    closeMinutes: 18 * 60,
   ),
   const Place(
     id: "004",
@@ -60,6 +66,8 @@ final List<Place> fakePlaces = [
     tags: ["美食", "逛街", "年輕", "潮流"],
     priceLevel: 1,
     estimatedCost: 500.0,
+    openMinutes: 11 * 60,
+    closeMinutes: 23 * 60,
   ),
   const Place(
     id: "005",
@@ -75,6 +83,8 @@ final List<Place> fakePlaces = [
     tags: ["寺廟", "歷史", "信仰", "文化"],
     priceLevel: 0,
     estimatedCost: 0.0,
+    openMinutes: 6 * 60,
+    closeMinutes: 22 * 60,
   ),
   const Place(
     id: "006",
@@ -90,6 +100,8 @@ final List<Place> fakePlaces = [
     tags: ["美食", "夜市", "逛街", "小吃"],
     priceLevel: 1,
     estimatedCost: 300.0,
+    openMinutes: 17 * 60,
+    closeMinutes: 24 * 60,
   ),
   const Place(
     id: "007",
@@ -105,6 +117,8 @@ final List<Place> fakePlaces = [
     tags: ["美食", "夜市", "傳統", "小吃"],
     priceLevel: 1,
     estimatedCost: 300.0,
+    openMinutes: 18 * 60,
+    closeMinutes: 24 * 60,
   ),
   const Place(
     id: "008",
@@ -120,6 +134,8 @@ final List<Place> fakePlaces = [
     tags: ["溫泉", "歷史", "日式建築", "文化"],
     priceLevel: 0,
     estimatedCost: 0.0,
+    openMinutes: 9 * 60 + 30,
+    closeMinutes: 17 * 60,
   ),
   const Place(
     id: "009",
@@ -135,6 +151,8 @@ final List<Place> fakePlaces = [
     tags: ["攝影", "夜景", "自然", "運動"],
     priceLevel: 0,
     estimatedCost: 0.0,
+    openMinutes: 0,
+    closeMinutes: 24 * 60,
   ),
   const Place(
     id: "010",
@@ -150,6 +168,8 @@ final List<Place> fakePlaces = [
     tags: ["文創", "展覽", "歷史建築", "文青"],
     priceLevel: 1,
     estimatedCost: 200.0,
+    openMinutes: 10 * 60,
+    closeMinutes: 21 * 60,
   ),
   const Place(
     id: "011",
@@ -165,6 +185,8 @@ final List<Place> fakePlaces = [
     tags: ["文創", "展覽", "設計", "休憩"],
     priceLevel: 1,
     estimatedCost: 200.0,
+    openMinutes: 10 * 60,
+    closeMinutes: 21 * 60,
   ),
   const Place(
     id: "012",
@@ -180,6 +202,8 @@ final List<Place> fakePlaces = [
     tags: ["老街", "歷史", "夕陽", "美食"],
     priceLevel: 1,
     estimatedCost: 200.0,
+    openMinutes: 0,
+    closeMinutes: 24 * 60,
   ),
   const Place(
     id: "013",
@@ -195,6 +219,8 @@ final List<Place> fakePlaces = [
     tags: ["纜車", "品茶", "風景", "約會"],
     priceLevel: 2,
     estimatedCost: 400.0,
+    openMinutes: 9 * 60,
+    closeMinutes: 22 * 60,
   ),
   const Place(
     id: "014",
@@ -210,6 +236,8 @@ final List<Place> fakePlaces = [
     tags: ["親子", "動物", "戶外", "散步"],
     priceLevel: 1,
     estimatedCost: 300.0,
+    openMinutes: 9 * 60,
+    closeMinutes: 17 * 60,
   ),
   const Place(
     id: "015",
@@ -225,6 +253,8 @@ final List<Place> fakePlaces = [
     tags: ["自然", "踏青", "賞花", "溫泉"],
     priceLevel: 0,
     estimatedCost: 0.0,
+    openMinutes: 0,
+    closeMinutes: 24 * 60,
   ),
   const Place(
     id: "016",
@@ -240,6 +270,8 @@ final List<Place> fakePlaces = [
     tags: ["美食", "傳統", "夜市", "小吃"],
     priceLevel: 1,
     estimatedCost: 300.0,
+    openMinutes: 17 * 60,
+    closeMinutes: 23 * 60,
   ),
   const Place(
     id: "017",
@@ -255,6 +287,8 @@ final List<Place> fakePlaces = [
     tags: ["藝術", "展覽", "現代藝術", "文青"],
     priceLevel: 1,
     estimatedCost: 250.0,
+    openMinutes: 10 * 60,
+    closeMinutes: 18 * 60,
   ),
   const Place(
     id: "018",
@@ -270,6 +304,8 @@ final List<Place> fakePlaces = [
     tags: ["公園", "野餐", "綠地", "休閒"],
     priceLevel: 0,
     estimatedCost: 0.0,
+    openMinutes: 0,
+    closeMinutes: 24 * 60,
   ),
   const Place(
     id: "019",
@@ -285,6 +321,8 @@ final List<Place> fakePlaces = [
     tags: ["夜景", "摩天輪", "約會", "購物"],
     priceLevel: 2,
     estimatedCost: 300.0,
+    openMinutes: 11 * 60,
+    closeMinutes: 22 * 60,
   ),
   const Place(
     id: "020",
@@ -300,6 +338,8 @@ final List<Place> fakePlaces = [
     tags: ["歷史", "紅磚", "拍照", "展覽"],
     priceLevel: 0,
     estimatedCost: 0.0,
+    openMinutes: 0,
+    closeMinutes: 24 * 60,
   ),
   const Place(
     id: "021",
@@ -315,6 +355,8 @@ final List<Place> fakePlaces = [
     tags: ["美食", "芒果冰", "咖啡廳", "散步"],
     priceLevel: 2,
     estimatedCost: 400.0,
+    openMinutes: 11 * 60,
+    closeMinutes: 23 * 60,
   ),
   const Place(
     id: "022",
@@ -330,6 +372,8 @@ final List<Place> fakePlaces = [
     tags: ["美食", "夜市", "平價", "小吃"],
     priceLevel: 1,
     estimatedCost: 300.0,
+    openMinutes: 18 * 60,
+    closeMinutes: 23 * 60,
   ),
   const Place(
     id: "023",
@@ -345,6 +389,8 @@ final List<Place> fakePlaces = [
     tags: ["歷史", "自然史", "古蹟", "建築"],
     priceLevel: 1,
     estimatedCost: 250.0,
+    openMinutes: 9 * 60,
+    closeMinutes: 17 * 60,
   ),
   const Place(
     id: "024",
@@ -360,6 +406,8 @@ final List<Place> fakePlaces = [
     tags: ["古著", "咖啡廳", "文青", "散步"],
     priceLevel: 2,
     estimatedCost: 400.0,
+    openMinutes: 11 * 60,
+    closeMinutes: 22 * 60,
   ),
   const Place(
     id: "025",
@@ -375,6 +423,8 @@ final List<Place> fakePlaces = [
     tags: ["藝術", "歷史聚落", "探險", "拍照"],
     priceLevel: 0,
     estimatedCost: 0.0,
+    openMinutes: 10 * 60,
+    closeMinutes: 18 * 60,
   ),
   const Place(
     id: "026",
@@ -390,6 +440,8 @@ final List<Place> fakePlaces = [
     tags: ["自然", "地質", "溫泉", "景觀"],
     priceLevel: 0,
     estimatedCost: 0.0,
+    openMinutes: 0,
+    closeMinutes: 24 * 60,
   ),
   const Place(
     id: "027",
@@ -405,6 +457,8 @@ final List<Place> fakePlaces = [
     tags: ["夜景", "廟宇", "視野", "景觀"],
     priceLevel: 0,
     estimatedCost: 0.0,
+    openMinutes: 8 * 60,
+    closeMinutes: 17 * 60,
   ),
   const Place(
     id: "028",
@@ -420,6 +474,8 @@ final List<Place> fakePlaces = [
     tags: ["花海", "自然", "海芋", "繡球花"],
     priceLevel: 1,
     estimatedCost: 200.0,
+    openMinutes: 0,
+    closeMinutes: 24 * 60,
   ),
   const Place(
     id: "029",
@@ -435,6 +491,8 @@ final List<Place> fakePlaces = [
     tags: ["古蹟", "閩南建築", "庭園", "拍照"],
     priceLevel: 0,
     estimatedCost: 0.0,
+    openMinutes: 9 * 60,
+    closeMinutes: 17 * 60,
   ),
   const Place(
     id: "030",
@@ -450,5 +508,7 @@ final List<Place> fakePlaces = [
     tags: ["美食", "夜市", "米其林", "小吃"],
     priceLevel: 1,
     estimatedCost: 300.0,
+    openMinutes: 18 * 60,
+    closeMinutes: 23 * 60 + 30,
   ),
 ];

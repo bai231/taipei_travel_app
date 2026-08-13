@@ -1,26 +1,26 @@
 import 'package:flutter/material.dart';
 
-class PreferenceChipGroup extends StatefulWidget {
-  const PreferenceChipGroup({super.key});
+class PreferenceChipGroup extends StatelessWidget {
+  final List<String> selectedPreferences;
+  final ValueChanged<List<String>> onChanged;
 
-  @override
-  State<PreferenceChipGroup> createState() => _PreferenceChipGroupState();
-}
+  const PreferenceChipGroup({
+    super.key,
+    required this.selectedPreferences,
+    required this.onChanged,
+  });
 
-class _PreferenceChipGroupState extends State<PreferenceChipGroup> {
-  final List<String> preferences = [
+  final List<String> preferences = const [
     "美食",
+    "購物",
+    "文化",
+    "自然",
     "攝影",
     "夜景",
-    "自然",
-    "購物",
-    "咖啡廳",
-    "博物館",
-    "文創",
     "親子",
+    "歷史",
+    "藝術",
   ];
-
-  final List<String> selected = [];
 
   @override
   Widget build(BuildContext context) {
@@ -30,33 +30,33 @@ class _PreferenceChipGroupState extends State<PreferenceChipGroup> {
       children: [
         const Text(
           "旅遊偏好",
-
           style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
         ),
 
-        const SizedBox(height: 10),
+        const SizedBox(height: 12),
 
         Wrap(
           spacing: 8,
-
           runSpacing: 8,
 
-          children: preferences.map((item) {
-            bool isSelected = selected.contains(item);
+          children: preferences.map((preference) {
+            final isSelected = selectedPreferences.contains(preference);
 
             return FilterChip(
-              label: Text(item),
+              label: Text(preference),
 
               selected: isSelected,
 
-              onSelected: (value) {
-                setState(() {
-                  if (value) {
-                    selected.add(item);
-                  } else {
-                    selected.remove(item);
-                  }
-                });
+              onSelected: (selected) {
+                final newList = List<String>.from(selectedPreferences);
+
+                if (selected) {
+                  newList.add(preference);
+                } else {
+                  newList.remove(preference);
+                }
+
+                onChanged(newList);
               },
             );
           }).toList(),

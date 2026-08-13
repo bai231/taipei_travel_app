@@ -12,6 +12,7 @@ void main() {
     people: 4,
     budget: 8000,
     preferences: ['攝影', '美食', '夜景'],
+    aiPrompt: '',
   );
 
   // 1. 取得推薦景點

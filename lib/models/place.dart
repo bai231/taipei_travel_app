@@ -20,7 +20,12 @@ class Place {
   // 價格等級
   final int priceLevel;
 
+  // 預估花費（每人每次）
   final double estimatedCost;
+
+  // 營業時間（分鐘）
+  final int openMinutes;
+  final int closeMinutes;
 
   const Place({
     required this.id,
@@ -36,5 +41,7 @@ class Place {
     required this.tags,
     required this.priceLevel,
     required this.estimatedCost,
+    required this.openMinutes,
+    required this.closeMinutes,
   });
 }
