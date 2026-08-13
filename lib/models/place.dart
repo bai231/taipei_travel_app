@@ -7,8 +7,25 @@ class Place {
   final double latitude;
   final double longitude;
   final String image;
+
+  // 預估停留時間（分鐘）
   final int stayTime;
+
+  // 評分
   final double rating;
+
+  // 給推薦系統使用
+  final List<String> tags;
+
+  // 價格等級
+  final int priceLevel;
+
+  // 預估花費（每人每次）
+  final double estimatedCost;
+
+  // 營業時間（分鐘）
+  final int openMinutes;
+  final int closeMinutes;
 
   const Place({
     required this.id,
@@ -21,5 +38,10 @@ class Place {
     required this.image,
     required this.stayTime,
     required this.rating,
+    required this.tags,
+    required this.priceLevel,
+    required this.estimatedCost,
+    required this.openMinutes,
+    required this.closeMinutes,
   });
 }

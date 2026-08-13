@@ -1,58 +1,50 @@
 import 'package:flutter/material.dart';
 
-class TripDateField extends StatefulWidget {
-  const TripDateField({super.key});
+class TripDateField extends StatelessWidget {
+  final DateTime? startDate;
+  final DateTime? endDate;
 
-  @override
-  State<TripDateField> createState() => _TripDateFieldState();
-}
+  final VoidCallback onSelectDate;
 
-class _TripDateFieldState extends State<TripDateField> {
-  DateTime? startDate;
-  DateTime? endDate;
+  const TripDateField({
+    super.key,
+    required this.startDate,
+    required this.endDate,
+    required this.onSelectDate,
+  });
 
-  Future<void> selectDate() async {
-    DateTimeRange? range = await showDateRangePicker(
-      context: context,
-
-      firstDate: DateTime.now(),
-
-      lastDate: DateTime(2030),
-    );
-
-    if (range != null) {
-      setState(() {
-        startDate = range.start;
-
-        endDate = range.end;
-      });
+  String _formatDate(DateTime? date) {
+    if (date == null) {
+      return '尚未選擇';
     }
+
+    return '${date.year}/${date.month}/${date.day}';
   }
 
   @override
   Widget build(BuildContext context) {
     return InkWell(
-      onTap: selectDate,
-
+      onTap: onSelectDate,
       child: InputDecorator(
-        decoration: InputDecoration(
-          labelText: "旅遊日期",
-
-          prefixIcon: const Icon(Icons.calendar_month),
-
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+        decoration: const InputDecoration(
+          labelText: '旅遊日期',
+          border: OutlineInputBorder(),
         ),
+        child: Row(
+          children: [
+            const Icon(Icons.calendar_month),
 
-        child: Text(
-          startDate == null
-              ? "請選擇日期"
-              : "${startDate!.year}/"
-                    "${startDate!.month}/"
-                    "${startDate!.day}"
-                    " ~ "
-                    "${endDate!.year}/"
-                    "${endDate!.month}/"
-                    "${endDate!.day}",
+            const SizedBox(width: 12),
+
+            Expanded(
+              child: Text(
+                startDate == null || endDate == null
+                    ? '請選擇旅遊日期'
+                    : '${_formatDate(startDate)} ～ '
+                          '${_formatDate(endDate)}',
+              ),
+            ),
+          ],
         ),
       ),
     );

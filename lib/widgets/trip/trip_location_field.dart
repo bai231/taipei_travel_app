@@ -1,16 +1,16 @@
 import 'package:flutter/material.dart';
 
-class TripLocationField extends StatefulWidget {
-  const TripLocationField({super.key});
+class TripLocationField extends StatelessWidget {
+  final String location;
+  final ValueChanged<String?> onChanged;
 
-  @override
-  State<TripLocationField> createState() => _TripLocationFieldState();
-}
+  const TripLocationField({
+    super.key,
+    required this.location,
+    required this.onChanged,
+  });
 
-class _TripLocationFieldState extends State<TripLocationField> {
-  String location = "台北市";
-
-  final locations = ["台北市", "新北市", "桃園市", "台中市", "高雄市"];
+  final List<String> locations = const ["台北市", "新北市", "桃園市", "台中市", "高雄市"];
 
   @override
   Widget build(BuildContext context) {
@@ -19,21 +19,15 @@ class _TripLocationFieldState extends State<TripLocationField> {
 
       decoration: InputDecoration(
         labelText: "旅遊地點",
-
         prefixIcon: const Icon(Icons.location_on),
-
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
       ),
 
       items: locations.map((item) {
-        return DropdownMenuItem(value: item, child: Text(item));
+        return DropdownMenuItem<String>(value: item, child: Text(item));
       }).toList(),
 
-      onChanged: (value) {
-        setState(() {
-          location = value!;
-        });
-      },
+      onChanged: onChanged,
     );
   }
 }
