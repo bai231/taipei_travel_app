@@ -1,11 +1,15 @@
 class TdxRoute {
   final int transfers;
   final int travelTime;
+  final DateTime? startTime;
+  final DateTime? endTime;
   final List<RouteSection> sections;
 
   TdxRoute({
     required this.transfers,
     required this.travelTime,
+    this.startTime,
+    this.endTime,
     required this.sections,
   });
 
@@ -14,6 +18,8 @@ class TdxRoute {
     return TdxRoute(
       transfers: json['transfers'] ?? 0,
       travelTime: json['travel_time'] ?? json['duration'] ?? 0,
+      startTime: DateTime.tryParse(json['start_time']?.toString() ?? ''),
+      endTime: DateTime.tryParse(json['end_time']?.toString() ?? ''),
       sections: sectionsList.map((s) => RouteSection.fromJson(s)).toList(),
     );
   }
@@ -48,19 +54,25 @@ class RouteSection {
     String type = (json['type'] ?? 'pedestrian').toString();
 
     // 1. 相容取得 transport 或 transit 內的資訊
-    var transport = json['transport'] as Map<String, dynamic>? ?? 
-                    json['transit']?['transport'] as Map<String, dynamic>?;
+    var transport =
+        json['transport'] as Map<String, dynamic>? ??
+        json['transit']?['transport'] as Map<String, dynamic>?;
 
-    String? line = transport?['shortName'] ?? 
-                   transport?['name'] ?? 
-                   transport?['number'] ?? 
-                   transport?['category'];
+    String? line =
+        transport?['shortName'] ??
+        transport?['name'] ??
+        transport?['number'] ??
+        transport?['category'];
 
     String? headsign = transport?['headsign'] ?? json['transit']?['headsign'];
 
     // 2. 提取起訖站點名稱
-    String? depTitle = json['departure']?['place']?['name'] ?? json['departure']?['place']?['type'];
-    String? arrTitle = json['arrival']?['place']?['name'] ?? json['arrival']?['place']?['type'];
+    String? depTitle =
+        json['departure']?['place']?['name'] ??
+        json['departure']?['place']?['type'];
+    String? arrTitle =
+        json['arrival']?['place']?['name'] ??
+        json['arrival']?['place']?['type'];
 
     // 3. 時間格式化 (HH:mm)
     String? formatTime(String? raw) {
@@ -74,23 +86,29 @@ class RouteSection {
 
     // 4. 解析中間經過站點 (支援多種 JSON 階層結構)
     List<String> stops = [];
-    var stopsRaw = json['intermediateStops'] as List? ?? 
-                json['transit']?['intermediateStops'] as List? ?? [];
+    var stopsRaw =
+        json['intermediateStops'] as List? ??
+        json['transit']?['intermediateStops'] as List? ??
+        [];
 
     for (var s in stopsRaw) {
-        if (s is Map) {
-            // 修正:站名實際包在 departure.place.name 底下
-            String? name = s['departure']?['place']?['name'] ?? s['place']?['name'] ?? s['name'];
-            if (name != null && name.isNotEmpty) {
-                stops.add(name);
-            }
-        } else if (s is String) {
-            stops.add(s);
+      if (s is Map) {
+        // 修正:站名實際包在 departure.place.name 底下
+        String? name =
+            s['departure']?['place']?['name'] ??
+            s['place']?['name'] ??
+            s['name'];
+        if (name != null && name.isNotEmpty) {
+          stops.add(name);
         }
+      } else if (s is String) {
+        stops.add(s);
+      }
     }
 
     // 花費秒數
-    int durationSec = json['travelSummary']?['duration'] ?? json['travel_time'] ?? 0;
+    int durationSec =
+        json['travelSummary']?['duration'] ?? json['travel_time'] ?? 0;
 
     return RouteSection(
       mode: type,

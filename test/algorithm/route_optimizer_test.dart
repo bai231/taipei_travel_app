@@ -8,9 +8,9 @@ void main() {
 
     // 建立 3 個測試景點
     final places = [
-      Place(id: '1', name: '台北 101', stayDurationMinutes: 60, priorityScore: 2.0),
-      Place(id: '2', name: '寧夏夜市', stayDurationMinutes: 90, earliestTimeMinutes: 1080, priorityScore: 5.0), // 18:00 (1080分) 才開
-      Place(id: '3', name: '大稻埕', stayDurationMinutes: 45, priorityScore: 1.0),
+      RouteStop(id: '1', name: '台北 101', latitude: 25.0339, longitude: 121.5644, stayDurationMinutes: 60, priorityScore: 2.0),
+      RouteStop(id: '2', name: '寧夏夜市', latitude: 25.0573, longitude: 121.5155, stayDurationMinutes: 90, earliestTimeMinutes: 1080, priorityScore: 5.0),
+      RouteStop(id: '3', name: '大稻埕', latitude: 25.0567, longitude: 121.5101, stayDurationMinutes: 45, priorityScore: 1.0),
     ];
 
     // 模擬 3x3 的時間矩陣（單位：分鐘）
@@ -24,13 +24,13 @@ void main() {
 
     // 假設早上 10:00 (600 分鐘) 出發
     final result = optimizer.optimizeRoute(
-      placesToVisit: places,
+      stopsToVisit: places,
       durationMatrix: mockMatrix,
       startTimeMinutes: 600,
     );
 
     print('=== 最佳化排序結果 ===');
-    for (var p in result.sortedPlaces) {
+    for (var p in result.sortedStops) {
       print('-> ${p.name}');
     }
     print('總行程花費時間: ${result.totalTimeMinutes} 分鐘');
