@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import '../../../algorithm/route_optimizer.dart';
+import '../../../models/scheduled_visit.dart';
 import '../../../models/trip_request.dart';
 import '../../../models/tdx_route.dart';
 import '../../../services/itinerary_schedule_service.dart';
@@ -40,6 +41,7 @@ class ItineraryPlanningService {
   Future<RouteItinerary> generate({
     required TripRequest request,
     required List<RoutePlaceInput> places,
+    void Function(String message)? onProgress,
   }) async {
     final warnings = <String>[];
     final dayConstraints = _assignConstraintsToDays(
@@ -51,6 +53,7 @@ class ItineraryPlanningService {
 
     for (var dayIndex = 0; dayIndex < request.days; dayIndex++) {
       final dayNumber = dayIndex + 1;
+      onProgress?.call('正在安排 Day $dayNumber…');
       final date = DateTime(
         request.startDate.year,
         request.startDate.month,
@@ -61,9 +64,12 @@ class ItineraryPlanningService {
           day: dayNumber,
           date: date,
           constraints: dayConstraints[dayIndex],
+          onProgress: onProgress,
         ),
       );
     }
+
+    onProgress?.call('行程安排完成');
 
     return RouteItinerary(
       request: request,
@@ -117,6 +123,7 @@ class ItineraryPlanningService {
     required int day,
     required DateTime date,
     required List<RoutePlaceInput> constraints,
+    void Function(String message)? onProgress,
   }) async {
     if (constraints.isEmpty) {
       return RouteDay(
@@ -143,42 +150,93 @@ class ItineraryPlanningService {
     for (var index = 0; index < orderedStops.length; index++) {
       final destination = orderedStops[index];
       final constraint = constraintsById[destination.id]!;
-      final requestedDeparture = date.add(Duration(minutes: departureMinutes));
+      departureMinutes = _plannedDepartureMinutes(
+        availableDepartureMinutes: departureMinutes,
+        previousStop: previousStop,
+        destination: destination,
+        isFirstStop: index == 0,
+      );
+      onProgress?.call(
+        '正在查詢 Day $day 第 ${index + 1}/${orderedStops.length} 段交通…',
+      );
+      late DateTime requestedDeparture;
+      late ScheduledVisit schedule;
       TdxRoute? route;
       String? errorMessage;
+      var routeAdjustmentCount = 0;
 
-      try {
-        route = await _timedRouteService.getRouteAtOrAfter(
-          origin: '${previousStop.latitude},${previousStop.longitude}',
-          destination: '${destination.latitude},${destination.longitude}',
-          requestedDeparture: requestedDeparture,
-        );
-        if (route == null) {
-          errorMessage = 'TDX 沒有提供指定時間後的可用路線，已使用估計時間。';
+      while (true) {
+        requestedDeparture = date.add(Duration(minutes: departureMinutes));
+        route = null;
+        errorMessage = null;
+
+        try {
+          route = await _timedRouteService.getRouteAtOrAfter(
+            origin: '${previousStop.latitude},${previousStop.longitude}',
+            destination: '${destination.latitude},${destination.longitude}',
+            requestedDeparture: requestedDeparture,
+          );
+          if (route == null) {
+            errorMessage = 'TDX 沒有提供指定時間後的可用路線，已使用估計時間。';
+          }
+        } catch (error) {
+          errorMessage = 'TDX 路線查詢失敗，已使用估計時間：$error';
         }
-      } catch (error) {
-        errorMessage = 'TDX 路線查詢失敗，已使用估計時間：$error';
+
+        final travelMinutes = route == null
+            ? _estimatedTravelMinutes(previousStop, destination)
+            : _scheduleService.travelMinutesFromTdx(
+                route: route,
+                requestedDeparture: requestedDeparture,
+              );
+        schedule = _scheduleService.scheduleVisit(
+          departureMinutes: departureMinutes,
+          travelMinutes: travelMinutes,
+          destination: destination,
+        );
+
+        final fixedStart = constraint.locked ? constraint.startMinutes : null;
+        final shouldRetryEarlier =
+            index == 0 &&
+            fixedStart != null &&
+            schedule.visitStartMinutes > fixedStart &&
+            routeAdjustmentCount < 2;
+        final shouldRetryLater =
+            schedule.waitingMinutes > 15 && routeAdjustmentCount < 2;
+
+        if (shouldRetryEarlier) {
+          final latenessMinutes = schedule.visitStartMinutes - fixedStart;
+          departureMinutes = max(0, departureMinutes - latenessMinutes - 5);
+          onProgress?.call('首站可能遲到，正在重新查詢更早的 TDX 班次…');
+        } else if (shouldRetryLater) {
+          departureMinutes += schedule.waitingMinutes - 5;
+          onProgress?.call('抵達時間過早，正在重新查詢較晚的 TDX 班次…');
+        } else {
+          break;
+        }
+
+        routeAdjustmentCount++;
+        if (requestInterval > Duration.zero) {
+          await Future<void>.delayed(requestInterval);
+        }
       }
 
-      final travelMinutes = route == null
-          ? _estimatedTravelMinutes(previousStop, destination)
-          : _scheduleService.travelMinutesFromTdx(
-              route: route,
-              requestedDeparture: requestedDeparture,
-            );
-      final schedule = _scheduleService.scheduleVisit(
-        departureMinutes: departureMinutes,
-        travelMinutes: travelMinutes,
-        destination: destination,
-      );
-
-      if (constraint.startMinutes != null &&
+      if (constraint.locked &&
+          constraint.startMinutes != null &&
           schedule.visitStartMinutes > constraint.startMinutes!) {
         warnings.add(
           '${constraint.place.name} 預計 ${_formatMinutes(schedule.visitStartMinutes)} 抵達，晚於指定時間 ${_formatMinutes(constraint.startMinutes!)}。',
         );
       }
-      if (schedule.visitEndMinutes > constraint.place.closeMinutes) {
+      final fixedTimeOutsideOpeningHours =
+          constraint.locked &&
+          constraint.startMinutes != null &&
+          (constraint.startMinutes! < constraint.place.openMinutes ||
+              constraint.startMinutes! + constraint.place.stayTime >
+                  constraint.place.closeMinutes);
+      if (fixedTimeOutsideOpeningHours) {
+        warnings.add('${constraint.place.name} 的指定時間不在景點營業時間內。');
+      } else if (schedule.visitEndMinutes > constraint.place.closeMinutes) {
         warnings.add('${constraint.place.name} 的停留時間超過景點營業時間。');
       }
 
@@ -247,10 +305,43 @@ class ItineraryPlanningService {
         .optimizeRoute(
           stopsToVisit: stops,
           durationMatrix: matrix,
-          startTimeMinutes: dayStartMinutes,
+          startTimeMinutes: _optimizationStartMinutes(stops),
           travelTimesFromStart: travelTimesFromOrigin,
         )
         .sortedStops;
+  }
+
+  int _optimizationStartMinutes(List<RouteStop> stops) {
+    var startMinutes = dayStartMinutes;
+    for (final stop in stops) {
+      final fixedStart = stop.earliestTimeMinutes == stop.latestTimeMinutes
+          ? stop.earliestTimeMinutes
+          : null;
+      if (fixedStart == null) continue;
+      startMinutes = min(
+        startMinutes,
+        fixedStart - _estimatedTravelMinutes(origin, stop) - 5,
+      );
+    }
+    return max(0, startMinutes);
+  }
+
+  int _plannedDepartureMinutes({
+    required int availableDepartureMinutes,
+    required RouteStop previousStop,
+    required RouteStop destination,
+    required bool isFirstStop,
+  }) {
+    final earliestStart = destination.earliestTimeMinutes;
+    if (earliestStart == null) return availableDepartureMinutes;
+    final desiredDeparture = max(
+      0,
+      earliestStart - _estimatedTravelMinutes(previousStop, destination) - 5,
+    );
+    if (isFirstStop && earliestStart == destination.latestTimeMinutes) {
+      return min(availableDepartureMinutes, desiredDeparture);
+    }
+    return max(availableDepartureMinutes, desiredDeparture);
   }
 
   List<RouteStop> _nearestNeighborOrder(List<RouteStop> stops) {
@@ -272,7 +363,7 @@ class ItineraryPlanningService {
 
   RouteStop _toRouteStop(RoutePlaceInput constraint) {
     final place = constraint.place;
-    final requestedStart = constraint.startMinutes;
+    final requestedStart = constraint.locked ? constraint.startMinutes : null;
     return RouteStop(
       id: place.id,
       name: place.name,

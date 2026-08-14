@@ -57,6 +57,67 @@ void main() {
     expect(itinerary.days.single.travelLegs, hasLength(2));
     expect(itinerary.days.single.visits.last.startMinutes, 10 * 60 + 40);
   });
+
+  test('首站固定 09:00 時會重查較早班次並準時開始', () async {
+    final progressMessages = <String>[];
+    final fakeTdx = _FakeTimedTdxRouteService();
+    final service = ItineraryPlanningService(
+      timedRouteService: fakeTdx,
+      requestInterval: Duration.zero,
+    );
+
+    final itinerary = await service.generate(
+      request: _request(days: 1),
+      places: [
+        RoutePlaceInput(
+          place: _place('appointment', stayMinutes: 60),
+          day: 1,
+          startMinutes: 9 * 60,
+          locked: true,
+        ),
+      ],
+      onProgress: progressMessages.add,
+    );
+
+    final visit = itinerary.days.single.visits.single;
+    expect(fakeTdx.requestedDepartures.length, greaterThan(1));
+    expect(fakeTdx.requestedDepartures.last.hour, 8);
+    expect(visit.arrivalMinutes, lessThanOrEqualTo(9 * 60));
+    expect(visit.startMinutes, 9 * 60);
+    expect(itinerary.days.single.warnings, isEmpty);
+    expect(progressMessages, contains('正在查詢 Day 1 第 1/1 段交通…'));
+    expect(progressMessages, contains('首站可能遲到，正在重新查詢更早的 TDX 班次…'));
+  });
+
+  test('下一站尚未開放時會延後出發而不是提早抵達久候', () async {
+    final fakeTdx = _FakeTimedTdxRouteService();
+    final service = ItineraryPlanningService(
+      timedRouteService: fakeTdx,
+      requestInterval: Duration.zero,
+    );
+
+    final itinerary = await service.generate(
+      request: _request(days: 1),
+      places: [
+        RoutePlaceInput(
+          place: _place('morning', stayMinutes: 60),
+          day: 1,
+          startMinutes: 9 * 60,
+          locked: true,
+        ),
+        RoutePlaceInput(
+          place: _place('night-market', stayMinutes: 120, openMinutes: 18 * 60),
+          day: 1,
+        ),
+      ],
+    );
+
+    final secondLeg = itinerary.days.single.travelLegs[1];
+    final secondVisit = itinerary.days.single.visits[1];
+    expect(secondLeg.schedule.departureMinutes, greaterThan(17 * 60));
+    expect(secondVisit.waitingMinutes, lessThanOrEqualTo(15));
+    expect(secondVisit.startMinutes, greaterThanOrEqualTo(18 * 60));
+  });
 }
 
 class _FakeTimedTdxRouteService extends TimedTdxRouteService {
@@ -100,6 +161,8 @@ Place _place(
   required int stayMinutes,
   double latitude = 25.05,
   double longitude = 121.52,
+  int openMinutes = 8 * 60,
+  int closeMinutes = 22 * 60,
 }) {
   return Place(
     id: id,
@@ -115,7 +178,7 @@ Place _place(
     tags: const [],
     priceLevel: 1,
     estimatedCost: 100,
-    openMinutes: 8 * 60,
-    closeMinutes: 22 * 60,
+    openMinutes: openMinutes,
+    closeMinutes: closeMinutes,
   );
 }

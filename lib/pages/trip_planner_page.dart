@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 import '../models/place.dart';
 import '../models/trip_request.dart';
 import '../models/trip_place_constraint.dart';
+import '../features/route_planning/models/route_place_input.dart';
+import '../features/route_planning/pages/itinerary_result_page.dart';
+import '../features/route_planning/services/itinerary_planning_service.dart';
 
 class TripPlannerPage extends StatefulWidget {
   final TripRequest request;
@@ -19,6 +22,8 @@ class TripPlannerPage extends StatefulWidget {
 }
 
 class _TripPlannerPageState extends State<TripPlannerPage> {
+  final ItineraryPlanningService _planningService = ItineraryPlanningService();
+
   // ============================================================
   // 使用者已經加入的景點
   // ============================================================
@@ -30,6 +35,8 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
   // ============================================================
 
   int _selectedDay = 1;
+  bool _isGenerating = false;
+  String? _planningMessage;
 
   void _showPlacePicker() {
     showModalBottomSheet(
@@ -110,7 +117,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
 
             tooltip: "新增景點",
 
-            onPressed: _showPlacePicker,
+            onPressed: _isGenerating ? null : _showPlacePicker,
           ),
         ],
       ),
@@ -125,6 +132,58 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
           // 主要內容
           Expanded(child: _buildPlannerContent()),
         ],
+      ),
+      bottomNavigationBar: _buildGenerateBar(),
+    );
+  }
+
+  Widget _buildGenerateBar() {
+    final fixedTimeCount = _selectedPlaces
+        .where((item) => item.day != null && item.startMinutes != null)
+        .length;
+    final fixedDayCount = _selectedPlaces
+        .where((item) => item.day != null && item.startMinutes == null)
+        .length;
+    final automaticCount = _selectedPlaces
+        .where((item) => item.day == null)
+        .length;
+
+    return SafeArea(
+      top: false,
+      child: Material(
+        elevation: 10,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                '已選 ${_selectedPlaces.length} 個景點・'
+                '固定時間 $fixedTimeCount・'
+                '指定日期 $fixedDayCount・'
+                '自動安排 $automaticCount',
+                style: Theme.of(context).textTheme.bodySmall,
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              FilledButton.icon(
+                onPressed: _isGenerating ? null : _generateItinerary,
+                icon: _isGenerating
+                    ? const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.alt_route),
+                label: Text(
+                  _isGenerating
+                      ? (_planningMessage ?? '正在安排詳細行程…')
+                      : '完成景點安排，產生詳細行程',
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -446,25 +505,34 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
             crossAxisAlignment: CrossAxisAlignment.start,
 
             children: [
-              // 景點名稱
-              Text(
-                constraint.place.name,
-
-                maxLines: 2,
-
-                overflow: TextOverflow.ellipsis,
-
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 15,
-                ),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      constraint.place.name,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: '移除景點',
+                    onPressed: _isGenerating
+                        ? null
+                        : () => _removePlace(constraint),
+                    icon: const Icon(Icons.close, size: 18),
+                  ),
+                ],
               ),
 
               const SizedBox(height: 8),
 
               // 狀態
               Text(
-                "不限日期／時間",
+                _getConstraintStatus(constraint),
 
                 style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
               ),
@@ -537,6 +605,12 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
               },
 
               child: const Text("指定時間"),
+            ),
+
+            IconButton(
+              tooltip: '移除景點',
+              onPressed: _isGenerating ? null : () => _removePlace(constraint),
+              icon: const Icon(Icons.close),
             ),
           ],
         ),
@@ -658,11 +732,68 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
 
     setState(() {
       constraint.startMinutes = result.hour * 60 + result.minute;
-
-      // 使用者重新選擇時間，
-      // 先視為尚未鎖定
-      constraint.locked = false;
+      constraint.locked = true;
     });
+  }
+
+  Future<void> _generateItinerary() async {
+    if (_selectedPlaces.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('請至少加入一個景點')));
+      return;
+    }
+
+    setState(() {
+      _isGenerating = true;
+      _planningMessage = '正在整理景點限制…';
+    });
+
+    try {
+      final itinerary = await _planningService.generate(
+        request: widget.request,
+        places: _selectedPlaces
+            .map(
+              (constraint) => RoutePlaceInput(
+                place: constraint.place,
+                day: constraint.day,
+                startMinutes: constraint.startMinutes,
+                locked: constraint.locked,
+              ),
+            )
+            .toList(),
+        onProgress: (message) {
+          if (!mounted) return;
+          setState(() => _planningMessage = message);
+        },
+      );
+      if (!mounted) return;
+
+      setState(() {
+        _isGenerating = false;
+        _planningMessage = null;
+      });
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (resultContext) => ItineraryResultPage(
+            itinerary: itinerary,
+            onEdit: () => Navigator.of(resultContext).pop(),
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('無法產生詳細行程：$error')));
+    } finally {
+      if (mounted && _isGenerating) {
+        setState(() {
+          _isGenerating = false;
+          _planningMessage = null;
+        });
+      }
+    }
   }
 
   // ============================================================
