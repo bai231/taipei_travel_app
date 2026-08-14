@@ -5,7 +5,6 @@ import 'search_page.dart';
 import 'trip_page.dart';
 import 'profile_page.dart';
 import 'setting_page.dart';
-import 'map_page.dart';
 
 import '../widgets/bottom_nav.dart';
 
@@ -24,7 +23,6 @@ class _MainPageState extends State<MainPage> {
     const TripPage(),
     const ProfilePage(),
     const SearchPage(),
-    const MapPage(),
     const SettingPage(),
   ];
 

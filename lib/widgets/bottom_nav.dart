@@ -37,11 +37,6 @@ class BottomNav extends StatelessWidget {
           label: '搜尋',
         ),
         NavigationDestination(
-          icon: Icon(Icons.map_outlined),
-          selectedIcon: Icon(Icons.map),
-          label: '地圖',
-        ),
-        NavigationDestination(
           icon: Icon(Icons.settings_outlined),
           selectedIcon: Icon(Icons.settings),
           label: '設定',
