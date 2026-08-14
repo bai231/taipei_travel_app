@@ -3,20 +3,19 @@ import 'dart:math';
 import 'package:http/http.dart' as http;
 import '../models/tdx_route.dart';
 
-class TdxService {
+abstract interface class TdxRoutingGateway {
+  Future<List<TdxRoute>> getRoutingOptions({
+    required String origin,
+    required String destination,
+    DateTime? departureTime,
+  });
+}
+
+class TdxService implements TdxRoutingGateway {
   final String clientId = 'clairelee20041020-1df10dd6-36e4-4dd8';
   final String clientSecret = '691da7f7-9311-4f4d-b777-9afb94dbb428';
 
   String? _accessToken;
-  static final Map<String, List<TdxRoute>> _routeCache = {};
-
-  List<TdxRoute>? getCachedRoutingOptions({
-    required String origin,
-    required String destination,
-    DateTime? departureTime,
-  }) {
-    return _routeCache[_cacheKey(origin, destination, departureTime)];
-  }
 
   Future<String> fetchAccessToken() async {
     if (_accessToken != null) return _accessToken!;
@@ -75,15 +74,12 @@ class TdxService {
     return m == 'pedestrian' || m == 'walking' || m == 'walk';
   }
 
+  @override
   Future<List<TdxRoute>> getRoutingOptions({
     required String origin,
     required String destination,
     DateTime? departureTime,
   }) async {
-    final cacheKey = _cacheKey(origin, destination, departureTime);
-    final cachedRoutes = _routeCache[cacheKey];
-    if (cachedRoutes != null) return cachedRoutes;
-
     final token = await fetchAccessToken();
 
     final destParts = destination.split(',');
@@ -284,16 +280,7 @@ class TdxService {
       picked.addAll(walkOnly.take(5));
     }
 
-    final routes = picked.take(10).map((candidate) => candidate.route).toList();
-    _routeCache[cacheKey] = routes;
-    return routes;
-  }
-
-  String _cacheKey(String origin, String destination, DateTime? departureTime) {
-    final departureKey = departureTime == null
-        ? 'now'
-        : _formatDepartureTime(departureTime);
-    return '$origin->$destination@$departureKey';
+    return picked.take(10).map((candidate) => candidate.route).toList();
   }
 
   String _formatDepartureTime(DateTime value) {

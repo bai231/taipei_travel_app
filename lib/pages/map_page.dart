@@ -11,7 +11,7 @@ import '../services/itinerary_schedule_service.dart';
 import '../services/map_service.dart';
 import '../services/place_service.dart';
 import '../services/tdx_matrix_service.dart';
-import '../services/tdx_service.dart';
+import '../services/timed_tdx_route_service.dart';
 
 class MapPage extends StatefulWidget {
   const MapPage({super.key});
@@ -31,7 +31,7 @@ class _MapPageState extends State<MapPage> {
 
   final _mapService = const MapService();
   final _matrixService = TdxMatrixService();
-  final _tdxService = TdxService();
+  final _timedRouteService = TimedTdxRouteService();
   final _optimizer = RouteOptimizer();
   final _scheduleService = const ItineraryScheduleService();
   final _selectedPlaceIds = <String>{};
@@ -469,10 +469,18 @@ class _MapPageState extends State<MapPage> {
         final departureTime = itineraryDate.add(
           Duration(minutes: nextDepartureMinutes),
         );
-        final route = await _getRouteAtOrAfter(
-          origin: origin,
-          destination: destination,
+        final route = await _timedRouteService.getRouteAtOrAfter(
+          origin: '${origin.latitude},${origin.longitude}',
+          destination: '${destination.latitude},${destination.longitude}',
           requestedDeparture: departureTime,
+          onRetry: (_) {
+            if (mounted) {
+              setState(() {
+                _message =
+                    'TDX 正在尋找 ${origin.name} → ${destination.name} 的下一班…';
+              });
+            }
+          },
         );
         final travelMinutes = route == null
             ? _estimatedTravelMinutes(origin, destination)
@@ -522,54 +530,6 @@ class _MapPageState extends State<MapPage> {
         _message = '行程排序與 TDX 路段載入完成。';
       });
     }
-  }
-
-  Future<List<TdxRoute>> _getRoute(
-    RouteStop origin,
-    RouteStop destination,
-    DateTime departureTime,
-  ) async {
-    final originValue = '${origin.latitude},${origin.longitude}';
-    final destinationValue = '${destination.latitude},${destination.longitude}';
-    final cached = _tdxService.getCachedRoutingOptions(
-      origin: originValue,
-      destination: destinationValue,
-      departureTime: departureTime,
-    );
-    if (cached != null) return cached;
-    return _tdxService.getRoutingOptions(
-      origin: originValue,
-      destination: destinationValue,
-      departureTime: departureTime,
-    );
-  }
-
-  Future<TdxRoute?> _getRouteAtOrAfter({
-    required RouteStop origin,
-    required RouteStop destination,
-    required DateTime requestedDeparture,
-  }) async {
-    const searchOffsets = [0, 15, 30];
-    for (var index = 0; index < searchOffsets.length; index++) {
-      final queryTime = requestedDeparture.add(
-        Duration(minutes: searchOffsets[index]),
-      );
-      if (index > 0) {
-        if (mounted) {
-          setState(() {
-            _message = 'TDX 正在尋找 ${origin.name} → ${destination.name} 的下一班…';
-          });
-        }
-        await Future<void>.delayed(const Duration(seconds: 2));
-      }
-      final routes = await _getRoute(origin, destination, queryTime);
-      final route = _scheduleService.selectRouteForDeparture(
-        routes: routes,
-        requestedDeparture: requestedDeparture,
-      );
-      if (route != null) return route;
-    }
-    return null;
   }
 
   DateTime _nextItineraryDate(int startMinutes) {
