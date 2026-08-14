@@ -8,6 +8,12 @@ import '../services/favorite_service.dart';
 class HomePage extends StatelessWidget {
   const HomePage({super.key});
 
+  final List<String> photoList = const [
+            'assets/test1.jpg',
+            'assets/test2.jpg',
+            'assets/test3.jpg',
+          ];
+
   @override
   Widget build(BuildContext context) {
     final PlaceService placeService = PlaceService();
@@ -15,7 +21,18 @@ class HomePage extends StatelessWidget {
     final List<Place> places = placeService.getPlaces();
 
     return Scaffold(
-      appBar: AppBar(title: const Text("台北旅遊")),
+      appBar: AppBar(
+        automaticallyImplyLeading: false,
+        title: const Text("使用指南"),
+        actions: [
+          TextButton(
+            onPressed: () {
+            // 之後接 LoginPage
+            },
+            child: const Text("登入"),
+          ),
+        ],
+      ),
 
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -23,13 +40,44 @@ class HomePage extends StatelessWidget {
           const Padding(
             padding: EdgeInsets.all(16),
             child: Text(
-              "熱門景點",
+              "網上大家都在玩的行程",
               style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
             ),
           ),
 
           SizedBox(
-            height: 250, // PlaceCard 的高度，可自行調整
+            height: 120,
+            child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                itemCount: photoList.length, // 照片數量
+                separatorBuilder: (context, index) => const SizedBox(width: 12), // 自動產生中間間距
+                itemBuilder: (context, index) {
+                  return ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Image.asset(
+                      photoList[index],
+                      width: 120,
+                      height: 120,
+                      fit: BoxFit.cover,
+                    ),
+                  );
+                },
+              ),
+          ),
+ 
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 24, 16, 12),
+            child: Text(
+              "景點推薦",
+              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+            ),
+          ),
+
+          
+
+          SizedBox(
+            height: 200, // PlaceCard 的高度，可自行調整
             child: ListView.builder(
               scrollDirection: Axis.horizontal,
               itemCount: places.length,
@@ -60,6 +108,45 @@ class HomePage extends StatelessWidget {
               },
             ),
           ),
+          const SizedBox(height: 24), // 區塊間距
+
+          Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 1. 白色圓角「手動排程」按鈕
+                  ElevatedButton(
+                    onPressed: () {
+                      // 點擊手動排程按鈕後要執行的動作（例如跳轉到排程頁面）
+                      print("點擊了手動排程");
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.white,      // 白色背景
+                      foregroundColor: Colors.black,      // 黑色文字
+                      elevation: 2,                       // 微陰影
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(24), // 圓角外觀
+                      ),
+                    ),
+                    child: const Text(
+                      "手動排程",
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 16), // 按鈕與說明的間距
+
+                  
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 32), // 底部留白，避免被底部導覽列遮擋
         ],
       ),
     );
