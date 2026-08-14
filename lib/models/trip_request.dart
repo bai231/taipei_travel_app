@@ -1,3 +1,5 @@
+import 'trip_place_constraint.dart';
+
 class TripRequest {
   final String title;
   final DateTime startDate;
@@ -7,6 +9,7 @@ class TripRequest {
   final double budget;
   final List<String> preferences;
   final String aiPrompt;
+  final List<TripPlaceConstraint> selectedPlaces;
 
   TripRequest({
     required this.title,
@@ -17,8 +20,10 @@ class TripRequest {
     required this.budget,
     required this.preferences,
     required this.aiPrompt,
+    this.selectedPlaces = const [],
   });
 
+  // 旅遊天數
   int get days {
     return endDate.difference(startDate).inDays + 1;
   }
