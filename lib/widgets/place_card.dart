@@ -17,7 +17,7 @@ class PlaceCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(8.0),
 
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -26,18 +26,18 @@ class PlaceCard extends StatelessWidget {
             Text(
               place.name,
 
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
             ),
 
-            const SizedBox(height: 8),
+            const SizedBox(height: 2),
 
             Text(place.category),
 
-            const SizedBox(height: 8),
+            const SizedBox(height: 2),
 
             Text(place.description),
 
-            const SizedBox(height: 8),
+            const SizedBox(height: 2),
 
             Text("⭐ ${place.rating}"),
 
