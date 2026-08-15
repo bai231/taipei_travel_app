@@ -42,6 +42,8 @@ class TripDateField extends StatelessWidget {
                     ? '請選擇旅遊日期'
                     : '${_formatDate(startDate)} ～ '
                           '${_formatDate(endDate)}',
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
               ),
             ),
           ],

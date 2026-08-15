@@ -23,7 +23,7 @@ class _MainPageState extends State<MainPage> {
     const TripPage(),
     const ProfilePage(),
     const SearchPage(),
-    const SettingPage(),
+    const SettingsPage(),
   ];
 
   @override
