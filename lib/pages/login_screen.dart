@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -181,7 +182,10 @@ class _LoginScreenState extends State<LoginScreen> {
                     // 左側：註冊按鈕
                     GestureDetector(
                       onTap: () {
-                        // TODO: 導航至註冊頁面 (如 RegisterScreen)
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (context) => const RegisterScreen()),
+                        );
                       },
                       child: const Text(
                         '註冊帳號',
@@ -221,6 +225,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ],
                 ),
+
 
                 const SizedBox(height: 16),
               ],

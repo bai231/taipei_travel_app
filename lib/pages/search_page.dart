@@ -94,7 +94,7 @@ class _SearchPageState extends State<SearchPage> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   const Text(
-                    "熱門行程",
+                    "你可能會喜歡......",
                     style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.black87),
                   ),
                   InkWell(
