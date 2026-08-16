@@ -4,6 +4,7 @@ import '../models/place.dart';
 import '../services/place_service.dart';
 import '../widgets/place_card.dart';
 import '../services/favorite_service.dart';
+import '../theme/app_theme.dart'; // 引入色彩系統
 
 class HomePage extends StatelessWidget {
   const HomePage({super.key});
@@ -83,7 +84,7 @@ class HomePage extends StatelessWidget {
               },
             ),
           ),
-          const SizedBox(height: 24), // 區塊間距
+          const SizedBox(height: 16), // 區塊間距
 
           Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16.0),
@@ -97,8 +98,8 @@ class HomePage extends StatelessWidget {
                       print("點擊了手動排程");
                     },
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.white,      // 白色背景
-                      foregroundColor: Colors.black,      // 黑色文字
+                      backgroundColor: AppColors.background,     // 白色背景
+                      foregroundColor: AppColors.textPrimary,      // 文字
                       elevation: 2,                       // 微陰影
                       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                       shape: RoundedRectangleBorder(
