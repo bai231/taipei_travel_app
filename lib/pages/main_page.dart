@@ -6,6 +6,9 @@ import 'trip_page.dart';
 import 'profile_page.dart';
 import 'setting_page.dart';
 
+import 'guide_overlay_screen.dart'; // 使用指南
+import 'login_screen.dart';         // 登入頁面
+
 import '../widgets/bottom_nav.dart';
 
 class MainPage extends StatefulWidget {
@@ -29,6 +32,50 @@ class _MainPageState extends State<MainPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: AppBar(
+        backgroundColor: Colors.transparent, // 透明背景，露出底色
+        elevation: 0,                        // 去除陰影
+        automaticallyImplyLeading: false,    // 不顯示預設返回按鈕
+        actions: [
+          // 左側/右側：使用指南按鈕
+          TextButton.icon(
+            onPressed: () => showUserGuide(context), // 呼叫指南疊層
+            icon: const Icon(
+              Icons.menu_book_outlined,
+              size: 20,
+              color: Color(0xFF1E3A2F),
+            ),
+            label: const Text(
+              "使用指南",
+              style: TextStyle(
+                color: Color(0xFF1E3A2F),
+                fontSize: 15,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          const SizedBox(width: 4),
+
+          // 登入按鈕
+          TextButton(
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const LoginScreen()),
+              );
+            },
+            child: const Text(
+              "登入",
+              style: TextStyle(
+                color: Color(0xFF1E3A2F),
+                fontSize: 15,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+        ],
+      ),
       body: IndexedStack(
         index: _currentIndex,
         children: _pages,
@@ -90,3 +137,5 @@ class _MainPageState extends State<MainPage> {
     );
   }
 }
+
+  
