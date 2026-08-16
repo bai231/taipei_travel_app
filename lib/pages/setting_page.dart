@@ -147,50 +147,6 @@ class _SettingsPageState extends State<SettingsPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // 1. 頂部列：使用指南 & 登入/帳號狀態
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  GestureDetector(
-                    onTap: () => showUserGuide(context),
-                    child: const Row(
-                      children: [
-                        Icon(Icons.menu_book_outlined, color: textDark, size: 22),
-                        SizedBox(width: 6),
-                        Text(
-                          "使用指南",
-                          style: TextStyle(
-                            color: textDark,
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  GestureDetector(
-                    onTap: () {
-                      if (!_isLoggedIn) {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (_) => const LoginScreen()),
-                        );
-                      }
-                    },
-                    child: Text(
-                      _isLoggedIn ? "帳號中心" : "登入",
-                      style: const TextStyle(
-                        color: textDark,
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 24),
-
               // 2. 頁面標題：⚙️ 設定
               const Row(
                 children: [

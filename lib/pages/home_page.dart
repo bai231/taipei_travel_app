@@ -4,9 +4,6 @@ import '../models/place.dart';
 import '../services/place_service.dart';
 import '../widgets/place_card.dart';
 import '../services/favorite_service.dart';
-import 'login_screen.dart';
-import 'guide_overlay_screen.dart';
-
 
 class HomePage extends StatelessWidget {
   const HomePage({super.key});
@@ -24,64 +21,6 @@ class HomePage extends StatelessWidget {
     final List<Place> places = placeService.getPlaces();
 
     return Scaffold(
-      appBar: AppBar(
-  automaticallyImplyLeading: false,
-  backgroundColor: Colors.transparent, // 若有底圖或背景色可設為透明
-  elevation: 0,
-  // 移除原本的 title，改將所有按鈕都放在 actions
-  actions: [
-    // 1. 使用指南按鈕（帶書本圖示）
-    TextButton.icon(
-      onPressed: () {
-        Navigator.of(context).push(
-          PageRouteBuilder(
-            opaque: false, // 關鍵：設為 false 才能保留背景半透明效果
-            barrierDismissible: false,
-            pageBuilder: (BuildContext context, _, __) {
-              return const GuideOverlayScreen();
-            },
-          ),
-        ); 
-      },
-      icon: const Icon(
-        Icons.menu_book_outlined,
-        size: 20,
-        color: Colors.black87,
-      ),
-      label: const Text(
-        "使用指南",
-        style: TextStyle(
-          color: Colors.black87,
-          fontSize: 15,
-        ),
-      ),
-    ),
-
-    const SizedBox(width: 4), // 按鈕之間的微調間距
-
-    // 2. 登入按鈕（點擊跳轉至 LoginScreen）
-    TextButton(
-      onPressed: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => const LoginScreen(),
-          ),
-        );
-      },
-      child: const Text(
-        "登入",
-        style: TextStyle(
-          color: Colors.black87,
-          fontSize: 15,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-    ),
-    const SizedBox(width: 8), // 右側邊緣留白
-  ],
-),
-
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

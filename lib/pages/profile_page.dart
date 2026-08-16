@@ -3,8 +3,6 @@ import 'package:flutter/material.dart';
 
 import '../services/favorite_service.dart';
 import '../models/place.dart';
-import 'guide_overlay_screen.dart'; // 引入使用指南
-import 'login_screen.dart';         // 引入登入頁面
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -35,48 +33,6 @@ class _ProfilePageState extends State<ProfilePage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // 1. 頂部列：使用指南 & 登入
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  GestureDetector(
-                    onTap: () => showUserGuide(context), // 開啟使用指南
-                    child: const Row(
-                      children: [
-                        Icon(Icons.menu_book_outlined, color: textDark, size: 22),
-                        SizedBox(width: 6),
-                        Text(
-                          "使用指南",
-                          style: TextStyle(
-                            color: textDark,
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  GestureDetector(
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const LoginScreen()),
-                      );
-                    },
-                    child: const Text(
-                      "登入",
-                      style: TextStyle(
-                        color: textDark,
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 24),
-
               // 2. 標題：⭐ 我的收藏
               const Row(
                 children: [

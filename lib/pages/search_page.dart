@@ -44,30 +44,6 @@ class _SearchPageState extends State<SearchPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // 1. 頂部列：使用指南 & 登入
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  TextButton.icon(
-                    onPressed: () {},
-                    icon: const Icon(Icons.menu_book, color: Colors.black87, size: 20),
-                    label: const Text(
-                      "使用指南",
-                      style: TextStyle(color: Colors.black87, fontSize: 16, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                  TextButton(
-                    onPressed: () {},
-                    child: const Text(
-                      "登入",
-                      style: TextStyle(color: Colors.black87, fontSize: 16, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 12),
-
               // 2. 搜尋列 (草圖中的圓角搜尋框)
               Container(
                 decoration: BoxDecoration(
