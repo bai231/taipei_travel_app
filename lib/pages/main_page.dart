@@ -6,10 +6,8 @@ import 'trip_page.dart';
 import 'profile_page.dart';
 import 'setting_page.dart';
 
-import 'guide_overlay_screen.dart'; // 使用指南
+import 'guide_overlay_screen.dart'; // 引入動態使用指南
 import 'login_screen.dart';         // 登入頁面
-
-import '../widgets/bottom_nav.dart';
 
 class MainPage extends StatefulWidget {
   const MainPage({super.key});
@@ -21,6 +19,10 @@ class MainPage extends StatefulWidget {
 class _MainPageState extends State<MainPage> {
   int _currentIndex = 0;
 
+  // 📍 1. 宣告常駐元件的 GlobalKey
+  final GlobalKey _guideBtnKey = GlobalKey(); // 頂部使用指南按鈕
+  final GlobalKey _bottomNavKey = GlobalKey(); // 底部導航欄容器
+
   final List<Widget> _pages = [
     const HomePage(),
     const TripPage(),
@@ -28,6 +30,57 @@ class _MainPageState extends State<MainPage> {
     const SearchPage(),
     const SettingsPage(),
   ];
+
+  // 📍 2. 輔助函式：動態轉換 RenderBox 為螢幕實際 Rect 座標
+  Rect? _getWidgetRect(GlobalKey key) {
+    final renderBox = key.currentContext?.findRenderObject() as RenderBox?;
+    if (renderBox == null || !renderBox.hasSize) return null;
+    final position = renderBox.localToGlobal(Offset.zero);
+    return Rect.fromLTWH(
+      position.dx,
+      position.dy,
+      renderBox.size.width,
+      renderBox.size.height,
+    );
+  }
+
+  // 📍 3. 動態取得座標並啟動導引
+  void _startDynamicGuide() {
+    final guideRect = _getWidgetRect(_guideBtnKey);
+    final navRect = _getWidgetRect(_bottomNavKey);
+
+    final List<GuideStep> steps = [];
+
+    // 步驟 1：頂部使用指南
+    if (guideRect != null) {
+      steps.add(GuideStep(
+        title: '使用指南與設定',
+        desc: '點擊這裡可以隨時再次開啟這份按鍵使用導引說明。',
+        targetRect: guideRect,
+        isUpwards: false, // 向下展開說明文字
+      ));
+    }
+
+    // 步驟 2：底部導航列
+    if (navRect != null) {
+      steps.add(GuideStep(
+        title: '底部切換導航',
+        desc: '隨時在「首頁」、「行程安排」、「我的收藏」與「靈感搜尋」之間自由切換。',
+        targetRect: navRect,
+        isUpwards: true, // 向上展開說明文字，避免被切掉
+      ));
+    }
+
+    if (steps.isEmpty) return;
+
+    Navigator.of(context).push(
+      PageRouteBuilder(
+        opaque: false,
+        barrierDismissible: false,
+        pageBuilder: (context, _, __) => GuideOverlayScreen(steps: steps),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -39,7 +92,8 @@ class _MainPageState extends State<MainPage> {
         actions: [
           // 左側/右側：使用指南按鈕
           TextButton.icon(
-            onPressed: () => showUserGuide(context), // 呼叫指南疊層
+            key: _guideBtnKey, // 👈 綁定使用指南 Key
+            onPressed: _startDynamicGuide, // 👈 點擊呼叫動態導引
             icon: const Icon(
               Icons.menu_book_outlined,
               size: 20,
@@ -81,6 +135,7 @@ class _MainPageState extends State<MainPage> {
         children: _pages,
       ),
       bottomNavigationBar: Container(
+        key: _bottomNavKey, // 👈 綁定底部導航 Key
         decoration: const BoxDecoration(
           borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
           boxShadow: [
@@ -137,5 +192,3 @@ class _MainPageState extends State<MainPage> {
     );
   }
 }
-
-  
