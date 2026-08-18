@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'register_screen.dart';
+import '../theme/app_theme.dart'; // 引入色彩系統
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});

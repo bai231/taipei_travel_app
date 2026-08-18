@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme/app_theme.dart'; // 引入色彩系統
 
 class SearchPage extends StatefulWidget {
   const SearchPage({super.key});
@@ -37,7 +38,7 @@ class _SearchPageState extends State<SearchPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFD3E4DA), // 草圖的水綠色背景
+      backgroundColor: AppColors.primary, // 草圖的水綠色背景
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
