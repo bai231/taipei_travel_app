@@ -62,7 +62,7 @@ class _TripPageState extends State<TripPage> {
     });
   }
 
-  void _generateTrip() {
+  Future<void> _generateTrip() async {
     if (_startDate == null || _endDate == null) {
       ScaffoldMessenger.of(
         context,
@@ -79,29 +79,44 @@ class _TripPageState extends State<TripPage> {
       return;
     }
 
+    final budget = double.tryParse(_budgetController.text);
+    if (budget == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("請輸入有效的預算")));
+      return;
+    }
+
     final request = TripRequest(
       title: _tripNameController.text,
       startDate: _startDate!,
       endDate: _endDate!,
       location: _location,
       people: _people,
-      budget: double.parse(_budgetController.text),
+      budget: budget,
       preferences: _preferences,
       aiPrompt: _aiPromptController.text,
     );
 
-    Navigator.push(
-      context,
+    try {
+      final places = await _placeService.getPlaces();
 
-      MaterialPageRoute(
-        builder: (context) => TripPlannerPage(
-          request: request,
+      if (!mounted) return;
 
-          // 目前先把所有景點傳進去
-          places: _placeService.getPlaces(),
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) =>
+              TripPlannerPage(request: request, places: places),
         ),
-      ),
-    );
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("讀取景點失敗：$e")));
+    }
   }
 
   @override

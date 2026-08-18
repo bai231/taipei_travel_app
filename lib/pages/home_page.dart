@@ -5,21 +5,56 @@ import '../services/place_service.dart';
 import '../widgets/place_card.dart';
 import '../services/favorite_service.dart';
 
-class HomePage extends StatelessWidget {
+class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
+  @override
+  State<HomePage> createState() => _HomePageState();
+}
+
+class _HomePageState extends State<HomePage> {
+  final PlaceService placeService = PlaceService();
+
   final List<String> photoList = const [
-            'assets/test1.jpg',
-            'assets/test2.jpg',
-            'assets/test3.jpg',
-          ];
+    'assets/test1.jpg',
+    'assets/test2.jpg',
+    'assets/test3.jpg',
+  ];
+
+  List<Place> places = [];
+
+  bool isLoading = true;
+
+  String? errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    loadPlaces();
+  }
+
+  Future<void> loadPlaces() async {
+    try {
+      final result = await placeService.getPlaces();
+
+      if (!mounted) return;
+
+      setState(() {
+        places = result;
+        isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        errorMessage = e.toString();
+        isLoading = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final PlaceService placeService = PlaceService();
-
-    final List<Place> places = placeService.getPlaces();
-
     return Scaffold(
       appBar: AppBar(
         automaticallyImplyLeading: false,
@@ -27,7 +62,7 @@ class HomePage extends StatelessWidget {
         actions: [
           TextButton(
             onPressed: () {
-            // 之後接 LoginPage
+              // 之後接 LoginPage
             },
             child: const Text("登入"),
           ),
@@ -48,24 +83,24 @@ class HomePage extends StatelessWidget {
           SizedBox(
             height: 120,
             child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                itemCount: photoList.length, // 照片數量
-                separatorBuilder: (context, index) => const SizedBox(width: 12), // 自動產生中間間距
-                itemBuilder: (context, index) {
-                  return ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: Image.asset(
-                      photoList[index],
-                      width: 120,
-                      height: 120,
-                      fit: BoxFit.cover,
-                    ),
-                  );
-                },
-              ),
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              itemCount: photoList.length,
+              separatorBuilder: (context, index) => const SizedBox(width: 12),
+              itemBuilder: (context, index) {
+                return ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Image.asset(
+                    photoList[index],
+                    width: 120,
+                    height: 120,
+                    fit: BoxFit.cover,
+                  ),
+                );
+              },
+            ),
           ),
- 
+
           const Padding(
             padding: EdgeInsets.fromLTRB(16, 24, 16, 12),
             child: Text(
@@ -74,79 +109,86 @@ class HomePage extends StatelessWidget {
             ),
           ),
 
-          
+          if (isLoading)
+            const SizedBox(
+              height: 200,
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (errorMessage != null)
+            SizedBox(
+              height: 200,
+              child: Center(child: Text("讀取景點失敗：$errorMessage")),
+            )
+          else
+            SizedBox(
+              height: 200,
+              child: ListView.builder(
+                scrollDirection: Axis.horizontal,
+                itemCount: places.length,
+                itemBuilder: (context, index) {
+                  final place = places[index];
 
-          SizedBox(
-            height: 200, // PlaceCard 的高度，可自行調整
-            child: ListView.builder(
-              scrollDirection: Axis.horizontal,
-              itemCount: places.length,
+                  return Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: PlaceCard(
+                      place: place,
 
-              itemBuilder: (context, index) {
-                return Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: PlaceCard(
-                    place: places[index],
+                      onDetailPressed: () {
+                        print("詳細資訊：${place.name}");
+                      },
 
-                    onDetailPressed: () {
-                      print("詳細資訊：${places[index].name}");
-                    },
+                      onFavoritePressed: () async {
+                        final service = FavoriteService();
 
-                    onFavoritePressed: () async {
-                      final service = FavoriteService();
+                        bool success = service.addFavorite(place);
 
-                      bool success = service.addFavorite(places[index]);
-
-                      if (success) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text("${places[index].name} 已收藏")),
-                        );
-                      }
-                    },
-                  ),
-                );
-              },
-            ),
-          ),
-          const SizedBox(height: 24), // 區塊間距
-
-          Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // 1. 白色圓角「手動排程」按鈕
-                  ElevatedButton(
-                    onPressed: () {
-                      // 點擊手動排程按鈕後要執行的動作（例如跳轉到排程頁面）
-                      print("點擊了手動排程");
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.white,      // 白色背景
-                      foregroundColor: Colors.black,      // 黑色文字
-                      elevation: 2,                       // 微陰影
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(24), // 圓角外觀
-                      ),
+                        if (success && context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text("${place.name} 已收藏")),
+                          );
+                        }
+                      },
                     ),
-                    child: const Text(
-                      "手動排程",
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 16), // 按鈕與說明的間距
-
-                  
-                ],
+                  );
+                },
               ),
             ),
 
-            const SizedBox(height: 32), // 底部留白，避免被底部導覽列遮擋
+          const SizedBox(height: 24),
+
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ElevatedButton(
+                  onPressed: () {
+                    print("點擊了手動排程");
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    foregroundColor: Colors.black,
+                    elevation: 2,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 12,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(24),
+                    ),
+                  ),
+                  child: const Text(
+                    "手動排程",
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                ),
+
+                const SizedBox(height: 16),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 32),
         ],
       ),
     );
