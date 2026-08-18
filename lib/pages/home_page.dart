@@ -84,43 +84,6 @@ class HomePage extends StatelessWidget {
               },
             ),
           ),
-          const SizedBox(height: 16), // 區塊間距
-
-          Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // 1. 白色圓角「手動排程」按鈕
-                  ElevatedButton(
-                    onPressed: () {
-                      // 點擊手動排程按鈕後要執行的動作（例如跳轉到排程頁面）
-                      print("點擊了手動排程");
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.background,     // 白色背景
-                      foregroundColor: AppColors.textPrimary,      // 文字
-                      elevation: 2,                       // 微陰影
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(24), // 圓角外觀
-                      ),
-                    ),
-                    child: const Text(
-                      "手動排程",
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 16), // 按鈕與說明的間距
-                  
-                ],
-              ),
-            ),
-
             const SizedBox(height: 32), // 底部留白，避免被底部導覽列遮擋
         ],
       ),
