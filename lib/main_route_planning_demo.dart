@@ -41,10 +41,10 @@ class _RoutePlanningDemoLoaderState extends State<_RoutePlanningDemoLoader> {
     _load();
   }
 
-  void _load() {
+  Future<void> _load() async {
     final tomorrow = DateTime.now().add(const Duration(days: 1));
     final tripDate = DateTime(tomorrow.year, tomorrow.month, tomorrow.day);
-    final places = PlaceService().getPlaces().take(3).toList();
+    final places = (await PlaceService().getPlaces()).take(3).toList();
     _itinerary = ItineraryPlanningService().generate(
       request: TripRequest(
         title: '台北一日路線 Demo',

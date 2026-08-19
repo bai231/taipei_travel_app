@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme/app_theme.dart'; // 引入色彩系統
 
 class SearchPage extends StatefulWidget {
   const SearchPage({super.key});
@@ -37,37 +38,13 @@ class _SearchPageState extends State<SearchPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFD3E4DA), // 草圖的水綠色背景
+      backgroundColor: AppColors.primary, // 草圖的水綠色背景
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // 1. 頂部列：使用指南 & 登入
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  TextButton.icon(
-                    onPressed: () {},
-                    icon: const Icon(Icons.menu_book, color: Colors.black87, size: 20),
-                    label: const Text(
-                      "使用指南",
-                      style: TextStyle(color: Colors.black87, fontSize: 16, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                  TextButton(
-                    onPressed: () {},
-                    child: const Text(
-                      "登入",
-                      style: TextStyle(color: Colors.black87, fontSize: 16, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 12),
-
               // 2. 搜尋列 (草圖中的圓角搜尋框)
               Container(
                 decoration: BoxDecoration(
@@ -94,7 +71,7 @@ class _SearchPageState extends State<SearchPage> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   const Text(
-                    "熱門行程",
+                    "你可能會喜歡......",
                     style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.black87),
                   ),
                   InkWell(

@@ -26,6 +26,6 @@ class AppRoutes {
 
     profile: (context) => const ProfilePage(),
 
-    setting: (context) => const SettingPage(),
+    setting: (context) => const SettingsPage(),
   };
 }
