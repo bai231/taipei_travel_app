@@ -15,7 +15,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordController = TextEditingController();
 
   // ==========================================
-  // 🎨 顏色配置區（未來隨時在此更換主題色）
+  // 顏色設定
   // ==========================================
   static const Color backgroundColor = Color(0xFFB5D5C5); // 頁面底色
   static const Color textPrimaryColor = Color(0xFF2D5A46); // 主標題/Logo 深文字色

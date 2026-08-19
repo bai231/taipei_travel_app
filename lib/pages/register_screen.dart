@@ -73,7 +73,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
                 const Spacer(flex: 1),
 
-                // 2. 陪伴風格圓形 Logo
+                // 2. Logo 設計
                 Container(
                   width: 80,
                   height: 80,

@@ -15,7 +15,7 @@ class GuideStep {
   });
 }
 
-// 📍 2. 讓 GuideOverlayScreen 接收 steps 參數
+// 2. 讓 GuideOverlayScreen 接收 steps 參數
 class GuideOverlayScreen extends StatefulWidget {
   final List<GuideStep> steps;
   final VoidCallback? onFinish;
