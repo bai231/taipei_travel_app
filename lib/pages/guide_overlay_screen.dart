@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-// 📍 1. 定義 GuideStep 類別（放在檔案最上方）
+// 1. 定義 GuideStep 類別
 class GuideStep {
   final String title;
   final String desc;

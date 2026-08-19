@@ -12,6 +12,8 @@ import '../services/recommandation_service.dart';
 import '../services/trip_generator_service.dart';
 import '../services/place_service.dart';
 import '../pages/trip_result_page.dart';
+import '../models/trip_place_constraint.dart';
+import 'trip_planner_page.dart';
 
 class TripPage extends StatefulWidget {
   const TripPage({super.key});
@@ -60,7 +62,7 @@ class _TripPageState extends State<TripPage> {
     });
   }
 
-  void _generateTrip() {
+  Future<void> _generateTrip() async {
     if (_startDate == null || _endDate == null) {
       ScaffoldMessenger.of(
         context,
@@ -77,52 +79,44 @@ class _TripPageState extends State<TripPage> {
       return;
     }
 
+    final budget = double.tryParse(_budgetController.text);
+    if (budget == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("請輸入有效的預算")));
+      return;
+    }
+
     final request = TripRequest(
       title: _tripNameController.text,
       startDate: _startDate!,
       endDate: _endDate!,
       location: _location,
       people: _people,
-      budget: double.parse(_budgetController.text),
+      budget: budget,
       preferences: _preferences,
       aiPrompt: _aiPromptController.text,
     );
 
-    // 取得景點
-    final places = _placeService.getPlaces();
+    try {
+      final places = await _placeService.getPlaces();
 
-    // 計算推薦分數
-    final recommendedPlaces = _recommendService.recommend(places, request);
+      if (!mounted) return;
 
-    // 生成行程
-    final generatedTrip = _tripGeneratorService.generate(
-      recommendedPlaces,
-      request.days,
-    );
-
-    // 暫時印出結果
-    print("===== 推薦結果 =====");
-
-    for (final recommended in recommendedPlaces) {
-      print("${recommended.place.name} : ${recommended.score}");
-    }
-
-    print("===== 生成行程 =====");
-
-    for (final item in generatedTrip.items) {
-      print(
-        "Day ${item.day} "
-        "${item.place.name} "
-        "${item.startMinutes} - ${item.endMinutes}",
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) =>
+              TripPlannerPage(request: request, places: places),
+        ),
       );
-    }
+    } catch (e) {
+      if (!mounted) return;
 
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => TripResultPage(trip: generatedTrip),
-      ),
-    );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("讀取景點失敗：$e")));
+    }
   }
 
   @override

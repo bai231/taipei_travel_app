@@ -44,4 +44,24 @@ class Place {
     required this.openMinutes,
     required this.closeMinutes,
   });
+
+  factory Place.fromJson(Map<String, dynamic> json) {
+    return Place(
+      id: json['id'].toString(),
+      name: json['name'] ?? '',
+      category: json['category'] ?? '',
+      description: json['description'] ?? '',
+      address: json['address'] ?? '',
+      latitude: (json['latitude'] as num?)?.toDouble() ?? 0.0,
+      longitude: (json['longitude'] as num?)?.toDouble() ?? 0.0,
+      image: json['image'] ?? '',
+      stayTime: json['stay_time'] ?? 60,
+      rating: (json['rating'] as num?)?.toDouble() ?? 0.0,
+      tags: List<String>.from(json['tags'] ?? []),
+      priceLevel: json['price_level'] ?? 0,
+      estimatedCost: (json['estimated_cost'] as num?)?.toDouble() ?? 0.0,
+      openMinutes: json['open_minutes'] ?? 0,
+      closeMinutes: json['close_minutes'] ?? 1440,
+    );
+  }
 }
