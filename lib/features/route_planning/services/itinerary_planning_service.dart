@@ -145,16 +145,20 @@ class ItineraryPlanningService {
     final travelLegs = <TravelLeg>[];
     final warnings = <String>[];
     var previousStop = origin;
-    var departureMinutes = dayStartMinutes;
+    final minimumDepartureMinutes = _getDayStartMinutes(date);
+    var departureMinutes = minimumDepartureMinutes;
 
     for (var index = 0; index < orderedStops.length; index++) {
       final destination = orderedStops[index];
       final constraint = constraintsById[destination.id]!;
-      departureMinutes = _plannedDepartureMinutes(
-        availableDepartureMinutes: departureMinutes,
-        previousStop: previousStop,
-        destination: destination,
-        isFirstStop: index == 0,
+      departureMinutes = max(
+        minimumDepartureMinutes,
+        _plannedDepartureMinutes(
+          availableDepartureMinutes: departureMinutes,
+          previousStop: previousStop,
+          destination: destination,
+          isFirstStop: index == 0,
+        ),
       );
       onProgress?.call(
         '正在查詢 Day $day 第 ${index + 1}/${orderedStops.length} 段交通…',
@@ -206,7 +210,10 @@ class ItineraryPlanningService {
 
         if (shouldRetryEarlier) {
           final latenessMinutes = schedule.visitStartMinutes - fixedStart;
-          departureMinutes = max(0, departureMinutes - latenessMinutes - 5);
+          departureMinutes = max(
+            minimumDepartureMinutes,
+            departureMinutes - latenessMinutes - 5,
+          );
           onProgress?.call('首站可能遲到，正在重新查詢更早的 TDX 班次…');
         } else if (shouldRetryLater) {
           departureMinutes += schedule.waitingMinutes - 5;
@@ -280,6 +287,33 @@ class ItineraryPlanningService {
       isValid: warnings.isEmpty,
       warnings: warnings,
     );
+  }
+
+  // 計算當天的起始時間（分鐘），如果是今天且已經超過預設開始時間，則改成目前時間加一分鐘
+  int _getDayStartMinutes(DateTime date) {
+    final now = DateTime.now();
+
+    final isToday =
+        date.year == now.year && date.month == now.month && date.day == now.day;
+
+    // 不是今天，不論是過去或未來，都從預設時間開始
+    if (!isToday) {
+      return dayStartMinutes;
+    }
+
+    final plannedStart = DateTime(
+      date.year,
+      date.month,
+      date.day,
+    ).add(Duration(minutes: dayStartMinutes));
+
+    // 今天但還沒超過預設開始時間
+    if (!now.isAfter(plannedStart)) {
+      return dayStartMinutes;
+    }
+
+    // 今天已超過 09:00，改成目前時間加一分鐘
+    return now.hour * 60 + now.minute + 1;
   }
 
   //演算法入口

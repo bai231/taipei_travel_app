@@ -99,8 +99,16 @@ class TdxService implements TdxRoutingGateway {
       'first_mile_mode': '0',
       'last_mile_mode': '0',
     };
+
+    //過期時間自動改用現在時間
     if (departureTime != null) {
-      queryParameters['depart'] = _formatDepartureTime(departureTime);
+      final now = DateTime.now();
+
+      final queryTime = departureTime.isAfter(now)
+          ? departureTime
+          : now.add(const Duration(minutes: 1));
+
+      queryParameters['depart'] = _formatDepartureTime(queryTime);
     }
 
     final url = Uri.https(
@@ -126,7 +134,11 @@ class TdxService implements TdxRoutingGateway {
     }
 
     if (response.statusCode != 200) {
-      throw Exception('路線查詢失敗: ${response.statusCode}');
+      print('TDX URL: $url');
+      print('TDX status: ${response.statusCode}');
+      print('TDX response: ${response.body}');
+
+      throw Exception('路線查詢失敗: ${response.statusCode}\n${response.body}');
     }
 
     final json = jsonDecode(response.body);
