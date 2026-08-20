@@ -80,6 +80,7 @@ class _TripPageState extends State<TripPage> {
     }
 
     final budget = double.tryParse(_budgetController.text);
+
     if (budget == null) {
       ScaffoldMessenger.of(
         context,

@@ -282,6 +282,7 @@ class ItineraryPlanningService {
     );
   }
 
+  //演算法入口
   List<RouteStop> _orderStops(List<RouteStop> stops) {
     if (stops.length == 1) return List.of(stops);
     if (stops.length > 8) return _nearestNeighborOrder(stops);
