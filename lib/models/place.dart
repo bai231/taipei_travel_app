@@ -18,7 +18,7 @@ class Place {
   final List<String> tags;
 
   // 價格等級
-  final int priceLevel;
+  //final int priceLevel;
 
   // 預估花費（每人每次）
   final double estimatedCost;
@@ -39,7 +39,7 @@ class Place {
     required this.stayTime,
     required this.rating,
     required this.tags,
-    required this.priceLevel,
+    //required this.priceLevel,
     required this.estimatedCost,
     required this.openMinutes,
     required this.closeMinutes,
@@ -58,7 +58,7 @@ class Place {
       stayTime: json['stayTime'] ?? 60,
       rating: (json['rating'] as num?)?.toDouble() ?? 0.0,
       tags: List<String>.from(json['tags'] ?? []),
-      priceLevel: json['priceLevel'] ?? 0,
+      //priceLevel: json['priceLevel'] ?? 0,
       estimatedCost: (json['estimatedCost'] as num?)?.toDouble() ?? 0.0,
       openMinutes: json['openMinutes'] ?? 0,
       closeMinutes: json['closeMinutes'] ?? 1440,
