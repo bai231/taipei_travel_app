@@ -8,11 +8,7 @@ import '../widgets/trip/preference_chip_group.dart';
 import '../widgets/trip/ai_prompt_field.dart';
 import '../widgets/trip/next_step_button.dart';
 import '../models/trip_request.dart';
-import '../services/recommandation_service.dart';
-import '../services/trip_generator_service.dart';
 import '../services/place_service.dart';
-import '../pages/trip_result_page.dart';
-import '../models/trip_place_constraint.dart';
 import 'trip_planner_page.dart';
 
 class TripPage extends StatefulWidget {
@@ -23,8 +19,6 @@ class TripPage extends StatefulWidget {
 }
 
 class _TripPageState extends State<TripPage> {
-  final RecommendService _recommendService = RecommendService();
-  final TripGeneratorService _tripGeneratorService = TripGeneratorService();
   final PlaceService _placeService = PlaceService();
 
   final TextEditingController _tripNameController = TextEditingController();
@@ -99,9 +93,16 @@ class _TripPageState extends State<TripPage> {
     );
 
     try {
-      final places = await _placeService.getPlaces();
+      final places = await _placeService.getPlacesForTrip(location: _location);
 
       if (!mounted) return;
+
+      if (places.isEmpty) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('$_location 目前沒有具備有效座標的景點資料')));
+        return;
+      }
 
       Navigator.push(
         context,

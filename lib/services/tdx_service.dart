@@ -14,8 +14,12 @@ abstract interface class TdxRoutingGateway {
 class TdxService implements TdxRoutingGateway {
   final String clientId = 'clairelee20041020-1df10dd6-36e4-4dd8';
   final String clientSecret = '691da7f7-9311-4f4d-b777-9afb94dbb428';
+  final Duration minimumRequestInterval;
 
   String? _accessToken;
+  DateTime? _lastRoutingRequestAt;
+
+  TdxService({this.minimumRequestInterval = const Duration(seconds: 2)});
 
   Future<String> fetchAccessToken() async {
     if (_accessToken != null) return _accessToken!;
@@ -111,6 +115,7 @@ class TdxService implements TdxRoutingGateway {
 
     late http.Response response;
     for (var attempt = 0; attempt < 3; attempt++) {
+      await _waitForRoutingRequestSlot();
       response = await http.get(
         url,
         headers: {
@@ -118,6 +123,7 @@ class TdxService implements TdxRoutingGateway {
           'Accept': 'application/json',
         },
       );
+      _lastRoutingRequestAt = DateTime.now();
       if (response.statusCode != 429) break;
       final retryAfter = int.tryParse(response.headers['retry-after'] ?? '');
       await Future<void>.delayed(
@@ -126,7 +132,9 @@ class TdxService implements TdxRoutingGateway {
     }
 
     if (response.statusCode != 200) {
-      throw Exception('路線查詢失敗: ${response.statusCode}');
+      throw Exception(
+        '路線查詢失敗: ${response.statusCode}${_tdxErrorMessage(response)}',
+      );
     }
 
     final json = jsonDecode(response.body);
@@ -289,6 +297,30 @@ class TdxService implements TdxRoutingGateway {
         '${twoDigits(value.month)}-${twoDigits(value.day)}T'
         '${twoDigits(value.hour)}:${twoDigits(value.minute)}:'
         '${twoDigits(value.second)}';
+  }
+
+  Future<void> _waitForRoutingRequestSlot() async {
+    final lastRequestAt = _lastRoutingRequestAt;
+    if (lastRequestAt == null || minimumRequestInterval <= Duration.zero) {
+      return;
+    }
+    final remaining =
+        minimumRequestInterval - DateTime.now().difference(lastRequestAt);
+    if (remaining > Duration.zero) {
+      await Future<void>.delayed(remaining);
+    }
+  }
+
+  String _tdxErrorMessage(http.Response response) {
+    try {
+      final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+      final error = decoded['error'];
+      if (error is Map<String, dynamic>) {
+        final message = error['msg']?.toString().trim() ?? '';
+        if (message.isNotEmpty) return ' ($message)';
+      }
+    } catch (_) {}
+    return '';
   }
 }
 

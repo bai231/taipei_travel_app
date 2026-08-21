@@ -55,13 +55,13 @@ class Place {
       latitude: (json['latitude'] as num?)?.toDouble() ?? 0.0,
       longitude: (json['longitude'] as num?)?.toDouble() ?? 0.0,
       image: json['image'] ?? '',
-      stayTime: json['stay_time'] ?? 60,
+      stayTime: (json['stayTime'] as num?)?.toInt() ?? 60,
       rating: (json['rating'] as num?)?.toDouble() ?? 0.0,
       tags: List<String>.from(json['tags'] ?? []),
-      priceLevel: json['price_level'] ?? 0,
-      estimatedCost: (json['estimated_cost'] as num?)?.toDouble() ?? 0.0,
-      openMinutes: json['open_minutes'] ?? 0,
-      closeMinutes: json['close_minutes'] ?? 1440,
+      priceLevel: (json['priceLevel'] as num?)?.toInt() ?? 0,
+      estimatedCost: (json['estimatedCost'] as num?)?.toDouble() ?? 0.0,
+      openMinutes: (json['openMinutes'] as num?)?.toInt() ?? 0,
+      closeMinutes: (json['closeMinutes'] as num?)?.toInt() ?? 1440,
     );
   }
 }

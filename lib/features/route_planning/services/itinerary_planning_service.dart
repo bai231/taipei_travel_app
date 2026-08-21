@@ -27,6 +27,7 @@ class ItineraryPlanningService {
   final RouteStop origin;
   final int dayStartMinutes;
   final Duration requestInterval;
+  final DateTime Function() _now;
 
   ItineraryPlanningService({
     RouteOptimizer? optimizer,
@@ -35,14 +36,28 @@ class ItineraryPlanningService {
     this.origin = taipeiMainStation,
     this.dayStartMinutes = 9 * 60,
     this.requestInterval = const Duration(seconds: 2),
+    DateTime Function()? now,
   }) : _optimizer = optimizer ?? RouteOptimizer(),
-       _timedRouteService = timedRouteService ?? TimedTdxRouteService();
+       _timedRouteService = timedRouteService ?? TimedTdxRouteService(),
+       _now = now ?? DateTime.now;
 
   Future<RouteItinerary> generate({
     required TripRequest request,
     required List<RoutePlaceInput> places,
     void Function(String message)? onProgress,
   }) async {
+    final firstDeparture = DateTime(
+      request.startDate.year,
+      request.startDate.month,
+      request.startDate.day,
+    ).add(Duration(minutes: dayStartMinutes));
+    if (firstDeparture.isBefore(_now())) {
+      throw StateError(
+        'TDX 不支援查詢已經過去的出發時間。請將旅程開始日期改為明天之後，'
+        '或在當天 09:00 前產生行程。',
+      );
+    }
+
     final warnings = <String>[];
     final dayConstraints = _assignConstraintsToDays(
       request: request,

@@ -46,3 +46,6 @@ app.*.map.json
 
 # Local web credentials
 /web/maps_config.js
+
+# Local data backfill reports
+/tool/output/

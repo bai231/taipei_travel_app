@@ -11,6 +11,7 @@ void main() {
     final service = ItineraryPlanningService(
       timedRouteService: _FakeTimedTdxRouteService(),
       requestInterval: Duration.zero,
+      now: _beforeTrip,
     );
 
     final itinerary = await service.generate(
@@ -31,6 +32,7 @@ void main() {
     final service = ItineraryPlanningService(
       timedRouteService: fakeTdx,
       requestInterval: Duration.zero,
+      now: _beforeTrip,
     );
 
     final itinerary = await service.generate(
@@ -64,6 +66,7 @@ void main() {
     final service = ItineraryPlanningService(
       timedRouteService: fakeTdx,
       requestInterval: Duration.zero,
+      now: _beforeTrip,
     );
 
     final itinerary = await service.generate(
@@ -94,6 +97,7 @@ void main() {
     final service = ItineraryPlanningService(
       timedRouteService: fakeTdx,
       requestInterval: Duration.zero,
+      now: _beforeTrip,
     );
 
     final itinerary = await service.generate(
@@ -118,7 +122,35 @@ void main() {
     expect(secondVisit.waitingMinutes, lessThanOrEqualTo(15));
     expect(secondVisit.startMinutes, greaterThanOrEqualTo(18 * 60));
   });
+
+  test('旅程出發時間已經過去時不發送 TDX 查詢', () async {
+    final fakeTdx = _FakeTimedTdxRouteService();
+    final service = ItineraryPlanningService(
+      timedRouteService: fakeTdx,
+      requestInterval: Duration.zero,
+      now: () => DateTime(2026, 8, 20, 22),
+    );
+
+    expect(
+      () => service.generate(
+        request: _request(days: 1),
+        places: [
+          RoutePlaceInput(place: _place('past', stayMinutes: 60), day: 1),
+        ],
+      ),
+      throwsA(
+        isA<StateError>().having(
+          (error) => error.message,
+          'message',
+          contains('TDX 不支援查詢已經過去的出發時間'),
+        ),
+      ),
+    );
+    expect(fakeTdx.requestedDepartures, isEmpty);
+  });
 }
+
+DateTime _beforeTrip() => DateTime(2026, 8, 19);
 
 class _FakeTimedTdxRouteService extends TimedTdxRouteService {
   final List<DateTime> requestedDepartures = [];

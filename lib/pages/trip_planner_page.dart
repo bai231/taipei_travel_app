@@ -6,6 +6,7 @@ import '../models/trip_place_constraint.dart';
 import '../features/route_planning/models/route_place_input.dart';
 import '../features/route_planning/pages/itinerary_result_page.dart';
 import '../features/route_planning/services/itinerary_planning_service.dart';
+import '../services/place_service.dart';
 
 class TripPlannerPage extends StatefulWidget {
   final TripRequest request;
@@ -741,6 +742,29 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('請至少加入一個景點')));
+      return;
+    }
+
+    final invalidPlaces = _selectedPlaces
+        .where(
+          (constraint) =>
+              !PlaceService.isInLocation(
+                place: constraint.place,
+                location: widget.request.location,
+              ) ||
+              !PlaceService.hasUsableCoordinates(constraint.place),
+        )
+        .map((constraint) => constraint.place.name)
+        .toList();
+    if (invalidPlaces.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '以下景點不屬於 ${widget.request.location} 或缺少有效座標：'
+            '${invalidPlaces.join('、')}。請移除後重新產生行程。',
+          ),
+        ),
+      );
       return;
     }
 
