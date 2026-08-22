@@ -85,6 +85,9 @@ class MapService {
     if (vehicleType.contains('SUBWAY') || vehicleType.contains('METRO')) {
       return const Color(0xFF1565C0);
     }
+    if (vehicleType.contains('HIGH_SPEED')) {
+      return const Color(0xFFC2185B);
+    }
     if (vehicleType.contains('RAIL') || vehicleType.contains('TRAIN')) {
       return const Color(0xFF7B1FA2);
     }

@@ -22,19 +22,31 @@ void main() {
           RouteGeometryPoint(latitude: 25.0570, longitude: 121.5300),
         ],
       ),
+      RouteGeometrySegment(
+        travelMode: 'TRANSIT',
+        vehicleType: 'HIGH_SPEED_TRAIN',
+        points: const [
+          RouteGeometryPoint(latitude: 25.0570, longitude: 121.5300),
+          RouteGeometryPoint(latitude: 22.6877, longitude: 120.3090),
+        ],
+      ),
     ]);
 
-    expect(polylines, hasLength(2));
+    expect(polylines, hasLength(3));
     final walking = polylines.firstWhere(
       (polyline) => polyline.polylineId.value == 'trip-route-0',
     );
     final bus = polylines.firstWhere(
       (polyline) => polyline.polylineId.value == 'trip-route-1',
     );
+    final highSpeedRail = polylines.firstWhere(
+      (polyline) => polyline.polylineId.value == 'trip-route-2',
+    );
     expect(walking.points, hasLength(2));
     expect(walking.patterns, isNotEmpty);
     expect(bus.points, hasLength(3));
     expect(bus.patterns, isEmpty);
     expect(bus.color.toARGB32(), 0xFFF57C00);
+    expect(highSpeedRail.color.toARGB32(), 0xFFC2185B);
   });
 }

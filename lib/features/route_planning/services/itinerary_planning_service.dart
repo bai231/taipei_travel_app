@@ -1,16 +1,34 @@
 import 'dart:math';
 
 import '../../../algorithm/route_optimizer.dart';
+import '../../../models/place.dart';
 import '../../../models/scheduled_visit.dart';
 import '../../../models/trip_request.dart';
 import '../../../models/tdx_route.dart';
 import '../../../services/itinerary_schedule_service.dart';
+import '../../../services/tdx_service.dart';
 import '../../../services/timed_tdx_route_service.dart';
 import '../models/route_day.dart';
 import '../models/route_itinerary.dart';
 import '../models/route_place_input.dart';
 import '../models/route_visit.dart';
 import '../models/travel_leg.dart';
+
+class ItineraryPlanningControl {
+  bool _useEstimatesForRemainingRoutes = false;
+
+  bool get useEstimatesForRemainingRoutes => _useEstimatesForRemainingRoutes;
+
+  void useEstimates() {
+    _useEstimatesForRemainingRoutes = true;
+  }
+}
+
+class _RateLimitRetryBudget {
+  int remainingWaits;
+
+  _RateLimitRetryBudget(this.remainingWaits);
+}
 
 class ItineraryPlanningService {
   static const taipeiMainStation = RouteStop(
@@ -28,6 +46,8 @@ class ItineraryPlanningService {
   final int dayStartMinutes;
   final Duration requestInterval;
   final DateTime Function() _now;
+  final Future<void> Function(Duration duration) _delay;
+  final int maximumRateLimitWaits;
 
   ItineraryPlanningService({
     RouteOptimizer? optimizer,
@@ -36,16 +56,23 @@ class ItineraryPlanningService {
     this.origin = taipeiMainStation,
     this.dayStartMinutes = 9 * 60,
     this.requestInterval = const Duration(seconds: 2),
+    this.maximumRateLimitWaits = 2,
     DateTime Function()? now,
+    Future<void> Function(Duration duration)? delay,
   }) : _optimizer = optimizer ?? RouteOptimizer(),
        _timedRouteService = timedRouteService ?? TimedTdxRouteService(),
-       _now = now ?? DateTime.now;
+       _now = now ?? DateTime.now,
+       _delay = delay ?? Future<void>.delayed;
 
   Future<RouteItinerary> generate({
     required TripRequest request,
     required List<RoutePlaceInput> places,
     void Function(String message)? onProgress,
+    void Function(Duration? remaining)? onRateLimitWait,
+    ItineraryPlanningControl? control,
   }) async {
+    final activeControl = control ?? ItineraryPlanningControl();
+    final retryBudget = _RateLimitRetryBudget(maximumRateLimitWaits);
     final firstDeparture = DateTime(
       request.startDate.year,
       request.startDate.month,
@@ -65,6 +92,7 @@ class ItineraryPlanningService {
       warnings: warnings,
     );
     final days = <RouteDay>[];
+    var dayOrigin = origin;
 
     for (var dayIndex = 0; dayIndex < request.days; dayIndex++) {
       final dayNumber = dayIndex + 1;
@@ -74,14 +102,20 @@ class ItineraryPlanningService {
         request.startDate.month,
         request.startDate.day + dayIndex,
       );
-      days.add(
-        await _generateDay(
-          day: dayNumber,
-          date: date,
-          constraints: dayConstraints[dayIndex],
-          onProgress: onProgress,
-        ),
+      final routeDay = await _generateDay(
+        day: dayNumber,
+        date: date,
+        dayOrigin: dayOrigin,
+        constraints: dayConstraints[dayIndex],
+        onProgress: onProgress,
+        onRateLimitWait: onRateLimitWait,
+        control: activeControl,
+        retryBudget: retryBudget,
       );
+      days.add(routeDay);
+      if (routeDay.visits.isNotEmpty) {
+        dayOrigin = _nextDayOrigin(routeDay.visits.last.place);
+      }
     }
 
     onProgress?.call('行程安排完成');
@@ -122,14 +156,9 @@ class ItineraryPlanningService {
       }
     }
 
-    for (final constraint in unassigned) {
-      final target = buckets.reduce(
-        (first, second) => _totalStayMinutes(first) <= _totalStayMinutes(second)
-            ? first
-            : second,
-      );
-      target.add(constraint);
-    }
+    final orderedUnassigned = _orderInputsByDistance(unassigned);
+    final geographicGroups = _splitByGeography(orderedUnassigned, request.days);
+    _mergeGeographicGroups(buckets, geographicGroups);
 
     return buckets;
   }
@@ -137,14 +166,18 @@ class ItineraryPlanningService {
   Future<RouteDay> _generateDay({
     required int day,
     required DateTime date,
+    required RouteStop dayOrigin,
     required List<RoutePlaceInput> constraints,
     void Function(String message)? onProgress,
+    void Function(Duration? remaining)? onRateLimitWait,
+    required ItineraryPlanningControl control,
+    required _RateLimitRetryBudget retryBudget,
   }) async {
     if (constraints.isEmpty) {
       return RouteDay(
         day: day,
         date: date,
-        origin: origin,
+        origin: dayOrigin,
         visits: const [],
         travelLegs: const [],
         isValid: true,
@@ -155,11 +188,11 @@ class ItineraryPlanningService {
       for (final constraint in constraints) constraint.place.id: constraint,
     };
     final stops = constraints.map(_toRouteStop).toList();
-    final orderedStops = _orderStops(stops);
+    final orderedStops = _orderStops(stops, dayOrigin);
     final visits = <RouteVisit>[];
     final travelLegs = <TravelLeg>[];
     final warnings = <String>[];
-    var previousStop = origin;
+    var previousStop = dayOrigin;
     var departureMinutes = dayStartMinutes;
 
     for (var index = 0; index < orderedStops.length; index++) {
@@ -179,23 +212,53 @@ class ItineraryPlanningService {
       TdxRoute? route;
       String? errorMessage;
       var routeAdjustmentCount = 0;
+      var rateLimitRetriesForLeg = 0;
 
       while (true) {
         requestedDeparture = date.add(Duration(minutes: departureMinutes));
         route = null;
         errorMessage = null;
 
-        try {
-          route = await _timedRouteService.getRouteAtOrAfter(
-            origin: '${previousStop.latitude},${previousStop.longitude}',
-            destination: '${destination.latitude},${destination.longitude}',
-            requestedDeparture: requestedDeparture,
-          );
-          if (route == null) {
-            errorMessage = 'TDX 沒有提供指定時間後的可用路線，已使用估計時間。';
+        if (control.useEstimatesForRemainingRoutes) {
+          errorMessage = '已取消等待，後續路段使用估計時間。';
+        } else {
+          while (true) {
+            try {
+              route = await _timedRouteService.getRouteAtOrAfter(
+                origin: '${previousStop.latitude},${previousStop.longitude}',
+                destination: '${destination.latitude},${destination.longitude}',
+                requestedDeparture: requestedDeparture,
+              );
+              if (route == null) {
+                errorMessage = 'TDX 沒有提供指定時間後的可用路線，已使用估計時間。';
+              }
+              break;
+            } on TdxRateLimitException catch (error) {
+              final canRetry =
+                  rateLimitRetriesForLeg < 1 && retryBudget.remainingWaits > 0;
+              if (!canRetry) {
+                errorMessage = 'TDX 仍在查詢冷卻中，已使用估計時間。';
+                break;
+              }
+
+              rateLimitRetriesForLeg++;
+              retryBudget.remainingWaits--;
+              final shouldContinue = await _waitForRateLimit(
+                retryAfter: error.retryAfter,
+                control: control,
+                onProgress: onProgress,
+                onRateLimitWait: onRateLimitWait,
+              );
+              if (!shouldContinue) {
+                errorMessage = '已取消等待，後續路段使用估計時間。';
+                break;
+              }
+              onProgress?.call('TDX 冷卻結束，正在重新查詢目前路段…');
+            } catch (error) {
+              errorMessage = 'TDX 路線查詢失敗，已使用估計時間：$error';
+              break;
+            }
           }
-        } catch (error) {
-          errorMessage = 'TDX 路線查詢失敗，已使用估計時間：$error';
         }
 
         final travelMinutes = route == null
@@ -212,12 +275,15 @@ class ItineraryPlanningService {
 
         final fixedStart = constraint.locked ? constraint.startMinutes : null;
         final shouldRetryEarlier =
+            route != null &&
             index == 0 &&
             fixedStart != null &&
             schedule.visitStartMinutes > fixedStart &&
             routeAdjustmentCount < 2;
         final shouldRetryLater =
-            schedule.waitingMinutes > 15 && routeAdjustmentCount < 2;
+            route != null &&
+            schedule.waitingMinutes > 15 &&
+            routeAdjustmentCount < 2;
 
         if (shouldRetryEarlier) {
           final latenessMinutes = schedule.visitStartMinutes - fixedStart;
@@ -289,7 +355,7 @@ class ItineraryPlanningService {
     return RouteDay(
       day: day,
       date: date,
-      origin: origin,
+      origin: dayOrigin,
       visits: visits,
       travelLegs: travelLegs,
       isValid: warnings.isEmpty,
@@ -297,9 +363,36 @@ class ItineraryPlanningService {
     );
   }
 
-  List<RouteStop> _orderStops(List<RouteStop> stops) {
+  Future<bool> _waitForRateLimit({
+    required Duration retryAfter,
+    required ItineraryPlanningControl control,
+    void Function(String message)? onProgress,
+    void Function(Duration? remaining)? onRateLimitWait,
+  }) async {
+    final totalSeconds = max(1, retryAfter.inSeconds);
+    try {
+      for (
+        var remainingSeconds = totalSeconds;
+        remainingSeconds > 0;
+        remainingSeconds--
+      ) {
+        if (control.useEstimatesForRemainingRoutes) return false;
+        final remaining = Duration(seconds: remainingSeconds);
+        onRateLimitWait?.call(remaining);
+        onProgress?.call('TDX 冷卻中，$remainingSeconds 秒後自動繼續…');
+        await _delay(const Duration(seconds: 1));
+      }
+      return !control.useEstimatesForRemainingRoutes;
+    } finally {
+      onRateLimitWait?.call(null);
+    }
+  }
+
+  List<RouteStop> _orderStops(List<RouteStop> stops, RouteStop routeOrigin) {
     if (stops.length == 1) return List.of(stops);
-    if (stops.length > 8) return _nearestNeighborOrder(stops);
+    if (stops.length > 8) {
+      return _nearestNeighborOrder(stops, routeOrigin);
+    }
 
     final matrix = List.generate(
       stops.length,
@@ -314,19 +407,19 @@ class ItineraryPlanningService {
       ),
     );
     final travelTimesFromOrigin = stops
-        .map((stop) => _estimatedTravelMinutes(origin, stop).toDouble())
+        .map((stop) => _estimatedTravelMinutes(routeOrigin, stop).toDouble())
         .toList();
     return _optimizer
         .optimizeRoute(
           stopsToVisit: stops,
           durationMatrix: matrix,
-          startTimeMinutes: _optimizationStartMinutes(stops),
+          startTimeMinutes: _optimizationStartMinutes(stops, routeOrigin),
           travelTimesFromStart: travelTimesFromOrigin,
         )
         .sortedStops;
   }
 
-  int _optimizationStartMinutes(List<RouteStop> stops) {
+  int _optimizationStartMinutes(List<RouteStop> stops, RouteStop routeOrigin) {
     var startMinutes = dayStartMinutes;
     for (final stop in stops) {
       final fixedStart = stop.earliestTimeMinutes == stop.latestTimeMinutes
@@ -335,7 +428,7 @@ class ItineraryPlanningService {
       if (fixedStart == null) continue;
       startMinutes = min(
         startMinutes,
-        fixedStart - _estimatedTravelMinutes(origin, stop) - 5,
+        fixedStart - _estimatedTravelMinutes(routeOrigin, stop) - 5,
       );
     }
     return max(0, startMinutes);
@@ -359,10 +452,13 @@ class ItineraryPlanningService {
     return max(availableDepartureMinutes, desiredDeparture);
   }
 
-  List<RouteStop> _nearestNeighborOrder(List<RouteStop> stops) {
+  List<RouteStop> _nearestNeighborOrder(
+    List<RouteStop> stops,
+    RouteStop routeOrigin,
+  ) {
     final remaining = List<RouteStop>.of(stops);
     final ordered = <RouteStop>[];
-    var current = origin;
+    var current = routeOrigin;
     while (remaining.isNotEmpty) {
       remaining.sort(
         (first, second) => _estimatedTravelMinutes(
@@ -374,6 +470,124 @@ class ItineraryPlanningService {
       ordered.add(current);
     }
     return ordered;
+  }
+
+  List<RoutePlaceInput> _orderInputsByDistance(List<RoutePlaceInput> inputs) {
+    final remaining = List<RoutePlaceInput>.of(inputs);
+    final ordered = <RoutePlaceInput>[];
+    var current = origin;
+    while (remaining.isNotEmpty) {
+      remaining.sort((first, second) {
+        final firstStop = _toRouteStop(first);
+        final secondStop = _toRouteStop(second);
+        return _estimatedTravelMinutes(
+          current,
+          firstStop,
+        ).compareTo(_estimatedTravelMinutes(current, secondStop));
+      });
+      final next = remaining.removeAt(0);
+      ordered.add(next);
+      current = _toRouteStop(next);
+    }
+    return ordered;
+  }
+
+  List<List<RoutePlaceInput>> _splitByGeography(
+    List<RoutePlaceInput> orderedInputs,
+    int dayCount,
+  ) {
+    final groups = List.generate(dayCount, (_) => <RoutePlaceInput>[]);
+    if (orderedInputs.isEmpty || dayCount == 0) return groups;
+    if (dayCount == 1) {
+      groups.first.addAll(orderedInputs);
+      return groups;
+    }
+
+    final splitCount = min(dayCount - 1, orderedInputs.length - 1);
+    final boundaries = <int>{};
+    final gaps = <({int boundary, double distance})>[];
+    for (var index = 1; index < orderedInputs.length; index++) {
+      final previous = orderedInputs[index - 1].place;
+      final current = orderedInputs[index].place;
+      gaps.add((
+        boundary: index,
+        distance: _distanceInKilometers(
+          previous.latitude,
+          previous.longitude,
+          current.latitude,
+          current.longitude,
+        ),
+      ));
+    }
+
+    gaps.sort((first, second) => second.distance.compareTo(first.distance));
+    for (final gap in gaps) {
+      if (boundaries.length >= splitCount || gap.distance < 40) break;
+      boundaries.add(gap.boundary);
+    }
+
+    for (var part = 1; boundaries.length < splitCount; part++) {
+      final idealBoundary = (orderedInputs.length * part / dayCount).round();
+      final candidates = List.generate(
+        orderedInputs.length - 1,
+        (index) => index + 1,
+      ).where((boundary) => !boundaries.contains(boundary)).toList();
+      if (candidates.isEmpty) break;
+      candidates.sort((first, second) {
+        final firstDistance = (first - idealBoundary).abs();
+        final secondDistance = (second - idealBoundary).abs();
+        return firstDistance.compareTo(secondDistance);
+      });
+      boundaries.add(candidates.first);
+    }
+
+    final orderedBoundaries = boundaries.toList()..sort();
+    var start = 0;
+    for (var groupIndex = 0; groupIndex < dayCount; groupIndex++) {
+      final end = groupIndex < orderedBoundaries.length
+          ? orderedBoundaries[groupIndex]
+          : orderedInputs.length;
+      if (start < end) {
+        groups[groupIndex].addAll(orderedInputs.sublist(start, end));
+      }
+      start = end;
+    }
+    return groups;
+  }
+
+  void _mergeGeographicGroups(
+    List<List<RoutePlaceInput>> buckets,
+    List<List<RoutePlaceInput>> geographicGroups,
+  ) {
+    final groups = geographicGroups.where((group) => group.isNotEmpty).toList();
+    var firstAvailableDay = 0;
+    for (var groupIndex = 0; groupIndex < groups.length; groupIndex++) {
+      final remainingGroups = groups.length - groupIndex;
+      final lastAvailableDay = buckets.length - remainingGroups;
+      var targetDay = firstAvailableDay;
+      for (
+        var dayIndex = firstAvailableDay + 1;
+        dayIndex <= lastAvailableDay;
+        dayIndex++
+      ) {
+        if (_totalStayMinutes(buckets[dayIndex]) <
+            _totalStayMinutes(buckets[targetDay])) {
+          targetDay = dayIndex;
+        }
+      }
+      buckets[targetDay].addAll(groups[groupIndex]);
+      firstAvailableDay = targetDay + 1;
+    }
+  }
+
+  RouteStop _nextDayOrigin(Place place) {
+    return RouteStop(
+      id: place.id,
+      name: place.name,
+      latitude: place.latitude,
+      longitude: place.longitude,
+      stayDurationMinutes: 0,
+    );
   }
 
   RouteStop _toRouteStop(RoutePlaceInput constraint) {
@@ -397,7 +611,13 @@ class ItineraryPlanningService {
       to.latitude,
       to.longitude,
     );
-    return max(1, (8 + distance / 18 * 60).ceil());
+    if (distance <= 20) {
+      return max(1, (8 + distance / 18 * 60).ceil());
+    }
+    if (distance <= 80) {
+      return max(1, (20 + distance / 35 * 60).ceil());
+    }
+    return max(1, (45 + distance / 90 * 60).ceil());
   }
 
   double _distanceInKilometers(

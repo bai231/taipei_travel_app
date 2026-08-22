@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 import 'package:http/http.dart' as http;
 import '../models/tdx_route.dart';
+import 'tdx_route_ranker.dart';
 
 abstract interface class TdxRoutingGateway {
   Future<List<TdxRoute>> getRoutingOptions({
@@ -11,15 +13,33 @@ abstract interface class TdxRoutingGateway {
   });
 }
 
+class TdxRateLimitException implements Exception {
+  final Duration retryAfter;
+
+  const TdxRateLimitException({this.retryAfter = const Duration(minutes: 1)});
+
+  @override
+  String toString() => 'TDX 請求過於頻繁，請稍後再試。';
+}
+
 class TdxService implements TdxRoutingGateway {
+  static const int maximumRoutingOptions = 10;
+  static const String walkingMileMode = '0';
+  static const String maximumWalkingMileMinutes = '40';
+
   final String clientId = 'clairelee20041020-1df10dd6-36e4-4dd8';
   final String clientSecret = '691da7f7-9311-4f4d-b777-9afb94dbb428';
   final Duration minimumRequestInterval;
+  final TdxRouteRanker routeRanker;
 
   String? _accessToken;
-  DateTime? _lastRoutingRequestAt;
+  static Future<void> _globalRoutingQueue = Future<void>.value();
+  static DateTime? _globalLastRoutingRequestAt;
 
-  TdxService({this.minimumRequestInterval = const Duration(seconds: 2)});
+  TdxService({
+    this.minimumRequestInterval = const Duration(seconds: 2),
+    this.routeRanker = const TdxRouteRanker(),
+  });
 
   Future<String> fetchAccessToken() async {
     if (_accessToken != null) return _accessToken!;
@@ -97,11 +117,13 @@ class TdxService implements TdxRoutingGateway {
     final queryParameters = <String, String>{
       'origin': origin,
       'destination': destination,
-      'top': '10',
+      'top': '$maximumRoutingOptions',
       'gc': '0.5',
       'transit': '3,4,5,6,7,8,9',
-      'first_mile_mode': '0',
-      'last_mile_mode': '0',
+      'first_mile_mode': walkingMileMode,
+      'first_mile_time': maximumWalkingMileMinutes,
+      'last_mile_mode': walkingMileMode,
+      'last_mile_time': maximumWalkingMileMinutes,
     };
     if (departureTime != null) {
       queryParameters['depart'] = _formatDepartureTime(departureTime);
@@ -113,21 +135,21 @@ class TdxService implements TdxRoutingGateway {
       queryParameters,
     );
 
-    late http.Response response;
-    for (var attempt = 0; attempt < 3; attempt++) {
-      await _waitForRoutingRequestSlot();
-      response = await http.get(
+    final response = await _enqueueRoutingRequest(
+      () => http.get(
         url,
         headers: {
           'Authorization': 'Bearer $token',
           'Accept': 'application/json',
         },
-      );
-      _lastRoutingRequestAt = DateTime.now();
-      if (response.statusCode != 429) break;
-      final retryAfter = int.tryParse(response.headers['retry-after'] ?? '');
-      await Future<void>.delayed(
-        Duration(seconds: retryAfter ?? (5 * (attempt + 1))),
+      ),
+    );
+
+    if (response.statusCode == 429) {
+      final retryAfterSeconds =
+          int.tryParse(response.headers['retry-after'] ?? '') ?? 60;
+      throw TdxRateLimitException(
+        retryAfter: Duration(seconds: max(1, retryAfterSeconds)),
       );
     }
 
@@ -140,8 +162,7 @@ class TdxService implements TdxRoutingGateway {
     final json = jsonDecode(response.body);
     List routesJson = json['data']?['routes'] ?? [];
 
-    List<_ScoredRoute> candidates = [];
-    Set<String> seenPatterns = {};
+    final candidates = <TdxRoute>[];
 
     for (var routeItem in routesJson) {
       try {
@@ -216,79 +237,12 @@ class TdxService implements TdxRoutingGateway {
 
         TdxRoute route = TdxRoute.fromJson(routeItem);
 
-        String pattern = route.sections
-            .where((s) => !_isWalkMode(s.mode))
-            .map((s) => s.lineName ?? s.mode)
-            .join(' -> ');
-        if (pattern.isEmpty) pattern = 'WALK_ONLY';
-        if (seenPatterns.contains(pattern)) continue;
-        seenPatterns.add(pattern);
-
-        final walkSections = route.sections.where((s) => _isWalkMode(s.mode));
-        int totalWalkSec = walkSections.fold(0, (sum, s) => sum + s.travelTime);
-        int maxWalkSec = walkSections.fold(
-          0,
-          (maxV, s) => s.travelTime > maxV ? s.travelTime : maxV,
-        );
-
-        candidates.add(
-          _ScoredRoute(
-            route: route,
-            totalWalkSec: totalWalkSec,
-            maxWalkSec: maxWalkSec,
-            transfers: route.transfers,
-            isPureWalk: pattern == 'WALK_ONLY',
-          ),
-        );
+        candidates.add(route);
       } catch (_) {}
     }
 
     if (candidates.isEmpty) return [];
-
-    final stages = [
-      _RelaxStage(maxSingleWalkSec: 15 * 60, maxTransfers: 1),
-      _RelaxStage(maxSingleWalkSec: 15 * 60, maxTransfers: 3),
-      _RelaxStage(maxSingleWalkSec: 25 * 60, maxTransfers: 3),
-      _RelaxStage(maxSingleWalkSec: 40 * 60, maxTransfers: 5),
-      _RelaxStage(maxSingleWalkSec: 1 << 30, maxTransfers: 1 << 30),
-    ];
-
-    List<_ScoredRoute> picked = [];
-    final Set<TdxRoute> pickedRoutes = {};
-
-    for (final stage in stages) {
-      final stageMatches =
-          candidates
-              .where(
-                (c) =>
-                    !pickedRoutes.contains(c.route) &&
-                    !c.isPureWalk &&
-                    c.maxWalkSec <= stage.maxSingleWalkSec &&
-                    c.transfers <= stage.maxTransfers,
-              )
-              .toList()
-            ..sort((a, b) {
-              int walkCompare = a.totalWalkSec.compareTo(b.totalWalkSec);
-              if (walkCompare != 0) return walkCompare;
-              return a.transfers.compareTo(b.transfers);
-            });
-
-      for (final c in stageMatches) {
-        if (picked.length >= 10) break;
-        picked.add(c);
-        pickedRoutes.add(c.route);
-      }
-
-      if (picked.length >= 5) break;
-    }
-
-    if (picked.isEmpty) {
-      final walkOnly = candidates.where((c) => c.isPureWalk).toList()
-        ..sort((a, b) => a.totalWalkSec.compareTo(b.totalWalkSec));
-      picked.addAll(walkOnly.take(5));
-    }
-
-    return picked.take(10).map((candidate) => candidate.route).toList();
+    return routeRanker.rank(candidates, limit: maximumRoutingOptions);
   }
 
   String _formatDepartureTime(DateTime value) {
@@ -300,7 +254,7 @@ class TdxService implements TdxRoutingGateway {
   }
 
   Future<void> _waitForRoutingRequestSlot() async {
-    final lastRequestAt = _lastRoutingRequestAt;
+    final lastRequestAt = _globalLastRoutingRequestAt;
     if (lastRequestAt == null || minimumRequestInterval <= Duration.zero) {
       return;
     }
@@ -308,6 +262,21 @@ class TdxService implements TdxRoutingGateway {
         minimumRequestInterval - DateTime.now().difference(lastRequestAt);
     if (remaining > Duration.zero) {
       await Future<void>.delayed(remaining);
+    }
+  }
+
+  Future<T> _enqueueRoutingRequest<T>(Future<T> Function() request) async {
+    final previousRequest = _globalRoutingQueue;
+    final releaseQueue = Completer<void>();
+    _globalRoutingQueue = releaseQueue.future;
+
+    await previousRequest;
+    try {
+      await _waitForRoutingRequestSlot();
+      return await request();
+    } finally {
+      _globalLastRoutingRequestAt = DateTime.now();
+      releaseQueue.complete();
     }
   }
 
@@ -322,27 +291,4 @@ class TdxService implements TdxRoutingGateway {
     } catch (_) {}
     return '';
   }
-}
-
-class _ScoredRoute {
-  final TdxRoute route;
-  final int totalWalkSec;
-  final int maxWalkSec;
-  final int transfers;
-  final bool isPureWalk;
-
-  _ScoredRoute({
-    required this.route,
-    required this.totalWalkSec,
-    required this.maxWalkSec,
-    required this.transfers,
-    required this.isPureWalk,
-  });
-}
-
-class _RelaxStage {
-  final int maxSingleWalkSec;
-  final int maxTransfers;
-
-  _RelaxStage({required this.maxSingleWalkSec, required this.maxTransfers});
 }

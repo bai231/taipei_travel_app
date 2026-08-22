@@ -22,13 +22,18 @@ class _TravelLegCardState extends State<TravelLegCard> {
   Widget build(BuildContext context) {
     final leg = widget.leg;
     final route = leg.route;
+    final colorScheme = Theme.of(context).colorScheme;
+    final usesEstimate = route == null;
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 6),
-      color: route == null
-          ? Theme.of(context).colorScheme.errorContainer
-          : Theme.of(context).colorScheme.surfaceContainerLow,
+      color: usesEstimate
+          ? colorScheme.secondaryContainer
+          : colorScheme.surfaceContainerLow,
       child: ExpansionTile(
-        leading: Icon(route == null ? Icons.warning_amber : Icons.directions),
+        leading: Icon(
+          usesEstimate ? Icons.info_outline : Icons.directions,
+          color: usesEstimate ? colorScheme.onSecondaryContainer : null,
+        ),
         title: Text('${leg.origin.name} → ${leg.destination.name}'),
         subtitle: Text(_summary()),
         childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
@@ -38,7 +43,7 @@ class _TravelLegCardState extends State<TravelLegCard> {
               alignment: Alignment.centerLeft,
               child: Text(
                 leg.errorMessage!,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
+                style: TextStyle(color: colorScheme.onSecondaryContainer),
               ),
             ),
           if (route != null && route.sections.isEmpty)
@@ -163,7 +168,17 @@ class _RouteSectionTile extends StatelessWidget {
         return '捷運';
       case 'train':
       case 'rail':
-        return '火車';
+        return '台鐵／火車';
+      case 'high_speed_rail':
+      case 'high_speed_train':
+      case 'thsr':
+        return '高鐵';
+      case 'ferry':
+      case 'ship':
+        return '渡輪';
+      case 'cable_car':
+      case 'gondola':
+        return '纜車';
       case 'bike':
       case 'cycle':
         return '自行車';

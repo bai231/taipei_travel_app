@@ -255,14 +255,15 @@ class _RouteLegend extends StatelessWidget {
     return Card(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
+        child: Wrap(
+          spacing: 10,
+          runSpacing: 6,
           children: const [
             _LegendItem(color: Color(0xFF616161), label: '步行'),
-            SizedBox(width: 10),
             _LegendItem(color: Color(0xFFF57C00), label: '公車'),
-            SizedBox(width: 10),
             _LegendItem(color: Color(0xFF1565C0), label: '捷運'),
+            _LegendItem(color: Color(0xFF7B1FA2), label: '台鐵'),
+            _LegendItem(color: Color(0xFFC2185B), label: '高鐵'),
           ],
         ),
       ),
