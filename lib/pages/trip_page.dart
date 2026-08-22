@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../widgets/trip/trip_date_field.dart';
-import '../widgets/trip/trip_location_field.dart';
 import '../widgets/trip/people_counter.dart';
 import '../widgets/trip/trip_name_field.dart';
 import '../widgets/trip/budget_field.dart';
@@ -25,8 +24,6 @@ class _TripPageState extends State<TripPage> {
 
   DateTime? _startDate;
   DateTime? _endDate;
-
-  String _location = "台北市";
 
   int _people = 1;
 
@@ -85,7 +82,7 @@ class _TripPageState extends State<TripPage> {
       title: _tripNameController.text,
       startDate: _startDate!,
       endDate: _endDate!,
-      location: _location,
+      location: '全台',
       people: _people,
       budget: budget,
       preferences: _preferences,
@@ -93,14 +90,14 @@ class _TripPageState extends State<TripPage> {
     );
 
     try {
-      final places = await _placeService.getPlacesForTrip(location: _location);
+      final places = await _placeService.getRoutablePlaces();
 
       if (!mounted) return;
 
       if (places.isEmpty) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('$_location 目前沒有具備有效座標的景點資料')));
+        ).showSnackBar(const SnackBar(content: Text('目前沒有具備有效座標的行程資料')));
         return;
       }
 
@@ -146,19 +143,6 @@ class _TripPageState extends State<TripPage> {
               startDate: _startDate,
               endDate: _endDate,
               onSelectDate: _selectDateRange,
-            ),
-
-            const SizedBox(height: 16),
-            TripLocationField(
-              location: _location,
-              onChanged: (value) {
-                if (value == null) {
-                  return;
-                }
-                setState(() {
-                  _location = value;
-                });
-              },
             ),
 
             const SizedBox(height: 16),
