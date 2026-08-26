@@ -1,3 +1,53 @@
+enum PlaceType {
+  attraction,
+  restaurant,
+  accommodation;
+
+  static PlaceType fromData({
+    Object? value,
+    required String category,
+    required List<String> tags,
+  }) {
+    final normalized = [
+      value?.toString() ?? '',
+      category,
+      ...tags,
+    ].join(' ').toLowerCase();
+
+    if (_containsAny(normalized, const [
+      'accommodation',
+      'hotel',
+      'hostel',
+      'lodging',
+      '飯店',
+      '旅館',
+      '旅店',
+      '民宿',
+      '住宿',
+    ])) {
+      return PlaceType.accommodation;
+    }
+    if (_containsAny(normalized, const [
+      'restaurant',
+      'cafe',
+      'food',
+      '餐廳',
+      '餐飲',
+      '咖啡',
+      '美食',
+      '小吃',
+      '夜市',
+    ])) {
+      return PlaceType.restaurant;
+    }
+    return PlaceType.attraction;
+  }
+
+  static bool _containsAny(String value, List<String> keywords) {
+    return keywords.any(value.contains);
+  }
+}
+
 class Place {
   final String id;
   final String name;
@@ -7,6 +57,8 @@ class Place {
   final double latitude;
   final double longitude;
   final String image;
+  final PlaceType type;
+  final String county;
 
   // 預估停留時間（分鐘）
   final int stayTime;
@@ -36,6 +88,8 @@ class Place {
     required this.latitude,
     required this.longitude,
     required this.image,
+    this.type = PlaceType.attraction,
+    this.county = '',
     required this.stayTime,
     required this.rating,
     required this.tags,
@@ -46,22 +100,30 @@ class Place {
   });
 
   factory Place.fromJson(Map<String, dynamic> json) {
+    final category = json['category']?.toString() ?? '';
+    final tags = List<String>.from(json['tags'] ?? const []);
     return Place(
       id: json['id'].toString(),
       name: json['name'] ?? '',
-      category: json['category'] ?? '',
+      category: category,
       description: json['description'] ?? '',
       address: json['address'] ?? '',
       latitude: (json['latitude'] as num?)?.toDouble() ?? 0.0,
       longitude: (json['longitude'] as num?)?.toDouble() ?? 0.0,
       image: json['image'] ?? '',
-      stayTime: json['stayTime'] ?? 60,
+      type: PlaceType.fromData(
+        value: json['placeType'] ?? json['place_type'] ?? json['kind'],
+        category: category,
+        tags: tags,
+      ),
+      county: (json['county'] ?? json['city'] ?? '').toString(),
+      stayTime: (json['stayTime'] as num?)?.toInt() ?? 60,
       rating: (json['rating'] as num?)?.toDouble() ?? 0.0,
-      tags: List<String>.from(json['tags'] ?? []),
-      //priceLevel: json['priceLevel'] ?? 0,
+      tags: tags,
+      //priceLevel: (json['priceLevel'] as num?)?.toInt() ?? 0,
       estimatedCost: (json['estimatedCost'] as num?)?.toDouble() ?? 0.0,
-      openMinutes: json['openMinutes'] ?? 0,
-      closeMinutes: json['closeMinutes'] ?? 1440,
+      openMinutes: (json['openMinutes'] as num?)?.toInt() ?? 0,
+      closeMinutes: (json['closeMinutes'] as num?)?.toInt() ?? 1440,
     );
   }
 }

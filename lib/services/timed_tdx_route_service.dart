@@ -7,14 +7,18 @@ class TimedTdxRouteService {
   final ItineraryScheduleService _scheduleService;
   final Duration requestInterval;
   final List<int> searchOffsetsMinutes;
+  final DateTime Function() _now;
   final Map<String, List<TdxRoute>> _cache = {};
+  DateTime? _rateLimitedUntil;
 
   TimedTdxRouteService({
     TdxRoutingGateway? gateway,
     this.requestInterval = const Duration(seconds: 2),
-    this.searchOffsetsMinutes = const [0, 15, 30],
+    this.searchOffsetsMinutes = const [0],
+    DateTime Function()? now,
   }) : _gateway = gateway ?? TdxService(),
-       _scheduleService = const ItineraryScheduleService();
+       _scheduleService = const ItineraryScheduleService(),
+       _now = now ?? DateTime.now;
 
   Future<TdxRoute?> getRouteAtOrAfter({
     required String origin,
@@ -22,6 +26,13 @@ class TimedTdxRouteService {
     required DateTime requestedDeparture,
     void Function(DateTime queryTime)? onRetry,
   }) async {
+    final rateLimitedUntil = _rateLimitedUntil;
+    if (rateLimitedUntil != null && _now().isBefore(rateLimitedUntil)) {
+      throw TdxRateLimitException(
+        retryAfter: rateLimitedUntil.difference(_now()),
+      );
+    }
+
     for (var index = 0; index < searchOffsetsMinutes.length; index++) {
       final queryTime = requestedDeparture.add(
         Duration(minutes: searchOffsetsMinutes[index]),
@@ -30,11 +41,17 @@ class TimedTdxRouteService {
         onRetry?.call(queryTime);
         await Future<void>.delayed(requestInterval);
       }
-      final routes = await _loadRoutes(
-        origin: origin,
-        destination: destination,
-        departureTime: queryTime,
-      );
+      late List<TdxRoute> routes;
+      try {
+        routes = await _loadRoutes(
+          origin: origin,
+          destination: destination,
+          departureTime: queryTime,
+        );
+      } on TdxRateLimitException catch (error) {
+        _rateLimitedUntil = _now().add(error.retryAfter);
+        rethrow;
+      }
       final route = _scheduleService.selectRouteForDeparture(
         routes: routes,
         requestedDeparture: requestedDeparture,

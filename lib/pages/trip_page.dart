@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../widgets/trip/trip_date_field.dart';
-import '../widgets/trip/trip_location_field.dart';
 import '../widgets/trip/people_counter.dart';
 import '../widgets/trip/trip_name_field.dart';
 import '../widgets/trip/budget_field.dart';
@@ -8,11 +7,7 @@ import '../widgets/trip/preference_chip_group.dart';
 import '../widgets/trip/ai_prompt_field.dart';
 import '../widgets/trip/next_step_button.dart';
 import '../models/trip_request.dart';
-import '../services/recommandation_service.dart';
-import '../services/trip_generator_service.dart';
 import '../services/place_service.dart';
-import '../pages/trip_result_page.dart';
-import '../models/trip_place_constraint.dart';
 import 'trip_planner_page.dart';
 
 class TripPage extends StatefulWidget {
@@ -23,16 +18,12 @@ class TripPage extends StatefulWidget {
 }
 
 class _TripPageState extends State<TripPage> {
-  final RecommendService _recommendService = RecommendService();
-  final TripGeneratorService _tripGeneratorService = TripGeneratorService();
   final PlaceService _placeService = PlaceService();
 
   final TextEditingController _tripNameController = TextEditingController();
 
   DateTime? _startDate;
   DateTime? _endDate;
-
-  String _location = "台北市";
 
   int _people = 1;
 
@@ -92,7 +83,7 @@ class _TripPageState extends State<TripPage> {
       title: _tripNameController.text,
       startDate: _startDate!,
       endDate: _endDate!,
-      location: _location,
+      location: '全台',
       people: _people,
       budget: budget,
       preferences: _preferences,
@@ -100,9 +91,16 @@ class _TripPageState extends State<TripPage> {
     );
 
     try {
-      final places = await _placeService.getPlaces();
+      final places = await _placeService.getRoutablePlaces();
 
       if (!mounted) return;
+
+      if (places.isEmpty) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('目前沒有具備有效座標的行程資料')));
+        return;
+      }
 
       Navigator.push(
         context,
@@ -146,19 +144,6 @@ class _TripPageState extends State<TripPage> {
               startDate: _startDate,
               endDate: _endDate,
               onSelectDate: _selectDateRange,
-            ),
-
-            const SizedBox(height: 16),
-            TripLocationField(
-              location: _location,
-              onChanged: (value) {
-                if (value == null) {
-                  return;
-                }
-                setState(() {
-                  _location = value;
-                });
-              },
             ),
 
             const SizedBox(height: 16),

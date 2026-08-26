@@ -51,7 +51,7 @@ class RouteSection {
   });
 
   factory RouteSection.fromJson(Map<String, dynamic> json) {
-    String type = (json['type'] ?? 'pedestrian').toString();
+    final type = (json['type'] ?? 'pedestrian').toString();
 
     // 1. 相容取得 transport 或 transit 內的資訊
     var transport =
@@ -65,6 +65,7 @@ class RouteSection {
         transport?['category'];
 
     String? headsign = transport?['headsign'] ?? json['transit']?['headsign'];
+    final mode = _resolveMode(type: type, transport: transport);
 
     // 2. 提取起訖站點名稱
     String? depTitle =
@@ -111,7 +112,7 @@ class RouteSection {
         json['travelSummary']?['duration'] ?? json['travel_time'] ?? 0;
 
     return RouteSection(
-      mode: type,
+      mode: mode,
       lineName: line,
       destination: headsign,
       departureTitle: depTitle,
@@ -122,5 +123,67 @@ class RouteSection {
       stopCount: stops.length,
       intermediateStops: stops,
     );
+  }
+
+  static String _resolveMode({
+    required String type,
+    required Map<String, dynamic>? transport,
+  }) {
+    final normalizedType = type.toLowerCase();
+    if (_containsAny(normalizedType, const ['pedestrian', 'walking', 'walk'])) {
+      return 'pedestrian';
+    }
+
+    final description = [
+      transport?['mode'],
+      transport?['category'],
+      transport?['name'],
+      transport?['shortName'],
+      type,
+    ].whereType<Object>().join(' ').toLowerCase();
+
+    if (_containsAny(description, const [
+      'high_speed',
+      'high speed',
+      'highspeed',
+      'thsr',
+      '高鐵',
+    ])) {
+      return 'high_speed_rail';
+    }
+    if (_containsAny(description, const [
+      'rail',
+      'train',
+      'railway',
+      'tra',
+      '台鐵',
+      '臺鐵',
+    ])) {
+      return 'train';
+    }
+    if (_containsAny(description, const [
+      'metro',
+      'subway',
+      'mrt',
+      'rapid transit',
+      '捷運',
+      '輕軌',
+    ])) {
+      return 'metro';
+    }
+    if (_containsAny(description, const ['bus', 'coach', '公車', '客運'])) {
+      return 'bus';
+    }
+    if (_containsAny(description, const ['ferry', 'ship', '渡輪'])) {
+      return 'ferry';
+    }
+    if (_containsAny(description, const ['cable', 'gondola', '纜車'])) {
+      return 'cable_car';
+    }
+    return normalizedType;
+  }
+
+  static bool _containsAny(String value, List<String> keywords) {
+    return keywords.any(value.contains);
   }
 }
