@@ -49,3 +49,11 @@ app.*.map.json
 
 # Local data backfill reports
 /tool/output/
+
+# Ignore database files(only for local development)
+
+supabase/migrations/20260822000000_add_osm_place_fields.sql
+tool/import_osm_places.dart
+tool/osm_import_cache.json
+tool/osm_import_checkpoint.json
+tool/sync_osm_cache_to_supabase.dart
