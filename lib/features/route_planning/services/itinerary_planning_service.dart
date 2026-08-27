@@ -73,16 +73,20 @@ class ItineraryPlanningService {
   }) async {
     final activeControl = control ?? ItineraryPlanningControl();
     final retryBudget = _RateLimitRetryBudget(maximumRateLimitWaits);
-    final firstDeparture = DateTime(
+    final now = _now();
+
+    final tripStartDate = DateTime(
       request.startDate.year,
       request.startDate.month,
       request.startDate.day,
-    ).add(Duration(minutes: dayStartMinutes));
-    if (firstDeparture.isBefore(_now())) {
-      throw StateError(
-        'TDX 不支援查詢已經過去的出發時間。請將旅程開始日期改為明天之後，'
-        '或在當天 09:00 前產生行程。',
-      );
+    );
+
+    final today = DateTime(now.year, now.month, now.day);
+
+    // 過去日期目前仍不允許查詢。
+    // 今天即使已超過 09:00，也會在後面改成現在時間加一分鐘。
+    if (tripStartDate.isBefore(today)) {
+      throw StateError('TDX 不支援查詢已經過去的日期，請重新選擇今天或未來日期。');
     }
 
     final warnings = <String>[];
@@ -102,10 +106,16 @@ class ItineraryPlanningService {
         request.startDate.month,
         request.startDate.day + dayIndex,
       );
+
+      final initialDepartureMinutes = _initialDepartureMinutesForDate(
+        date: date,
+        now: now,
+      );
       final routeDay = await _generateDay(
         day: dayNumber,
         date: date,
         dayOrigin: dayOrigin,
+        initialDepartureMinutes: initialDepartureMinutes,
         constraints: dayConstraints[dayIndex],
         onProgress: onProgress,
         onRateLimitWait: onRateLimitWait,
@@ -127,6 +137,35 @@ class ItineraryPlanningService {
       generatedAt: DateTime.now(),
       warnings: warnings,
     );
+  }
+
+  int _initialDepartureMinutesForDate({
+    required DateTime date,
+    required DateTime now,
+  }) {
+    final isToday =
+        date.year == now.year && date.month == now.month && date.day == now.day;
+
+    // 不是今天，維持預設 09:00。
+    if (!isToday) {
+      return dayStartMinutes;
+    }
+
+    final defaultDeparture = DateTime(
+      date.year,
+      date.month,
+      date.day,
+    ).add(Duration(minutes: dayStartMinutes));
+
+    // 今天尚未超過 09:00，維持預設時間。
+    if (!now.isAfter(defaultDeparture)) {
+      return dayStartMinutes;
+    }
+
+    // 今天已超過 09:00，改成現在時間加一分鐘。
+    final adjustedDeparture = now.add(const Duration(minutes: 1));
+
+    return adjustedDeparture.hour * 60 + adjustedDeparture.minute;
   }
 
   List<List<RoutePlaceInput>> _assignConstraintsToDays({
@@ -167,6 +206,7 @@ class ItineraryPlanningService {
     required int day,
     required DateTime date,
     required RouteStop dayOrigin,
+    required int initialDepartureMinutes,
     required List<RoutePlaceInput> constraints,
     void Function(String message)? onProgress,
     void Function(Duration? remaining)? onRateLimitWait,
@@ -193,7 +233,7 @@ class ItineraryPlanningService {
     final travelLegs = <TravelLeg>[];
     final warnings = <String>[];
     var previousStop = dayOrigin;
-    var departureMinutes = dayStartMinutes;
+    var departureMinutes = initialDepartureMinutes;
 
     for (var index = 0; index < orderedStops.length; index++) {
       final destination = orderedStops[index];

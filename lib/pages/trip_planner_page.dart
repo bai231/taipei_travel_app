@@ -4,6 +4,7 @@ import '../models/place.dart';
 import '../models/trip_request.dart';
 import '../models/trip_place_constraint.dart';
 import '../features/route_planning/models/route_place_input.dart';
+import '../features/route_planning/models/route_itinerary.dart';
 import '../features/route_planning/pages/itinerary_result_page.dart';
 import '../features/route_planning/services/itinerary_planning_service.dart';
 import '../services/place_service.dart';
@@ -732,7 +733,54 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
       initialTime: initialTime,
     );
 
-    if (result == null) {
+    if (result == null || !mounted) {
+      return;
+    }
+
+    // 計算這個 Day 對應的實際日期。
+    final selectedDate = DateTime(
+      widget.request.startDate.year,
+      widget.request.startDate.month,
+      widget.request.startDate.day + constraint.day! - 1,
+    );
+
+    // 將使用者選擇的日期與時間組合起來。
+    final selectedDateTime = DateTime(
+      selectedDate.year,
+      selectedDate.month,
+      selectedDate.day,
+      result.hour,
+      result.minute,
+    );
+
+    final now = DateTime.now();
+
+    // 目前排程以分鐘為單位，因此去除秒數後再加一分鐘。
+    final minimumDateTime = DateTime(
+      now.year,
+      now.month,
+      now.day,
+      now.hour,
+      now.minute,
+    ).add(const Duration(minutes: 1));
+
+    if (selectedDateTime.isBefore(minimumDateTime)) {
+      final selectedDayOnly = DateTime(
+        selectedDateTime.year,
+        selectedDateTime.month,
+        selectedDateTime.day,
+      );
+
+      final todayOnly = DateTime(now.year, now.month, now.day);
+
+      final message = selectedDayOnly.isBefore(todayOnly)
+          ? '不能將景點安排在已經過去的日期。'
+          : '今天的景點最早只能安排在 ${_formatTime(minimumDateTime.hour * 60 + minimumDateTime.minute)}。';
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
+
       return;
     }
 
@@ -740,6 +788,105 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
       constraint.startMinutes = result.hour * 60 + result.minute;
       constraint.locked = true;
     });
+  }
+
+  Future<List<Place>> _pickAdditionalPlaces(
+    BuildContext resultContext,
+    Set<String> selectedPlaceIds,
+  ) async {
+    // 先選擇要新增的種類
+    final selectedType = await showModalBottomSheet<PlaceType>(
+      context: resultContext,
+      showDragHandle: true,
+      builder: (context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Padding(
+                padding: EdgeInsets.all(16),
+                child: Text(
+                  '選擇新增項目類型',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                ),
+              ),
+              for (final type in PlaceType.values)
+                ListTile(
+                  leading: Icon(_typeIcon(type)),
+                  title: Text(_typeName(type)),
+                  onTap: () => Navigator.pop(context, type),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (selectedType == null || !mounted) {
+      return <Place>[];
+    }
+
+    var addedPlaces = <Place>[];
+
+    // 再開啟原本的景點選擇器
+    await showModalBottomSheet<void>(
+      context: resultContext,
+      isScrollControlled: true,
+      builder: (context) {
+        return SizedBox(
+          height: MediaQuery.of(context).size.height * 0.82,
+          child: PlannerItemPicker(
+            type: selectedType,
+            places: widget.places,
+            selectedPlaceIds: selectedPlaceIds,
+            onConfirmed: (places) {
+              // PlannerItemPicker 回傳的是該種類目前所有已勾選項目，
+              // 這裡只保留尚未存在於行程中的新景點。
+              addedPlaces = places
+                  .where((place) => !selectedPlaceIds.contains(place.id))
+                  .toList();
+            },
+          ),
+        );
+      },
+    );
+
+    return addedPlaces;
+  }
+
+  Future<RouteItinerary> _recalculateItinerary(
+    List<TripPlaceConstraint> constraints,
+  ) async {
+    if (constraints.isEmpty) {
+      throw StateError('行程中至少需要保留一個景點。');
+    }
+
+    final invalidPlaces = constraints
+        .where(
+          (constraint) => !PlaceService.hasUsableCoordinates(constraint.place),
+        )
+        .map((constraint) => constraint.place.name)
+        .toList();
+
+    if (invalidPlaces.isNotEmpty) {
+      throw StateError('以下行程項目缺少有效座標：${invalidPlaces.join('、')}');
+    }
+
+    final routeInputs = constraints
+        .map(
+          (constraint) => RoutePlaceInput(
+            place: constraint.place,
+            day: constraint.day,
+            startMinutes: constraint.startMinutes,
+            locked: constraint.locked,
+          ),
+        )
+        .toList();
+
+    return _planningService.generate(
+      request: widget.request,
+      places: routeInputs,
+    );
   }
 
   Future<void> _generateItinerary() async {
@@ -812,6 +959,8 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
           builder: (resultContext) => ItineraryResultPage(
             itinerary: itinerary,
             onEdit: () => Navigator.of(resultContext).pop(),
+            onAddPlace: _pickAdditionalPlaces,
+            onRecalculate: _recalculateItinerary,
           ),
         ),
       );

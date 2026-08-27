@@ -79,7 +79,7 @@ Place _place(
     stayTime: 60,
     rating: 4,
     tags: const [],
-    priceLevel: 0,
+    //priceLevel: 0,
     estimatedCost: 0,
     openMinutes: 0,
     closeMinutes: 1440,
