@@ -57,7 +57,11 @@ class Place {
       image: json['image'] ?? '',
       stayTime: json['stay_time'] ?? 60,
       rating: (json['rating'] as num?)?.toDouble() ?? 0.0,
-      tags: List<String>.from(json['tags'] ?? []),
+      tags: json['tags'] is List
+        ? List<String>.from(
+            (json['tags'] as List).map((e) => e.toString()),
+          )
+        : [],
       priceLevel: json['price_level'] ?? 0,
       estimatedCost: (json['estimated_cost'] as num?)?.toDouble() ?? 0.0,
       openMinutes: json['open_minutes'] ?? 0,
