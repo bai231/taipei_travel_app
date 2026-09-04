@@ -1,7 +1,14 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/place.dart';
+import 'taiwan_county_resolver.dart';
 
 class PlaceService {
+  static const _pageSize = 1000;
+  static const placesTable = 'places';
+  static const taiwanRestaurantsTable = 'Taiwan_Restaurants';
+  static const osmRestaurantsTable = 'osm_restaurants';
+  static const taiwanAccommodationsTable = 'Taiwan_Accommodations';
+
   static const taiwanCounties = [
     '台北市',
     '新北市',
@@ -28,11 +35,45 @@ class PlaceService {
   ];
 
   final _supabase = Supabase.instance.client;
+  Future<List<Place>>? _placesRequest;
+  TaiwanCountyResolver? _countyResolver;
 
   Future<List<Place>> getPlaces() async {
-    final data = await _supabase.from('places').select();
+    return _placesRequest ??= _loadPlaces();
+  }
 
-    return data.map<Place>((json) => Place.fromJson(json)).toList();
+  Future<List<Place>> _loadPlaces() async {
+    final rows = <Map<String, dynamic>>[];
+    for (var from = 0; ; from += _pageSize) {
+      final data = await _supabase
+          .from(placesTable)
+          .select()
+          .order('id')
+          .range(from, from + _pageSize - 1);
+      rows.addAll(data.map((row) => Map<String, dynamic>.from(row)));
+      if (data.length < _pageSize) break;
+    }
+
+    _countyResolver ??= await TaiwanCountyResolver.load();
+    return rows.map(Place.fromJson).map(_withResolvedCounty).toList();
+  }
+
+  Place _withResolvedCounty(Place place) {
+    final county = countyFor(place, coordinateResolver: _countyResolver);
+    return county.isEmpty || county == place.county
+        ? place
+        : place.copyWith(county: county);
+  }
+
+  Future<List<Place>> getTripCatalog() async {
+    final requests = <Future<List<Place>>>[
+      getPlaces(),
+      _loadCatalogTable(taiwanRestaurantsTable, PlaceType.restaurant),
+      _loadCatalogTable(osmRestaurantsTable, PlaceType.restaurant),
+      _loadCatalogTable(taiwanAccommodationsTable, PlaceType.accommodation),
+    ];
+    final batches = await Future.wait(requests);
+    return batches.expand((batch) => batch).toList();
   }
 
   Future<List<Place>> getPlacesForTrip({required String location}) async {
@@ -41,8 +82,37 @@ class PlaceService {
   }
 
   Future<List<Place>> getRoutablePlaces() async {
-    final places = await getPlaces();
+    final places = await getTripCatalog();
     return places.where(hasUsableCoordinates).toList();
+  }
+
+  Future<List<Place>> _loadCatalogTable(
+    String table,
+    PlaceType expectedType, {
+    bool forceType = true,
+  }) async {
+    final rows = <Map<String, dynamic>>[];
+    for (var from = 0; ; from += _pageSize) {
+      final data = await _supabase
+          .from(table)
+          .select()
+          .range(from, from + _pageSize - 1);
+      rows.addAll(data.map((row) => Map<String, dynamic>.from(row)));
+      if (data.length < _pageSize) break;
+    }
+
+    _countyResolver ??= await TaiwanCountyResolver.load();
+    return rows
+        .map<Place>(
+          (json) => Place.fromJson(
+            json,
+            forcedType: forceType ? expectedType : null,
+            idPrefix: table,
+          ),
+        )
+        .map(_withResolvedCounty)
+        .where((place) => place.type == expectedType)
+        .toList();
   }
 
   static List<Place> filterCatalog({
@@ -54,7 +124,7 @@ class PlaceService {
     final normalizedCounty = _normalizeTaiwanText(county ?? '');
     final normalizedKeyword = _normalizeTaiwanText(keyword).toLowerCase();
     return places.where((place) {
-      if (place.type != type || !hasUsableCoordinates(place)) return false;
+      if (place.type != type) return false;
       if (normalizedCounty.isNotEmpty && countyFor(place) != normalizedCounty) {
         return false;
       }
@@ -74,9 +144,20 @@ class PlaceService {
     return taiwanCounties.where(available.contains).toList();
   }
 
-  static String countyFor(Place place) {
+  static String countyFor(
+    Place place, {
+    TaiwanCountyResolver? coordinateResolver,
+  }) {
     final explicitCounty = _normalizeTaiwanText(place.county);
-    if (explicitCounty.isNotEmpty) return explicitCounty;
+    if (taiwanCounties.contains(explicitCounty)) return explicitCounty;
+
+    if (coordinateResolver != null && hasUsableCoordinates(place)) {
+      final coordinateCounty = coordinateResolver.resolve(
+        latitude: place.latitude,
+        longitude: place.longitude,
+      );
+      if (coordinateCounty.isNotEmpty) return coordinateCounty;
+    }
 
     final normalizedAddress = _normalizeTaiwanText(place.address);
     for (final county in taiwanCounties) {
@@ -100,9 +181,8 @@ class PlaceService {
 
   static bool isInLocation({required Place place, required String location}) {
     final normalizedLocation = _normalizeTaiwanText(location);
-    final normalizedAddress = _normalizeTaiwanText(place.address);
     return normalizedLocation.isNotEmpty &&
-        normalizedAddress.contains(normalizedLocation);
+        countyFor(place) == normalizedLocation;
   }
 
   static bool hasUsableCoordinates(Place place) {

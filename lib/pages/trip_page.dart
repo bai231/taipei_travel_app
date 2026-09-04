@@ -91,14 +91,14 @@ class _TripPageState extends State<TripPage> {
     );
 
     try {
-      final places = await _placeService.getRoutablePlaces();
+      final places = await _placeService.getTripCatalog();
 
       if (!mounted) return;
 
       if (places.isEmpty) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(const SnackBar(content: Text('目前沒有具備有效座標的行程資料')));
+        ).showSnackBar(const SnackBar(content: Text('目前沒有可讀取的行程資料')));
         return;
       }
 
