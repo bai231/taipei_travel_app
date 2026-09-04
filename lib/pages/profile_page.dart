@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../services/favorite_service.dart';
 import '../models/place.dart';
+import 'itinerary_result_page.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -594,24 +595,45 @@ class _ProfilePageState extends State<ProfilePage> {
 
   // 行程卡片
   Widget _buildTripCard(String title) {
-    return Container(
+  return GestureDetector(
+    behavior: HitTestBehavior.opaque, // 確保整張卡片區域都能被點擊
+    onTap: () {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ItineraryResultPage(tripTitle: title),
+        ),
+      );
+    },
+    child: Container(
       width: 110,
       decoration: BoxDecoration(
         color: AppColors.primary,
         borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.textPrimary.withValues(alpha: 0.08),
+            blurRadius: 8,
+            offset: const Offset(0, 3),
+          ),
+        ],
       ),
       alignment: Alignment.center,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
       child: Text(
         title,
         textAlign: TextAlign.center,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
         style: const TextStyle(
           color: AppColors.textPrimary,
           fontSize: 14,
           fontWeight: FontWeight.bold,
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   // 資料夾卡片
   Widget _buildFolderCard(Map<String, dynamic> folder) {
