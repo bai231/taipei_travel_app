@@ -48,4 +48,28 @@ class AuthService {
 
     return data;
   }
+
+  // 更新個人資料（暱稱、簡介、頭像網址等）
+Future<void> updateProfile({
+  required String username,
+  String? bio,
+  String? avatarUrl,
+}) async {
+  final user = _supabase.auth.currentUser;
+  if (user == null) throw Exception("尚未登入帳號");
+
+  final updateData = <String, dynamic>{
+    'username': username.trim(),
+    'updated_at': DateTime.now().toIso8601String(),
+  };
+
+  if (bio != null) updateData['bio'] = bio.trim();
+  if (avatarUrl != null) updateData['avatar_url'] = avatarUrl;
+
+  await _supabase
+      .from('profiles')
+      .update(updateData)
+      .eq('id', user.id);
+  }
 }
+

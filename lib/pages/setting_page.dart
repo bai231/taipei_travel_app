@@ -1,6 +1,7 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'edit_profile_screen.dart'; // 引入編輯個人資料頁面
 
 import 'guide_overlay_screen.dart'; // 引入使用指南
 import 'login_screen.dart';         // 引入登入頁面
@@ -184,8 +185,15 @@ class _SettingsPageState extends State<SettingsPage> {
                   icon: Icons.person_outline_rounded,
                   title: "編輯個人資料",
                   subtitle: "修改頭像、暱稱與個人簡介",
-                  onTap: () {
-                    // TODO: 跳轉編輯個人資料頁面
+                  onTap: () async{
+                    final bool? updated = await Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const EditProfileScreen()),
+                    );
+                    // 儲存成功後若回傳 true，可重新刷新設定頁的名片資訊
+                    if (updated == true && mounted) {
+                      setState(() {});
+                    }
                   },
                 ),
                 _buildSettingTile(
