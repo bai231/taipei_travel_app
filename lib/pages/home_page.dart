@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/place.dart';
 import '../services/place_service.dart';
 import '../widgets/place_card.dart';
+import '../pages/place_detail_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -121,27 +122,23 @@ class _HomePageState extends State<HomePage> {
                   child: Center(child: Text("目前尚無景點資料")),
                 )
               else
-                SizedBox(
-                  height: 210,
-                  child: ListView.builder(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    itemCount: places.length,
-                    itemBuilder: (context, index) {
-                      final place = places[index];
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                        child: PlaceCard(
-                          place: place,
-                          onDetailPressed: () {
-                            print("詳細資訊：${place.name}");
-                          },
-                        ),
-                      );
-                    },
-                  ),
+              SizedBox(
+                height: 210, // PlaceCard 的高度
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  itemCount: places.length,
+                  itemBuilder: (context, index) {
+                    final place = places[index];
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                      child: PlaceCard(
+                        place: place, // 👈 直接傳入 place，卡片本體點擊即可開啟詳細頁
+                      ),
+                    );
+                  },
                 ),
-
+              ),
               const SizedBox(height: 32),
             ],
           ),
