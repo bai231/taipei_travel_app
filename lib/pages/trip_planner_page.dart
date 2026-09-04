@@ -9,6 +9,7 @@ import '../features/route_planning/pages/itinerary_result_page.dart';
 import '../features/route_planning/services/itinerary_planning_service.dart';
 import '../services/place_service.dart';
 import '../widgets/trip/planner_item_picker.dart';
+import '../widgets/trip/visit_preferences_dialog.dart';
 
 class TripPlannerPage extends StatefulWidget {
   final TripRequest request;
@@ -291,7 +292,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
 
         const SizedBox(height: 8),
 
-        for (int hour = 9; hour <= 21; hour++)
+        for (int hour = 0; hour <= 23; hour++)
           _buildTimeSlot(
             hour: hour,
             place: _findPlaceAtTime(timedPlaces, hour * 60),
@@ -387,6 +388,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
 
           if (constraint.startMinutes != null)
             Text(_formatTime(constraint.startMinutes!)),
+          _preferencesButton(constraint),
         ],
       ),
     );
@@ -407,7 +409,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
 
       final placeStart = constraint.startMinutes!;
 
-      final placeEnd = placeStart + constraint.place.stayTime;
+      final placeEnd = placeStart + constraint.stayMinutes;
 
       if (startMinutes >= placeStart && startMinutes < placeEnd) {
         return constraint;
@@ -434,7 +436,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
     return Container(
       width: double.infinity,
 
-      constraints: const BoxConstraints(minHeight: 150, maxHeight: 230),
+      constraints: const BoxConstraints(minHeight: 150, maxHeight: 280),
 
       padding: const EdgeInsets.all(12),
 
@@ -539,7 +541,9 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
 
               // 狀態
               Text(
-                _getConstraintStatus(constraint),
+                '${_getConstraintStatus(constraint)}\n${constraint.preferences.summaryFor(constraint.place)}',
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
 
                 style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
               ),
@@ -547,16 +551,22 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
               const Spacer(),
 
               // 指定日期
-              SizedBox(
-                width: double.infinity,
-
-                child: OutlinedButton(
-                  onPressed: () {
-                    _selectDay(constraint);
-                  },
-
-                  child: const Text("指定日期"),
-                ),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: _isGenerating
+                          ? null
+                          : () => _selectDay(constraint),
+                      child: Text(
+                        constraint.place.type == PlaceType.accommodation
+                            ? '調整住宿'
+                            : '指定日期',
+                      ),
+                    ),
+                  ),
+                  _preferencesButton(constraint),
+                ],
               ),
             ],
           ),
@@ -598,7 +608,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
                   const SizedBox(height: 4),
 
                   Text(
-                    "Day ${constraint.day}・時間不限",
+                    'Day ${constraint.day}・時間不限\n${constraint.preferences.summaryFor(constraint.place)}',
 
                     style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
                   ),
@@ -613,6 +623,8 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
 
               child: const Text("指定時間"),
             ),
+
+            _preferencesButton(constraint),
 
             IconButton(
               tooltip: '移除${_typeName(constraint.place.type)}',
@@ -643,7 +655,36 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
         "${_formatTime(constraint.startMinutes!)}";
   }
 
+  Widget _preferencesButton(TripPlaceConstraint constraint) {
+    return IconButton(
+      tooltip: '時段、停留與資訊來源',
+      onPressed: _isGenerating ? null : () => _editPreferences(constraint),
+      icon: const Icon(Icons.tune, size: 20),
+    );
+  }
+
+  Future<void> _editPreferences(TripPlaceConstraint constraint) async {
+    final preferences = await showVisitPreferencesDialog(
+      context: context,
+      place: constraint.place,
+      request: widget.request,
+      initial: constraint.preferences,
+      day: constraint.day,
+    );
+    if (!mounted || preferences == null) return;
+    setState(() {
+      constraint.preferences = preferences;
+      if (preferences.hotelStay != null) {
+        constraint.day = preferences.hotelStay!.checkInDay;
+      }
+    });
+  }
+
   void _selectDay(TripPlaceConstraint constraint) {
+    if (constraint.place.type == PlaceType.accommodation) {
+      _editPreferences(constraint);
+      return;
+    }
     showModalBottomSheet(
       context: context,
 
@@ -725,7 +766,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
 
             minute: constraint.startMinutes! % 60,
           )
-        : const TimeOfDay(hour: 9, minute: 0);
+        : const TimeOfDay(hour: 0, minute: 0);
 
     final TimeOfDay? result = await showTimePicker(
       context: context,
@@ -876,6 +917,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
         .map(
           (constraint) => RoutePlaceInput(
             place: constraint.place,
+            preferences: constraint.preferences,
             day: constraint.day,
             startMinutes: constraint.startMinutes,
             locked: constraint.locked,
@@ -883,10 +925,28 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
         )
         .toList();
 
-    return _planningService.generate(
+    final result = await _planningService.generate(
       request: widget.request,
       places: routeInputs,
     );
+    if (mounted) {
+      setState(() {
+        _selectedPlaces
+          ..clear()
+          ..addAll(
+            constraints.map(
+              (item) => TripPlaceConstraint(
+                place: item.place,
+                day: item.day,
+                startMinutes: item.startMinutes,
+                locked: item.locked,
+                preferences: item.preferences,
+              ),
+            ),
+          );
+      });
+    }
+    return result;
   }
 
   Future<void> _generateItinerary() async {
@@ -930,6 +990,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
             .map(
               (constraint) => RoutePlaceInput(
                 place: constraint.place,
+                preferences: constraint.preferences,
                 day: constraint.day,
                 startMinutes: constraint.startMinutes,
                 locked: constraint.locked,

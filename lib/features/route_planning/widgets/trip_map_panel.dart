@@ -7,6 +7,7 @@ import '../../../services/map_service.dart';
 import '../../../services/route_geometry_gateway.dart';
 import '../../../services/route_geometry_normalizer.dart';
 import '../models/route_day.dart';
+import '../models/route_visit.dart';
 
 class TripMapPanel extends StatefulWidget {
   final RouteDay day;
@@ -156,9 +157,16 @@ class _TripMapPanelState extends State<TripMapPanel> {
         .toList();
   }
 
+  bool get _originIsFirstVisit =>
+      widget.day.visits.isNotEmpty &&
+      widget.day.origin.id == widget.day.visits.first.place.id;
+
+  Iterable<RouteVisit> get _visitsAfterOrigin =>
+      _originIsFirstVisit ? widget.day.visits.skip(1) : widget.day.visits;
+
   List<LatLng> get _coordinates => [
     LatLng(widget.day.origin.latitude, widget.day.origin.longitude),
-    ...widget.day.visits.map(
+    ..._visitsAfterOrigin.map(
       (visit) => LatLng(visit.place.latitude, visit.place.longitude),
     ),
   ];
@@ -170,12 +178,12 @@ class _TripMapPanelState extends State<TripMapPanel> {
       infoWindow: InfoWindow(title: '起點：${widget.day.origin.name}'),
       icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
     ),
-    ...widget.day.visits.map(
+    ..._visitsAfterOrigin.map(
       (visit) => Marker(
-        markerId: MarkerId('day-${widget.day.day}-${visit.place.id}'),
+        markerId: MarkerId('day-${widget.day.day}-${visit.occurrenceId}'),
         position: LatLng(visit.place.latitude, visit.place.longitude),
         infoWindow: InfoWindow(
-          title: '${visit.sequence}. ${visit.place.name}',
+          title: '${visit.sequence}. ${visit.label}',
           snippet: visit.place.address,
         ),
       ),

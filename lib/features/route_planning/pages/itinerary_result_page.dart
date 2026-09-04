@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 
 import '../../../models/place.dart';
 import '../../../models/trip_place_constraint.dart';
+import '../../../models/visit_preferences.dart';
+import '../../../widgets/trip/visit_preferences_dialog.dart';
 import '../models/route_day.dart';
 import '../models/route_itinerary.dart';
 import '../models/route_visit.dart';
@@ -337,7 +339,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
               child: _buildDropCell(day, hour),
             ),
           for (var i = 0; i < day.visits.length; i++)
-            _buildVisit(day, day.visits[i], i, startHour),
+            _buildVisit(day, day.visits[i], startHour),
         ],
       ),
     );
@@ -412,22 +414,17 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
     return dropDateTime.isBefore(minimumDateTime);
   }
 
-  Widget _buildVisit(
-    RouteDay day,
-    RouteVisit visit,
-    int visitIndex,
-    int startHour,
-  ) {
+  Widget _buildVisit(RouteDay day, RouteVisit visit, int startHour) {
+    final travelLegIndex = day.travelLegs.indexWhere(
+      (leg) => leg.destination.id == visit.occurrenceId,
+    );
     final top = (visit.startMinutes - startHour * 60) / 60 * _hourHeight;
-    final height = max(110.0, visit.stayMinutes / 60 * _hourHeight - 6);
+    final height = max(28.0, visit.stayMinutes / 60 * _hourHeight - 4);
     final card = _VisitCard(
       visit: visit,
-      onTap: () {
-        final index = _itinerary.days.indexWhere((item) => item.day == day.day);
-        if (index >= 0) setState(() => _selectedDayIndex = index);
-      },
-      onShowTravel: visitIndex < day.travelLegs.length
-          ? () => _showTravelLeg(day, visitIndex)
+      onTap: _isRecalculating ? null : () => _editVisitPreferences(visit),
+      onShowTravel: travelLegIndex >= 0
+          ? () => _showTravelLeg(day, travelLegIndex)
           : null,
       onDelete: _isRecalculating ? null : () => _deletePlace(visit.place),
     );
@@ -436,7 +433,10 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
       right: 6,
       top: max(0.0, top),
       height: height,
-      child: visit.locked
+      child:
+          visit.locked ||
+              visit.place.type == PlaceType.accommodation ||
+              _isRecalculating
           ? card
           : MouseRegion(
               cursor: SystemMouseCursors.grab,
@@ -521,14 +521,19 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
     required int day,
     required int startMinutes,
   }) async {
+    if (_isRecalculating) return;
     final backup = _copyConstraints(_constraints);
     final pendingBackup = List<Place>.of(_pendingPlaces);
     final index = _constraints.indexWhere((item) => item.place.id == place.id);
+    final preferences = index < 0
+        ? const VisitPreferences()
+        : _constraints[index].preferences;
     final changed = TripPlaceConstraint(
       place: place,
-      day: day,
+      day: preferences.hotelStay?.checkInDay ?? day,
       startMinutes: startMinutes,
       locked: true,
+      preferences: preferences,
     );
     if (index < 0) {
       _constraints.add(changed);
@@ -551,6 +556,34 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
     setState(
       () => _constraints.removeWhere((item) => item.place.id == place.id),
     );
+    if (!await _recalculate() && mounted) {
+      setState(() => _constraints = backup);
+    }
+  }
+
+  Future<void> _editVisitPreferences(RouteVisit visit) async {
+    final index = _constraints.indexWhere(
+      (item) => item.place.id == visit.place.id,
+    );
+    if (index < 0) return;
+    final constraint = _constraints[index];
+    final preferences = await showVisitPreferencesDialog(
+      context: context,
+      place: visit.place,
+      request: _itinerary.request,
+      initial: constraint.preferences,
+      day: constraint.day,
+      suggestedMealType: constraint.preferences.mealType == MealType.unspecified
+          ? visit.mealType
+          : null,
+      information: visit.information,
+    );
+    if (!mounted || preferences == null) return;
+    final backup = _copyConstraints(_constraints);
+    constraint.preferences = preferences;
+    if (preferences.hotelStay != null) {
+      constraint.day = preferences.hotelStay!.checkInDay;
+    }
     if (!await _recalculate() && mounted) {
       setState(() => _constraints = backup);
     }
@@ -606,7 +639,11 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
     required int startMinutes,
     required String ignoredPlaceId,
   }) {
-    final endMinutes = startMinutes + place.stayTime;
+    final matching = _constraints.where((item) => item.place.id == place.id);
+    final duration = matching.isEmpty
+        ? const VisitPreferences().durationFor(place)
+        : matching.first.stayMinutes;
+    final endMinutes = startMinutes + duration;
     for (final item in _constraints) {
       if (!item.locked ||
           item.day != day ||
@@ -615,7 +652,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
         continue;
       }
       final lockedStart = item.startMinutes!;
-      final lockedEnd = lockedStart + item.place.stayTime;
+      final lockedEnd = lockedStart + item.stayMinutes;
       if (startMinutes < lockedEnd && endMinutes > lockedStart) return true;
     }
     return false;
@@ -629,6 +666,18 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
   List<TripPlaceConstraint> _constraintsFromItinerary(
     RouteItinerary itinerary,
   ) {
+    if (itinerary.inputs.isNotEmpty) {
+      return [
+        for (final input in itinerary.inputs)
+          TripPlaceConstraint(
+            place: input.place,
+            day: input.day,
+            startMinutes: input.startMinutes,
+            locked: input.locked,
+            preferences: input.preferences,
+          ),
+      ];
+    }
     return [
       for (final day in itinerary.days)
         for (final visit in day.visits)
@@ -639,6 +688,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
                 ? visit.requestedStartMinutes ?? visit.startMinutes
                 : null,
             locked: visit.locked,
+            preferences: visit.preferences,
           ),
     ];
   }
@@ -651,17 +701,14 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
             day: item.day,
             startMinutes: item.startMinutes,
             locked: item.locked,
+            preferences: item.preferences,
           ),
         )
         .toList();
   }
 
   int get _startHour {
-    final starts = [
-      for (final day in _itinerary.days)
-        for (final visit in day.visits) visit.startMinutes,
-    ];
-    return starts.isEmpty ? 8 : min(8, starts.reduce(min) ~/ 60);
+    return 0;
   }
 
   int get _endHour {
@@ -669,7 +716,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
       for (final day in _itinerary.days)
         for (final visit in day.visits) visit.endMinutes,
     ];
-    return ends.isEmpty ? 22 : max(22, (ends.reduce(max) / 60).ceil());
+    return ends.isEmpty ? 24 : max(24, (ends.reduce(max) / 60).ceil());
   }
 
   void _showMessage(String message) {
@@ -744,7 +791,7 @@ class _VisitCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    return Card(
+    final expandedCard = Card(
       clipBehavior: Clip.antiAlias,
       margin: EdgeInsets.zero,
       color: visit.locked ? colors.primaryContainer : colors.secondaryContainer,
@@ -765,14 +812,16 @@ class _VisitCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      visit.place.name,
+                      visit.label,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
                     Text(
                       '${_formatMinutes(visit.startMinutes)}–'
-                      '${_formatMinutes(visit.endMinutes)}',
+                      '${_formatMinutes(visit.endMinutes)}・點擊設定／資訊',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                     if (onShowTravel != null)
@@ -790,7 +839,9 @@ class _VisitCard extends StatelessWidget {
                 ),
               ),
               IconButton(
-                tooltip: '刪除景點',
+                tooltip: visit.place.type == PlaceType.accommodation
+                    ? '移除整筆跨日住宿'
+                    : '移除項目',
                 onPressed: onDelete,
                 icon: const Icon(Icons.delete_outline, size: 20),
               ),
@@ -798,6 +849,61 @@ class _VisitCard extends StatelessWidget {
           ),
         ),
       ),
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxHeight >= 110) return expandedCard;
+        return Tooltip(
+          message:
+              '${visit.label}\n${_formatMinutes(visit.startMinutes)}–${_formatMinutes(visit.endMinutes)}\n點擊設定／資訊',
+          child: Card(
+            margin: EdgeInsets.zero,
+            color: visit.locked
+                ? colors.primaryContainer
+                : colors.secondaryContainer,
+            child: InkWell(
+              onTap: onTap,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '${_formatMinutes(visit.startMinutes)} ${visit.label}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (onShowTravel != null)
+                      IconButton(
+                        tooltip: '交通方式',
+                        onPressed: onShowTravel,
+                        constraints: const BoxConstraints.tightFor(
+                          width: 28,
+                          height: 28,
+                        ),
+                        padding: EdgeInsets.zero,
+                        icon: const Icon(Icons.directions_transit, size: 18),
+                      ),
+                    IconButton(
+                      tooltip: visit.place.type == PlaceType.accommodation
+                          ? '移除整筆跨日住宿'
+                          : '移除項目',
+                      onPressed: onDelete,
+                      constraints: const BoxConstraints.tightFor(
+                        width: 28,
+                        height: 28,
+                      ),
+                      padding: EdgeInsets.zero,
+                      icon: const Icon(Icons.delete_outline, size: 18),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 
