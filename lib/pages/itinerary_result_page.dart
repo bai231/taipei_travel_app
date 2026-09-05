@@ -434,7 +434,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
                                             stayTime: spot['stayTime'] ?? 60,
                                             rating: 4.8,
                                             tags: ['熱門', '推薦'],
-                                            priceLevel: 1,
+                                            //priceLevel: 1,
                                             estimatedCost: 100,
                                             openMinutes: 540,
                                             closeMinutes: 1080,

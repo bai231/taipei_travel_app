@@ -4,8 +4,13 @@ import '../models/place.dart';
 import '../models/trip_request.dart';
 import '../models/trip_place_constraint.dart';
 import '../features/route_planning/models/route_place_input.dart';
+import '../features/route_planning/models/route_travel_mode.dart';
+import '../features/route_planning/models/route_itinerary.dart';
 import '../features/route_planning/pages/itinerary_result_page.dart';
 import '../features/route_planning/services/itinerary_planning_service.dart';
+import '../services/place_service.dart';
+import '../widgets/trip/planner_item_picker.dart';
+import '../widgets/trip/visit_preferences_dialog.dart';
 
 class TripPlannerPage extends StatefulWidget {
   final TripRequest request;
@@ -35,70 +40,27 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
   // ============================================================
 
   int _selectedDay = 1;
+  PlaceType _selectedType = PlaceType.attraction;
   bool _isGenerating = false;
+  bool _isWaitingForTdx = false;
   String? _planningMessage;
+  ItineraryPlanningControl? _planningControl;
 
   void _showPlacePicker() {
     showModalBottomSheet(
       context: context,
-
       isScrollControlled: true,
-
       builder: (context) {
         return SizedBox(
-          height: MediaQuery.of(context).size.height * 0.75,
-
-          child: Column(
-            children: [
-              const Padding(
-                padding: EdgeInsets.all(16),
-
-                child: Text(
-                  "選擇景點",
-
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                ),
-              ),
-
-              const Divider(),
-
-              Expanded(
-                child: ListView.builder(
-                  itemCount: widget.places.length,
-
-                  itemBuilder: (context, index) {
-                    final place = widget.places[index];
-
-                    final alreadyAdded = _selectedPlaces.any(
-                      (item) => item.place.id == place.id,
-                    );
-
-                    return ListTile(
-                      leading: const Icon(Icons.place),
-
-                      title: Text(place.name),
-
-                      subtitle: Text(
-                        "⭐ ${place.rating}   "
-                        "停留 ${place.stayTime} 分鐘",
-                      ),
-
-                      trailing: IconButton(
-                        icon: Icon(alreadyAdded ? Icons.check : Icons.add),
-
-                        onPressed: alreadyAdded
-                            ? null
-                            : () {
-                                _addPlace(place);
-
-                                Navigator.pop(context);
-                              },
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ],
+          height: MediaQuery.of(context).size.height * 0.82,
+          child: PlannerItemPicker(
+            type: _selectedType,
+            places: widget.places,
+            selectedPlaceIds: _selectedPlaces
+                .map((item) => item.place.id)
+                .toSet(),
+            onConfirmed: (places) =>
+                _replacePlacesForType(type: _selectedType, places: places),
           ),
         );
       },
@@ -109,13 +71,13 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("安排景點"),
+        title: const Text("安排行程"),
 
         actions: [
           IconButton(
-            icon: const Icon(Icons.add_location_alt),
+            icon: Icon(_typeIcon(_selectedType)),
 
-            tooltip: "新增景點",
+            tooltip: "新增${_typeName(_selectedType)}",
 
             onPressed: _isGenerating ? null : _showPlacePicker,
           ),
@@ -124,6 +86,8 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
 
       body: Column(
         children: [
+          _buildTypeSelector(),
+
           // Day 選擇
           _buildDaySelector(),
 
@@ -147,6 +111,9 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
     final automaticCount = _selectedPlaces
         .where((item) => item.day == null)
         .length;
+    final attractionCount = _countSelected(PlaceType.attraction);
+    final restaurantCount = _countSelected(PlaceType.restaurant);
+    final accommodationCount = _countSelected(PlaceType.accommodation);
 
     return SafeArea(
       top: false,
@@ -159,10 +126,9 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                '已選 ${_selectedPlaces.length} 個景點・'
-                '固定時間 $fixedTimeCount・'
-                '指定日期 $fixedDayCount・'
-                '自動安排 $automaticCount',
+                '景點 $attractionCount・餐廳 $restaurantCount・'
+                '住宿 $accommodationCount｜固定時間 $fixedTimeCount・'
+                '指定日期 $fixedDayCount・自動安排 $automaticCount',
                 style: Theme.of(context).textTheme.bodySmall,
                 textAlign: TextAlign.center,
               ),
@@ -178,9 +144,17 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
                 label: Text(
                   _isGenerating
                       ? (_planningMessage ?? '正在安排詳細行程…')
-                      : '完成景點安排，產生詳細行程',
+                      : '完成安排，產生詳細行程',
                 ),
               ),
+              if (_isWaitingForTdx) ...[
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: _useEstimatesForRemainingRoutes,
+                  icon: const Icon(Icons.fast_forward),
+                  label: const Text('取消等待，後續改用估算'),
+                ),
+              ],
             ],
           ),
         ),
@@ -191,6 +165,30 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
   // ============================================================
   // Day 選擇器
   // ============================================================
+
+  Widget _buildTypeSelector() {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+      child: SegmentedButton<PlaceType>(
+        segments: PlaceType.values
+            .map(
+              (type) => ButtonSegment<PlaceType>(
+                value: type,
+                icon: Icon(_typeIcon(type)),
+                label: Text('安排${_typeName(type)}'),
+              ),
+            )
+            .toList(),
+        selected: {_selectedType},
+        onSelectionChanged: _isGenerating
+            ? null
+            : (selection) {
+                setState(() => _selectedType = selection.first);
+              },
+      ),
+    );
+  }
 
   Widget _buildDaySelector() {
     return SizedBox(
@@ -295,7 +293,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
 
         const SizedBox(height: 8),
 
-        for (int hour = 9; hour <= 21; hour++)
+        for (int hour = 0; hour <= 23; hour++)
           _buildTimeSlot(
             hour: hour,
             place: _findPlaceAtTime(timedPlaces, hour * 60),
@@ -374,7 +372,10 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
 
       child: Row(
         children: [
-          Icon(constraint.locked ? Icons.lock : Icons.place, size: 18),
+          Icon(
+            constraint.locked ? Icons.lock : _typeIcon(constraint.place.type),
+            size: 18,
+          ),
 
           const SizedBox(width: 8),
 
@@ -388,6 +389,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
 
           if (constraint.startMinutes != null)
             Text(_formatTime(constraint.startMinutes!)),
+          _preferencesButton(constraint),
         ],
       ),
     );
@@ -408,7 +410,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
 
       final placeStart = constraint.startMinutes!;
 
-      final placeEnd = placeStart + constraint.place.stayTime;
+      final placeEnd = placeStart + constraint.stayMinutes;
 
       if (startMinutes >= placeStart && startMinutes < placeEnd) {
         return constraint;
@@ -424,13 +426,18 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
 
   Widget _buildUnscheduledArea() {
     final unscheduledPlaces = _selectedPlaces
-        .where((item) => item.day == null && item.startMinutes == null)
+        .where(
+          (item) =>
+              item.day == null &&
+              item.startMinutes == null &&
+              item.place.type == _selectedType,
+        )
         .toList();
 
     return Container(
       width: double.infinity,
 
-      constraints: const BoxConstraints(minHeight: 150, maxHeight: 230),
+      constraints: const BoxConstraints(minHeight: 150, maxHeight: 280),
 
       padding: const EdgeInsets.all(12),
 
@@ -442,14 +449,17 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
         children: [
           Row(
             children: [
-              const Icon(Icons.inbox_outlined),
+              Icon(_typeIcon(_selectedType)),
 
               const SizedBox(width: 8),
 
-              const Text(
-                "不限日期／時間",
+              Text(
+                "不限日期／時間的${_typeName(_selectedType)}",
 
-                style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                style: const TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ],
           ),
@@ -457,7 +467,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
           const SizedBox(height: 4),
 
           Text(
-            "這些景點會由系統自動安排",
+            "這些${_typeName(_selectedType)}會由系統自動安排",
 
             style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
           ),
@@ -468,7 +478,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
             child: unscheduledPlaces.isEmpty
                 ? Center(
                     child: Text(
-                      "目前沒有待安排景點",
+                      "目前沒有待安排${_typeName(_selectedType)}",
                       style: TextStyle(color: Colors.grey.shade500),
                     ),
                   )
@@ -519,7 +529,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
                     ),
                   ),
                   IconButton(
-                    tooltip: '移除景點',
+                    tooltip: '移除${_typeName(constraint.place.type)}',
                     onPressed: _isGenerating
                         ? null
                         : () => _removePlace(constraint),
@@ -532,7 +542,9 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
 
               // 狀態
               Text(
-                _getConstraintStatus(constraint),
+                '${_getConstraintStatus(constraint)}\n${constraint.preferences.summaryFor(constraint.place)}',
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
 
                 style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
               ),
@@ -540,16 +552,22 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
               const Spacer(),
 
               // 指定日期
-              SizedBox(
-                width: double.infinity,
-
-                child: OutlinedButton(
-                  onPressed: () {
-                    _selectDay(constraint);
-                  },
-
-                  child: const Text("指定日期"),
-                ),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: _isGenerating
+                          ? null
+                          : () => _selectDay(constraint),
+                      child: Text(
+                        constraint.place.type == PlaceType.accommodation
+                            ? '調整住宿'
+                            : '指定日期',
+                      ),
+                    ),
+                  ),
+                  _preferencesButton(constraint),
+                ],
               ),
             ],
           ),
@@ -570,7 +588,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
 
         child: Row(
           children: [
-            const Icon(Icons.schedule),
+            Icon(_typeIcon(constraint.place.type)),
 
             const SizedBox(width: 10),
 
@@ -591,7 +609,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
                   const SizedBox(height: 4),
 
                   Text(
-                    "Day ${constraint.day}・時間不限",
+                    'Day ${constraint.day}・時間不限\n${constraint.preferences.summaryFor(constraint.place)}',
 
                     style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
                   ),
@@ -607,8 +625,10 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
               child: const Text("指定時間"),
             ),
 
+            _preferencesButton(constraint),
+
             IconButton(
-              tooltip: '移除景點',
+              tooltip: '移除${_typeName(constraint.place.type)}',
               onPressed: _isGenerating ? null : () => _removePlace(constraint),
               icon: const Icon(Icons.close),
             ),
@@ -636,7 +656,36 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
         "${_formatTime(constraint.startMinutes!)}";
   }
 
+  Widget _preferencesButton(TripPlaceConstraint constraint) {
+    return IconButton(
+      tooltip: '時段、停留與資訊來源',
+      onPressed: _isGenerating ? null : () => _editPreferences(constraint),
+      icon: const Icon(Icons.tune, size: 20),
+    );
+  }
+
+  Future<void> _editPreferences(TripPlaceConstraint constraint) async {
+    final preferences = await showVisitPreferencesDialog(
+      context: context,
+      place: constraint.place,
+      request: widget.request,
+      initial: constraint.preferences,
+      day: constraint.day,
+    );
+    if (!mounted || preferences == null) return;
+    setState(() {
+      constraint.preferences = preferences;
+      if (preferences.hotelStay != null) {
+        constraint.day = preferences.hotelStay!.checkInDay;
+      }
+    });
+  }
+
   void _selectDay(TripPlaceConstraint constraint) {
+    if (constraint.place.type == PlaceType.accommodation) {
+      _editPreferences(constraint);
+      return;
+    }
     showModalBottomSheet(
       context: context,
 
@@ -718,7 +767,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
 
             minute: constraint.startMinutes! % 60,
           )
-        : const TimeOfDay(hour: 9, minute: 0);
+        : const TimeOfDay(hour: 0, minute: 0);
 
     final TimeOfDay? result = await showTimePicker(
       context: context,
@@ -726,7 +775,54 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
       initialTime: initialTime,
     );
 
-    if (result == null) {
+    if (result == null || !mounted) {
+      return;
+    }
+
+    // 計算這個 Day 對應的實際日期。
+    final selectedDate = DateTime(
+      widget.request.startDate.year,
+      widget.request.startDate.month,
+      widget.request.startDate.day + constraint.day! - 1,
+    );
+
+    // 將使用者選擇的日期與時間組合起來。
+    final selectedDateTime = DateTime(
+      selectedDate.year,
+      selectedDate.month,
+      selectedDate.day,
+      result.hour,
+      result.minute,
+    );
+
+    final now = DateTime.now();
+
+    // 目前排程以分鐘為單位，因此去除秒數後再加一分鐘。
+    final minimumDateTime = DateTime(
+      now.year,
+      now.month,
+      now.day,
+      now.hour,
+      now.minute,
+    ).add(const Duration(minutes: 1));
+
+    if (selectedDateTime.isBefore(minimumDateTime)) {
+      final selectedDayOnly = DateTime(
+        selectedDateTime.year,
+        selectedDateTime.month,
+        selectedDateTime.day,
+      );
+
+      final todayOnly = DateTime(now.year, now.month, now.day);
+
+      final message = selectedDayOnly.isBefore(todayOnly)
+          ? '不能將景點安排在已經過去的日期。'
+          : '今天的景點最早只能安排在 ${_formatTime(minimumDateTime.hour * 60 + minimumDateTime.minute)}。';
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
+
       return;
     }
 
@@ -736,17 +832,160 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
     });
   }
 
+  Future<List<Place>> _pickAdditionalPlaces(
+    BuildContext resultContext,
+    Set<String> selectedPlaceIds,
+  ) async {
+    // 先選擇要新增的種類
+    final selectedType = await showModalBottomSheet<PlaceType>(
+      context: resultContext,
+      showDragHandle: true,
+      builder: (context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Padding(
+                padding: EdgeInsets.all(16),
+                child: Text(
+                  '選擇新增項目類型',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                ),
+              ),
+              for (final type in PlaceType.values)
+                ListTile(
+                  leading: Icon(_typeIcon(type)),
+                  title: Text(_typeName(type)),
+                  onTap: () => Navigator.pop(context, type),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (selectedType == null || !mounted) {
+      return <Place>[];
+    }
+
+    var addedPlaces = <Place>[];
+
+    // 再開啟原本的景點選擇器
+    await showModalBottomSheet<void>(
+      context: resultContext,
+      isScrollControlled: true,
+      builder: (context) {
+        return SizedBox(
+          height: MediaQuery.of(context).size.height * 0.82,
+          child: PlannerItemPicker(
+            type: selectedType,
+            places: widget.places,
+            selectedPlaceIds: selectedPlaceIds,
+            onConfirmed: (places) {
+              // PlannerItemPicker 回傳的是該種類目前所有已勾選項目，
+              // 這裡只保留尚未存在於行程中的新景點。
+              addedPlaces = places
+                  .where((place) => !selectedPlaceIds.contains(place.id))
+                  .toList();
+            },
+          ),
+        );
+      },
+    );
+
+    return addedPlaces;
+  }
+
+  Future<RouteItinerary> _recalculateItinerary(
+    List<TripPlaceConstraint> constraints,
+    Map<RouteLegKey, RouteTravelMode> travelModeOverrides,
+    RouteItinerary previousItinerary,
+  ) async {
+    if (constraints.isEmpty) {
+      throw StateError('行程中至少需要保留一個景點。');
+    }
+
+    final invalidPlaces = constraints
+        .where(
+          (constraint) => !PlaceService.hasUsableCoordinates(constraint.place),
+        )
+        .map((constraint) => constraint.place.name)
+        .toList();
+
+    if (invalidPlaces.isNotEmpty) {
+      throw StateError('以下行程項目缺少有效座標：${invalidPlaces.join('、')}');
+    }
+
+    final routeInputs = constraints
+        .map(
+          (constraint) => RoutePlaceInput(
+            place: constraint.place,
+            preferences: constraint.preferences,
+            day: constraint.day,
+            startMinutes: constraint.startMinutes,
+            locked: constraint.locked,
+          ),
+        )
+        .toList();
+
+    final result = await _planningService.generate(
+      request: widget.request,
+      places: routeInputs,
+      travelModeOverrides: travelModeOverrides,
+      reusableItinerary: previousItinerary,
+    );
+    if (mounted) {
+      setState(() {
+        _selectedPlaces
+          ..clear()
+          ..addAll(
+            constraints.map(
+              (item) => TripPlaceConstraint(
+                place: item.place,
+                day: item.day,
+                startMinutes: item.startMinutes,
+                locked: item.locked,
+                preferences: item.preferences,
+              ),
+            ),
+          );
+      });
+    }
+    return result;
+  }
+
   Future<void> _generateItinerary() async {
     if (_selectedPlaces.isEmpty) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('請至少加入一個景點')));
+      ).showSnackBar(const SnackBar(content: Text('請至少加入一個行程項目')));
       return;
     }
 
+    final invalidPlaces = _selectedPlaces
+        .where(
+          (constraint) => !PlaceService.hasUsableCoordinates(constraint.place),
+        )
+        .map((constraint) => constraint.place.name)
+        .toList();
+    if (invalidPlaces.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '以下行程項目缺少有效座標：${invalidPlaces.join('、')}。'
+            '請移除後重新產生行程。',
+          ),
+        ),
+      );
+      return;
+    }
+
+    final planningControl = ItineraryPlanningControl();
     setState(() {
       _isGenerating = true;
+      _isWaitingForTdx = false;
       _planningMessage = '正在整理景點限制…';
+      _planningControl = planningControl;
     });
 
     try {
@@ -756,6 +995,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
             .map(
               (constraint) => RoutePlaceInput(
                 place: constraint.place,
+                preferences: constraint.preferences,
                 day: constraint.day,
                 startMinutes: constraint.startMinutes,
                 locked: constraint.locked,
@@ -766,18 +1006,27 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
           if (!mounted) return;
           setState(() => _planningMessage = message);
         },
+        onRateLimitWait: (remaining) {
+          if (!mounted) return;
+          setState(() => _isWaitingForTdx = remaining != null);
+        },
+        control: planningControl,
       );
       if (!mounted) return;
 
       setState(() {
         _isGenerating = false;
+        _isWaitingForTdx = false;
         _planningMessage = null;
+        _planningControl = null;
       });
       await Navigator.of(context).push(
         MaterialPageRoute(
           builder: (resultContext) => ItineraryResultPage(
             itinerary: itinerary,
             onEdit: () => Navigator.of(resultContext).pop(),
+            onAddPlace: _pickAdditionalPlaces,
+            onRecalculate: _recalculateItinerary,
           ),
         ),
       );
@@ -790,21 +1039,43 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
       if (mounted && _isGenerating) {
         setState(() {
           _isGenerating = false;
+          _isWaitingForTdx = false;
           _planningMessage = null;
+          _planningControl = null;
         });
       }
     }
   }
 
-  // ============================================================
-  // 加入景點
-  // ============================================================
-
-  void _addPlace(Place place) {
+  void _useEstimatesForRemainingRoutes() {
+    _planningControl?.useEstimates();
     setState(() {
-      _selectedPlaces.add(
-        TripPlaceConstraint(place: place, day: null, startMinutes: null),
+      _isWaitingForTdx = false;
+      _planningMessage = '已取消 TDX 等待，正在以估計時間完成行程…';
+    });
+  }
+
+  void _replacePlacesForType({
+    required PlaceType type,
+    required List<Place> places,
+  }) {
+    final selectedIds = places.map((place) => place.id).toSet();
+    setState(() {
+      _selectedPlaces.removeWhere(
+        (constraint) =>
+            constraint.place.type == type &&
+            !selectedIds.contains(constraint.place.id),
       );
+      final existingIds = _selectedPlaces
+          .map((constraint) => constraint.place.id)
+          .toSet();
+      for (final place in places) {
+        if (existingIds.add(place.id)) {
+          _selectedPlaces.add(
+            TripPlaceConstraint(place: place, day: null, startMinutes: null),
+          );
+        }
+      }
     });
   }
 
@@ -816,6 +1087,26 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
     setState(() {
       _selectedPlaces.remove(constraint);
     });
+  }
+
+  int _countSelected(PlaceType type) {
+    return _selectedPlaces.where((item) => item.place.type == type).length;
+  }
+
+  String _typeName(PlaceType type) {
+    return switch (type) {
+      PlaceType.attraction => '景點',
+      PlaceType.restaurant => '餐廳',
+      PlaceType.accommodation => '住宿',
+    };
+  }
+
+  IconData _typeIcon(PlaceType type) {
+    return switch (type) {
+      PlaceType.attraction => Icons.attractions,
+      PlaceType.restaurant => Icons.restaurant,
+      PlaceType.accommodation => Icons.hotel,
+    };
   }
 
   // ============================================================

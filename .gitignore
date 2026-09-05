@@ -46,5 +46,9 @@ app.*.map.json
 
 # Local web credentials
 /web/maps_config.js
-# Widget Preview related
-.widget_preview/
+
+# Local TDX credentials
+/config/secrets.json
+
+# Local data backfill reports
+/tool/output/
