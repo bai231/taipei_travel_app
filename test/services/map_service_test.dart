@@ -30,9 +30,16 @@ void main() {
           RouteGeometryPoint(latitude: 22.6877, longitude: 120.3090),
         ],
       ),
+      RouteGeometrySegment(
+        travelMode: 'DRIVING',
+        points: const [
+          RouteGeometryPoint(latitude: 22.6877, longitude: 120.3090),
+          RouteGeometryPoint(latitude: 22.7000, longitude: 120.3200),
+        ],
+      ),
     ]);
 
-    expect(polylines, hasLength(3));
+    expect(polylines, hasLength(4));
     final walking = polylines.firstWhere(
       (polyline) => polyline.polylineId.value == 'trip-route-0',
     );
@@ -42,11 +49,15 @@ void main() {
     final highSpeedRail = polylines.firstWhere(
       (polyline) => polyline.polylineId.value == 'trip-route-2',
     );
+    final driving = polylines.firstWhere(
+      (polyline) => polyline.polylineId.value == 'trip-route-3',
+    );
     expect(walking.points, hasLength(2));
     expect(walking.patterns, isNotEmpty);
     expect(bus.points, hasLength(3));
     expect(bus.patterns, isEmpty);
     expect(bus.color.toARGB32(), 0xFFF57C00);
     expect(highSpeedRail.color.toARGB32(), 0xFFC2185B);
+    expect(driving.color.toARGB32(), 0xFF2E7D32);
   });
 }

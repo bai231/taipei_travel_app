@@ -8,7 +8,9 @@ import '../../../models/visit_preferences.dart';
 import '../../../widgets/trip/visit_preferences_dialog.dart';
 import '../models/route_day.dart';
 import '../models/route_itinerary.dart';
+import '../models/route_travel_mode.dart';
 import '../models/route_visit.dart';
+import '../models/travel_leg.dart';
 import '../widgets/travel_leg_card.dart';
 import '../widgets/trip_map_panel.dart';
 
@@ -18,7 +20,11 @@ typedef AddItineraryPlaces =
       Set<String> selectedPlaceIds,
     );
 typedef RecalculateItinerary =
-    Future<RouteItinerary> Function(List<TripPlaceConstraint> constraints);
+    Future<RouteItinerary> Function(
+      List<TripPlaceConstraint> constraints,
+      Map<RouteLegKey, RouteTravelMode> travelModeOverrides,
+      RouteItinerary previousItinerary,
+    );
 
 class ItineraryResultPage extends StatefulWidget {
   final RouteItinerary itinerary;
@@ -50,6 +56,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
 
   late RouteItinerary _itinerary;
   late List<TripPlaceConstraint> _constraints;
+  late Map<RouteLegKey, RouteTravelMode> _travelModeOverrides;
   int _selectedDayIndex = 0;
   bool _isMapVisible = false;
   bool _isRecalculating = false;
@@ -62,6 +69,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
     super.initState();
     _itinerary = widget.itinerary;
     _constraints = _constraintsFromItinerary(_itinerary);
+    _travelModeOverrides = Map.of(_itinerary.travelModeOverrides);
   }
 
   @override
@@ -70,6 +78,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
     if (!identical(oldWidget.itinerary, widget.itinerary)) {
       _itinerary = widget.itinerary;
       _constraints = _constraintsFromItinerary(_itinerary);
+      _travelModeOverrides = Map.of(_itinerary.travelModeOverrides);
       _selectedDayIndex = min(
         _selectedDayIndex,
         max(0, _itinerary.days.length - 1),
@@ -598,11 +607,14 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
     try {
       final result = await widget.onRecalculate!(
         _copyConstraints(_constraints),
+        Map.of(_travelModeOverrides),
+        _itinerary,
       );
       if (!mounted) return false;
       setState(() {
         _itinerary = result;
         _constraints = _constraintsFromItinerary(result);
+        _travelModeOverrides = Map.of(result.travelModeOverrides);
         _selectedDayIndex = min(
           _selectedDayIndex,
           max(0, result.days.length - 1),
@@ -618,6 +630,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
   }
 
   void _showTravelLeg(RouteDay day, int index) {
+    final leg = day.travelLegs[index];
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -626,11 +639,40 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
           child: SingleChildScrollView(
-            child: TravelLegCard(leg: day.travelLegs[index]),
+            child: TravelLegCard(
+              leg: leg,
+              onTravelModeChanged: (travelMode) {
+                Navigator.of(context).pop();
+                _changeTravelLegMode(day.day, leg, travelMode);
+              },
+            ),
           ),
         ),
       ),
     );
+  }
+
+  Future<void> _changeTravelLegMode(
+    int day,
+    TravelLeg leg,
+    RouteTravelMode travelMode,
+  ) async {
+    final key = routeLegKey(
+      day: day,
+      originId: leg.origin.id,
+      destinationId: leg.destination.id,
+    );
+    final backup = Map<RouteLegKey, RouteTravelMode>.of(_travelModeOverrides);
+    setState(() {
+      if (travelMode == RouteTravelMode.transit) {
+        _travelModeOverrides.remove(key);
+      } else {
+        _travelModeOverrides[key] = travelMode;
+      }
+    });
+    if (!await _recalculate() && mounted) {
+      setState(() => _travelModeOverrides = backup);
+    }
   }
 
   bool _overlapsLockedVisit({

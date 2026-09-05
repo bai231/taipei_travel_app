@@ -7,12 +7,15 @@ import '../../../models/trip_request.dart';
 import '../../../models/tdx_route.dart';
 import '../../../models/visit_preferences.dart';
 import '../../../services/place_service.dart';
+import '../../../services/google_route_planning_gateway.dart';
+import '../../../services/google_route_planning_service.dart';
 import '../../../services/itinerary_schedule_service.dart';
 import '../../../services/tdx_service.dart';
 import '../../../services/timed_tdx_route_service.dart';
 import '../models/route_day.dart';
 import '../models/route_itinerary.dart';
 import '../models/route_place_input.dart';
+import '../models/route_travel_mode.dart';
 import '../models/route_visit.dart';
 import '../models/travel_leg.dart';
 
@@ -35,6 +38,7 @@ class _RateLimitRetryBudget {
 class ItineraryPlanningService {
   final RouteOptimizer _optimizer;
   final TimedTdxRouteService _timedRouteService;
+  final GoogleRoutePlanningGateway _googleRouteService;
   final ItineraryScheduleService _scheduleService;
   final RouteStop? origin;
   final int dayStartMinutes;
@@ -48,6 +52,7 @@ class ItineraryPlanningService {
   ItineraryPlanningService({
     RouteOptimizer? optimizer,
     TimedTdxRouteService? timedRouteService,
+    GoogleRoutePlanningGateway? googleRouteService,
     this._scheduleService = const ItineraryScheduleService(),
     this.origin,
     this.dayStartMinutes = 9 * 60,
@@ -57,6 +62,8 @@ class ItineraryPlanningService {
     Future<void> Function(Duration duration)? delay,
   }) : _optimizer = optimizer ?? RouteOptimizer(),
        _timedRouteService = timedRouteService ?? TimedTdxRouteService(),
+       _googleRouteService =
+           googleRouteService ?? const GoogleRoutePlanningService(),
        _now = now ?? DateTime.now,
        _delay = delay ?? Future<void>.delayed;
 
@@ -66,6 +73,8 @@ class ItineraryPlanningService {
     void Function(String message)? onProgress,
     void Function(Duration? remaining)? onRateLimitWait,
     ItineraryPlanningControl? control,
+    Map<RouteLegKey, RouteTravelMode> travelModeOverrides = const {},
+    RouteItinerary? reusableItinerary,
   }) async {
     if (places.isEmpty) {
       throw StateError('行程中至少需要一個景點。');
@@ -75,6 +84,7 @@ class ItineraryPlanningService {
 
     final activeControl = control ?? ItineraryPlanningControl();
     final retryBudget = _RateLimitRetryBudget(maximumRateLimitWaits);
+    final reusableTravelLegs = _indexReusableTravelLegs(reusableItinerary);
     final now = _now();
 
     final tripStartDate = DateTime(
@@ -119,6 +129,7 @@ class ItineraryPlanningService {
         ),
         dayOrigin: dayOrigin,
         constraints: dayConstraints[dayIndex],
+        travelMode: RouteTravelMode.transit,
       );
       final isToday =
           date.year == now.year &&
@@ -144,6 +155,8 @@ class ItineraryPlanningService {
         onRateLimitWait: onRateLimitWait,
         control: activeControl,
         retryBudget: retryBudget,
+        travelModeOverrides: travelModeOverrides,
+        reusableTravelLegs: reusableTravelLegs,
       );
       days.add(routeDay);
       if (routeDay.visits.isNotEmpty) {
@@ -165,6 +178,17 @@ class ItineraryPlanningService {
 
     onProgress?.call('行程安排完成');
 
+    final appliedTravelModeOverrides = <RouteLegKey, RouteTravelMode>{
+      for (final day in days)
+        for (final leg in day.travelLegs)
+          if (leg.travelMode != RouteTravelMode.transit)
+            routeLegKey(
+              day: day.day,
+              originId: leg.origin.id,
+              destinationId: leg.destination.id,
+            ): leg.travelMode,
+    };
+
     final itineraryOrigin =
         origin ??
         days
@@ -181,6 +205,7 @@ class ItineraryPlanningService {
       generatedAt: DateTime.now(),
       warnings: warnings,
       inputs: normalizedPlaces,
+      travelModeOverrides: appliedTravelModeOverrides,
     );
   }
 
@@ -358,6 +383,7 @@ class ItineraryPlanningService {
     required int defaultDepartureMinutes,
     required RouteStop? dayOrigin,
     required List<RoutePlaceInput> constraints,
+    required RouteTravelMode travelMode,
   }) {
     if (dayOrigin == null) return defaultDepartureMinutes;
     var departureMinutes = defaultDepartureMinutes;
@@ -369,6 +395,7 @@ class ItineraryPlanningService {
       final directTravelMinutes = _estimatedTravelMinutes(
         dayOrigin,
         _toRouteStop(input),
+        travelMode: travelMode,
       );
       departureMinutes = min(
         departureMinutes,
@@ -451,6 +478,8 @@ class ItineraryPlanningService {
     void Function(Duration? remaining)? onRateLimitWait,
     required ItineraryPlanningControl control,
     required _RateLimitRetryBudget retryBudget,
+    required Map<RouteLegKey, RouteTravelMode> travelModeOverrides,
+    required Map<RouteLegKey, TravelLeg> reusableTravelLegs,
   }) async {
     if (constraints.isEmpty) {
       return RouteDay(
@@ -482,6 +511,7 @@ class ItineraryPlanningService {
         routeOrigin: dayOrigin,
         routeEnd: hotelEndPoints.isEmpty ? null : hotelEndPoints.last,
         startTimeMinutes: initialDepartureMinutes,
+        travelMode: RouteTravelMode.transit,
       ),
       ...hotelEndPoints,
     ];
@@ -507,12 +537,19 @@ class ItineraryPlanningService {
           constraint.kind == VisitKind.hotelStay &&
           previousStop.latitude == destination.latitude &&
           previousStop.longitude == destination.longitude;
+      final legKey = routeLegKey(
+        day: day,
+        originId: previousStop.id,
+        destinationId: destination.id,
+      );
+      final travelMode = travelModeOverrides[legKey] ?? RouteTravelMode.transit;
       late DateTime requestedDeparture;
       late ScheduledVisit schedule;
       TdxRoute? route;
       String? errorMessage;
       var routeAdjustmentCount = 0;
       var rateLimitRetriesForLeg = 0;
+      var queriedApiForLeg = false;
 
       if (startsAtSelectedPlace || alreadyAtHotel) {
         final earliestStart = destination.earliestTimeMinutes;
@@ -531,22 +568,56 @@ class ItineraryPlanningService {
           previousStop: previousStop,
           destination: destination,
           isFirstStop: index == 0,
+          travelMode: travelMode,
         );
         departureMinutes = max(departureFloor, departureMinutes);
         onProgress?.call(
-          '正在查詢 Day $day 第 ${index + 1}/${orderedStops.length} 段交通…',
+          '正在以 ${travelMode.sourceLabel} 查詢 Day $day '
+          '第 ${index + 1}/${orderedStops.length} 段${travelMode.label}路線…',
         );
 
         while (true) {
           requestedDeparture = date.add(Duration(minutes: departureMinutes));
           route = null;
           errorMessage = null;
+          var queriedApiThisAttempt = false;
+          final reusableLeg = _reusableTravelLeg(
+            reusableTravelLegs: reusableTravelLegs,
+            key: legKey,
+            travelMode: travelMode,
+            requestedDeparture: requestedDeparture,
+          );
 
           if (control.useEstimatesForRemainingRoutes) {
             errorMessage = '已取消等待，後續路段使用估計時間。';
+          } else if (reusableLeg != null) {
+            route = _routeForReuse(reusableLeg, requestedDeparture);
+            errorMessage = reusableLeg.errorMessage;
+          } else if (travelMode != RouteTravelMode.transit) {
+            try {
+              queriedApiForLeg = true;
+              queriedApiThisAttempt = true;
+              route = await _googleRouteService.getRoute(
+                originLatitude: previousStop.latitude,
+                originLongitude: previousStop.longitude,
+                destinationLatitude: destination.latitude,
+                destinationLongitude: destination.longitude,
+                requestedDeparture: requestedDeparture,
+                travelMode: travelMode,
+              );
+              if (route == null) {
+                errorMessage =
+                    'Google Maps 沒有提供可用的${travelMode.label}路線，已使用估計時間。';
+              }
+            } catch (error) {
+              errorMessage =
+                  'Google Maps ${travelMode.label}路線查詢失敗，已使用估計時間：$error';
+            }
           } else {
             while (true) {
               try {
+                queriedApiForLeg = true;
+                queriedApiThisAttempt = true;
                 route = await _timedRouteService.getRouteAtOrAfter(
                   origin: '${previousStop.latitude},${previousStop.longitude}',
                   destination:
@@ -587,7 +658,11 @@ class ItineraryPlanningService {
           }
 
           final travelMinutes = route == null
-              ? _estimatedTravelMinutes(previousStop, destination)
+              ? _estimatedTravelMinutes(
+                  previousStop,
+                  destination,
+                  travelMode: travelMode,
+                )
               : _scheduleService.travelMinutesFromTdx(
                   route: route,
                   requestedDeparture: requestedDeparture,
@@ -616,6 +691,9 @@ class ItineraryPlanningService {
               route != null &&
               schedule.waitingMinutes > 15 &&
               routeAdjustmentCount < 2;
+          final routeTimingLabel = travelMode == RouteTravelMode.transit
+              ? 'TDX 班次'
+              : 'Google Maps ${travelMode.label}路線';
 
           if (shouldRetryEarlier) {
             final latestAllowedStart = fixedStart ?? mealWindowEnd!;
@@ -627,18 +705,18 @@ class ItineraryPlanningService {
             );
             onProgress?.call(
               fixedStart != null
-                  ? '首站可能遲到，正在重新查詢更早的 TDX 班次…'
-                  : '首餐超出合理時段，正在重新查詢更早的 TDX 班次…',
+                  ? '首站可能遲到，正在重新查詢更早的$routeTimingLabel…'
+                  : '首餐超出合理時段，正在重新查詢更早的$routeTimingLabel…',
             );
           } else if (shouldRetryLater) {
             departureMinutes += schedule.waitingMinutes - 5;
-            onProgress?.call('抵達時間過早，正在重新查詢較晚的 TDX 班次…');
+            onProgress?.call('抵達時間過早，正在重新查詢較晚的$routeTimingLabel…');
           } else {
             break;
           }
 
           routeAdjustmentCount++;
-          if (requestInterval > Duration.zero) {
+          if (queriedApiThisAttempt && requestInterval > Duration.zero) {
             await Future<void>.delayed(requestInterval);
           }
         }
@@ -651,6 +729,7 @@ class ItineraryPlanningService {
             schedule: schedule,
             route: route,
             errorMessage: errorMessage,
+            travelMode: travelMode,
           ),
         );
       }
@@ -703,7 +782,9 @@ class ItineraryPlanningService {
             ? '本次從此位置開始，不新增進站交通。'
             : route == null
             ? '交通時間為估算，未確認實際可搭乘路線。'
-            : '交通時間來自 TDX 查詢，不代表已訂票或保證班次運行。',
+            : travelMode == RouteTravelMode.transit
+            ? '交通時間來自 TDX 查詢，不代表已訂票或保證班次運行。'
+            : '交通時間來自 Google Maps ${travelMode.label}路線，不包含即時路況。',
       );
 
       visits.add(
@@ -727,7 +808,9 @@ class ItineraryPlanningService {
 
       departureMinutes = schedule.visitEndMinutes;
       previousStop = destination;
-      if (index < orderedStops.length - 1 && requestInterval > Duration.zero) {
+      if (queriedApiForLeg &&
+          index < orderedStops.length - 1 &&
+          requestInterval > Duration.zero) {
         await Future<void>.delayed(requestInterval);
       }
     }
@@ -740,6 +823,56 @@ class ItineraryPlanningService {
       travelLegs: travelLegs,
       isValid: warnings.isEmpty,
       warnings: warnings,
+    );
+  }
+
+  Map<RouteLegKey, TravelLeg> _indexReusableTravelLegs(
+    RouteItinerary? itinerary,
+  ) {
+    if (itinerary == null) return const {};
+    return {
+      for (final day in itinerary.days)
+        for (final leg in day.travelLegs)
+          routeLegKey(
+            day: day.day,
+            originId: leg.origin.id,
+            destinationId: leg.destination.id,
+          ): leg,
+    };
+  }
+
+  TravelLeg? _reusableTravelLeg({
+    required Map<RouteLegKey, TravelLeg> reusableTravelLegs,
+    required RouteLegKey key,
+    required RouteTravelMode travelMode,
+    required DateTime requestedDeparture,
+  }) {
+    final leg = reusableTravelLegs[key];
+    if (leg == null || leg.travelMode != travelMode) return null;
+    final route = leg.route;
+    if (route == null) {
+      return leg.requestedDeparture == requestedDeparture ? leg : null;
+    }
+    if (travelMode != RouteTravelMode.transit) return leg;
+    final actualDeparture = route.startTime;
+    if (actualDeparture == null) {
+      return leg.requestedDeparture == requestedDeparture ? leg : null;
+    }
+    return actualDeparture.isBefore(requestedDeparture) ? null : leg;
+  }
+
+  TdxRoute? _routeForReuse(TravelLeg leg, DateTime requestedDeparture) {
+    final route = leg.route;
+    if (route == null || leg.travelMode == RouteTravelMode.transit) {
+      return route;
+    }
+    return TdxRoute(
+      transfers: route.transfers,
+      travelTime: route.travelTime,
+      startTime: requestedDeparture,
+      endTime: requestedDeparture.add(Duration(seconds: route.travelTime)),
+      distanceMeters: route.distanceMeters,
+      sections: route.sections,
     );
   }
 
@@ -773,10 +906,17 @@ class ItineraryPlanningService {
     required RouteStop? routeOrigin,
     required int startTimeMinutes,
     RouteStop? routeEnd,
+    RouteTravelMode travelMode = RouteTravelMode.transit,
   }) {
     if (stops.length <= 1) return List.of(stops);
     if (stops.length > 8) {
-      return _timeAwareOrder(stops, routeOrigin, routeEnd, startTimeMinutes);
+      return _timeAwareOrder(
+        stops,
+        routeOrigin,
+        routeEnd,
+        startTimeMinutes,
+        travelMode,
+      );
     }
 
     final matrix = List.generate(
@@ -788,6 +928,7 @@ class ItineraryPlanningService {
             : _estimatedTravelMinutes(
                 stops[originIndex],
                 stops[destinationIndex],
+                travelMode: travelMode,
               ).toDouble(),
       ),
     );
@@ -795,7 +936,11 @@ class ItineraryPlanningService {
         ? null
         : stops
               .map(
-                (stop) => _estimatedTravelMinutes(routeOrigin, stop).toDouble(),
+                (stop) => _estimatedTravelMinutes(
+                  routeOrigin,
+                  stop,
+                  travelMode: travelMode,
+                ).toDouble(),
               )
               .toList();
     return _optimizer
@@ -806,14 +951,18 @@ class ItineraryPlanningService {
             stops,
             routeOrigin,
             startTimeMinutes,
+            travelMode,
           ),
           travelTimesFromStart: travelTimesFromOrigin,
           travelTimesToEnd: routeEnd == null
               ? null
               : stops
                     .map(
-                      (stop) =>
-                          _estimatedTravelMinutes(stop, routeEnd).toDouble(),
+                      (stop) => _estimatedTravelMinutes(
+                        stop,
+                        routeEnd,
+                        travelMode: travelMode,
+                      ).toDouble(),
                     )
                     .toList(),
           endPenaltyScores: routeEnd == null
@@ -829,6 +978,7 @@ class ItineraryPlanningService {
     List<RouteStop> stops,
     RouteStop? routeOrigin,
     int defaultStartMinutes,
+    RouteTravelMode travelMode,
   ) {
     var startMinutes = defaultStartMinutes;
     for (final stop in stops) {
@@ -838,7 +988,8 @@ class ItineraryPlanningService {
       if (fixedStart == null) continue;
       final travelMinutes = routeOrigin == null
           ? 0
-          : _estimatedTravelMinutes(routeOrigin, stop) + 5;
+          : _estimatedTravelMinutes(routeOrigin, stop, travelMode: travelMode) +
+                5;
       startMinutes = min(startMinutes, fixedStart - travelMinutes);
     }
     return max(0, startMinutes);
@@ -849,12 +1000,19 @@ class ItineraryPlanningService {
     required RouteStop previousStop,
     required RouteStop destination,
     required bool isFirstStop,
+    required RouteTravelMode travelMode,
   }) {
     final earliestStart = destination.earliestTimeMinutes;
     if (earliestStart == null) return availableDepartureMinutes;
     final desiredDeparture = max(
       0,
-      earliestStart - _estimatedTravelMinutes(previousStop, destination) - 5,
+      earliestStart -
+          _estimatedTravelMinutes(
+            previousStop,
+            destination,
+            travelMode: travelMode,
+          ) -
+          5,
     );
     if (isFirstStop && earliestStart == destination.latestTimeMinutes) {
       return min(availableDepartureMinutes, desiredDeparture);
@@ -867,6 +1025,7 @@ class ItineraryPlanningService {
     RouteStop? origin,
     RouteStop? end,
     int start,
+    RouteTravelMode travelMode,
   ) {
     final remaining = List<RouteStop>.of(stops);
     final ordered = <RouteStop>[];
@@ -876,13 +1035,13 @@ class ItineraryPlanningService {
       double score(RouteStop stop) {
         final travel = current == null
             ? 0
-            : _estimatedTravelMinutes(current, stop);
+            : _estimatedTravelMinutes(current, stop, travelMode: travelMode);
         final arrival = time + travel;
         final visitStart = max(arrival, stop.earliestTimeMinutes ?? 0);
         final late = max(0, visitStart - (stop.latestTimeMinutes ?? 1440));
         final endpointCost = end == null
             ? 0
-            : _estimatedTravelMinutes(stop, end) +
+            : _estimatedTravelMinutes(stop, end, travelMode: travelMode) +
                   _hotelEndpointPenalty(stop, end);
         return travel +
             (visitStart - arrival) * 0.5 +
@@ -895,7 +1054,13 @@ class ItineraryPlanningService {
       time =
           max(
             time +
-                (current == null ? 0 : _estimatedTravelMinutes(current, next)),
+                (current == null
+                    ? 0
+                    : _estimatedTravelMinutes(
+                        current,
+                        next,
+                        travelMode: travelMode,
+                      )),
             next.earliestTimeMinutes ?? 0,
           ) +
           next.stayDurationMinutes;
@@ -1249,20 +1414,32 @@ class ItineraryPlanningService {
     );
   }
 
-  int _estimatedTravelMinutes(RouteStop from, RouteStop to) {
+  int _estimatedTravelMinutes(
+    RouteStop from,
+    RouteStop to, {
+    RouteTravelMode travelMode = RouteTravelMode.transit,
+  }) {
     final distance = _distanceInKilometers(
       from.latitude,
       from.longitude,
       to.latitude,
       to.longitude,
     );
-    if (distance <= 20) {
-      return max(1, (8 + distance / 18 * 60).ceil());
-    }
-    if (distance <= 80) {
-      return max(1, (20 + distance / 35 * 60).ceil());
-    }
-    return max(1, (45 + distance / 90 * 60).ceil());
+    return switch (travelMode) {
+      RouteTravelMode.walking => max(1, (distance * 1.25 / 4.8 * 60).ceil()),
+      RouteTravelMode.driving =>
+        distance <= 20
+            ? max(1, (5 + distance * 1.2 / 25 * 60).ceil())
+            : distance <= 80
+            ? max(1, (10 + distance * 1.15 / 50 * 60).ceil())
+            : max(1, (20 + distance * 1.1 / 80 * 60).ceil()),
+      RouteTravelMode.transit =>
+        distance <= 20
+            ? max(1, (8 + distance / 18 * 60).ceil())
+            : distance <= 80
+            ? max(1, (20 + distance / 35 * 60).ceil())
+            : max(1, (45 + distance / 90 * 60).ceil()),
+    };
   }
 
   double _hotelEndpointPenalty(RouteStop from, RouteStop hotel) {

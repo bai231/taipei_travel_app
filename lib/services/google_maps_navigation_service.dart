@@ -41,7 +41,7 @@ class GoogleMapsNavigationService {
         latitude: leg.destination.latitude,
         longitude: leg.destination.longitude,
       ),
-      travelMode: travelModeForRoute(leg.route),
+      travelMode: leg.travelMode.navigationMode,
     );
     return NavigationLaunchResult(
       launched: await _launcher(uri),

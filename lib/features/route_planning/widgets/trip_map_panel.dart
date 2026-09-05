@@ -42,7 +42,7 @@ class _TripMapPanelState extends State<TripMapPanel> {
   @override
   void didUpdateWidget(covariant TripMapPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.day.day != widget.day.day) {
+    if (!identical(oldWidget.day, widget.day)) {
       _loadRouteGeometry();
     }
   }
@@ -115,12 +115,13 @@ class _TripMapPanelState extends State<TripMapPanel> {
       final transfers = <RouteGeometryTransfer>[];
       for (final leg in widget.day.travelLegs) {
         final routeGeometry = _geometryNormalizer.normalize(
-          await _routeGeometryGateway.getTransitRoute(
+          await _routeGeometryGateway.getRoute(
             originLatitude: leg.origin.latitude,
             originLongitude: leg.origin.longitude,
             destinationLatitude: leg.destination.latitude,
             destinationLongitude: leg.destination.longitude,
             departureTime: leg.requestedDeparture,
+            travelMode: leg.travelMode,
           ),
         );
         segments.addAll(routeGeometry.segments);
@@ -272,6 +273,7 @@ class _RouteLegend extends StatelessWidget {
             _LegendItem(color: Color(0xFF1565C0), label: '捷運'),
             _LegendItem(color: Color(0xFF7B1FA2), label: '台鐵'),
             _LegendItem(color: Color(0xFFC2185B), label: '高鐵'),
+            _LegendItem(color: Color(0xFF2E7D32), label: '汽車'),
           ],
         ),
       ),

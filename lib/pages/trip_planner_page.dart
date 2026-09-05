@@ -4,6 +4,7 @@ import '../models/place.dart';
 import '../models/trip_request.dart';
 import '../models/trip_place_constraint.dart';
 import '../features/route_planning/models/route_place_input.dart';
+import '../features/route_planning/models/route_travel_mode.dart';
 import '../features/route_planning/models/route_itinerary.dart';
 import '../features/route_planning/pages/itinerary_result_page.dart';
 import '../features/route_planning/services/itinerary_planning_service.dart';
@@ -897,6 +898,8 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
 
   Future<RouteItinerary> _recalculateItinerary(
     List<TripPlaceConstraint> constraints,
+    Map<RouteLegKey, RouteTravelMode> travelModeOverrides,
+    RouteItinerary previousItinerary,
   ) async {
     if (constraints.isEmpty) {
       throw StateError('行程中至少需要保留一個景點。');
@@ -928,6 +931,8 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
     final result = await _planningService.generate(
       request: widget.request,
       places: routeInputs,
+      travelModeOverrides: travelModeOverrides,
+      reusableItinerary: previousItinerary,
     );
     if (mounted) {
       setState(() {

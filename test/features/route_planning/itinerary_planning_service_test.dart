@@ -1,11 +1,13 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:taipei_travel_app/features/route_planning/models/route_place_input.dart';
+import 'package:taipei_travel_app/features/route_planning/models/route_travel_mode.dart';
 import 'package:taipei_travel_app/features/route_planning/models/travel_leg.dart';
 import 'package:taipei_travel_app/features/route_planning/services/itinerary_planning_service.dart';
 import 'package:taipei_travel_app/models/place.dart';
 import 'package:taipei_travel_app/models/tdx_route.dart';
 import 'package:taipei_travel_app/models/trip_request.dart';
 import 'package:taipei_travel_app/services/tdx_service.dart';
+import 'package:taipei_travel_app/services/google_route_planning_gateway.dart';
 import 'package:taipei_travel_app/services/timed_tdx_route_service.dart';
 
 void main() {
@@ -350,11 +352,7 @@ void main() {
       request: _request(days: 1),
       places: [
         RoutePlaceInput(
-          place: _place(
-            'early-appointment',
-            stayMinutes: 60,
-            openMinutes: 0,
-          ),
+          place: _place('early-appointment', stayMinutes: 60, openMinutes: 0),
           day: 1,
           startMinutes: 2 * 60 + 30,
           locked: true,
@@ -506,6 +504,133 @@ void main() {
       ),
     );
   });
+
+  test('單段選擇純步行時只讓該段查 Google Maps', () async {
+    final fakeTdx = _FakeTimedTdxRouteService();
+    final fakeGoogle = _FakeGoogleRoutePlanningGateway();
+    final service = ItineraryPlanningService(
+      timedRouteService: fakeTdx,
+      googleRouteService: fakeGoogle,
+      requestInterval: Duration.zero,
+      now: _beforeTrip,
+    );
+
+    final places = [
+      RoutePlaceInput(
+        place: _place(
+          'first',
+          stayMinutes: 60,
+          latitude: 25.04,
+          longitude: 121.51,
+        ),
+        day: 1,
+        startMinutes: 9 * 60,
+        locked: true,
+      ),
+      RoutePlaceInput(
+        place: _place(
+          'second',
+          stayMinutes: 60,
+          latitude: 25.05,
+          longitude: 121.53,
+        ),
+        day: 1,
+        startMinutes: 11 * 60,
+        locked: true,
+      ),
+      RoutePlaceInput(
+        place: _place(
+          'third',
+          stayMinutes: 60,
+          latitude: 25.06,
+          longitude: 121.55,
+        ),
+        day: 1,
+        startMinutes: 13 * 60,
+        locked: true,
+      ),
+    ];
+    final baseline = await service.generate(
+      request: _request(days: 1),
+      places: places,
+    );
+    final baselineTdxQueries = fakeTdx.requestedDepartures.length;
+
+    final itinerary = await service.generate(
+      request: _request(days: 1),
+      places: places,
+      travelModeOverrides: {
+        routeLegKey(day: 1, originId: 'first', destinationId: 'second'):
+            RouteTravelMode.walking,
+      },
+      reusableItinerary: baseline,
+    );
+
+    expect(fakeTdx.requestedDepartures, hasLength(baselineTdxQueries));
+    expect(fakeGoogle.travelModes, isNotEmpty);
+    expect(fakeGoogle.travelModes, everyElement(RouteTravelMode.walking));
+    final legs = itinerary.days.single.travelLegs;
+    final walkingLeg = legs.singleWhere(
+      (leg) => leg.origin.id == 'first' && leg.destination.id == 'second',
+    );
+    final transitLeg = legs.singleWhere(
+      (leg) => leg.origin.id == 'second' && leg.destination.id == 'third',
+    );
+    expect(walkingLeg.travelMode, RouteTravelMode.walking);
+    expect(walkingLeg.routeSourceLabel, 'Google Maps');
+    expect(walkingLeg.route?.distanceMeters, 1500);
+    expect(transitLeg.travelMode, RouteTravelMode.transit);
+    expect(transitLeg.routeSourceLabel, 'TDX');
+    expect(itinerary.travelModeOverrides, {
+      routeLegKey(day: 1, originId: 'first', destinationId: 'second'):
+          RouteTravelMode.walking,
+    });
+  });
+
+  test('新增景點只查新相鄰路段並沿用未受影響路段', () async {
+    final fakeTdx = _FakeTimedTdxRouteService();
+    final service = ItineraryPlanningService(
+      timedRouteService: fakeTdx,
+      requestInterval: Duration.zero,
+      now: _beforeTrip,
+    );
+    RoutePlaceInput input(String id, int startMinutes, double longitude) {
+      return RoutePlaceInput(
+        place: _place(
+          id,
+          stayMinutes: 30,
+          latitude: 25.04,
+          longitude: longitude,
+        ),
+        day: 1,
+        startMinutes: startMinutes,
+        locked: true,
+      );
+    }
+
+    final first = input('first', 9 * 60, 121.51);
+    final second = input('second', 11 * 60, 121.53);
+    final third = input('third', 13 * 60, 121.55);
+    final baseline = await service.generate(
+      request: _request(days: 1),
+      places: [first, second, third],
+    );
+    final baselineQueries = fakeTdx.requestedDepartures.length;
+
+    final updated = await service.generate(
+      request: _request(days: 1),
+      places: [first, input('inserted', 10 * 60, 121.52), second, third],
+      reusableItinerary: baseline,
+    );
+
+    expect(fakeTdx.requestedDepartures.length, baselineQueries + 2);
+    expect(
+      updated.days.single.travelLegs.map(
+        (leg) => '${leg.origin.id}->${leg.destination.id}',
+      ),
+      ['first->inserted', 'inserted->second', 'second->third'],
+    );
+  });
 }
 
 DateTime _beforeTrip() => DateTime(2026, 8, 19);
@@ -608,6 +733,37 @@ class _AlwaysRateLimitedTimedTdxRouteService extends TimedTdxRouteService {
   }) async {
     queryCount++;
     throw const TdxRateLimitException(retryAfter: Duration(seconds: 2));
+  }
+}
+
+class _FakeGoogleRoutePlanningGateway implements GoogleRoutePlanningGateway {
+  final List<RouteTravelMode> travelModes = [];
+
+  @override
+  Future<TdxRoute?> getRoute({
+    required double originLatitude,
+    required double originLongitude,
+    required double destinationLatitude,
+    required double destinationLongitude,
+    required DateTime requestedDeparture,
+    required RouteTravelMode travelMode,
+  }) async {
+    travelModes.add(travelMode);
+    return TdxRoute(
+      transfers: 0,
+      travelTime: 15 * 60,
+      startTime: requestedDeparture,
+      endTime: requestedDeparture.add(const Duration(minutes: 15)),
+      distanceMeters: 1500,
+      sections: [
+        RouteSection(
+          mode: travelMode.sectionMode,
+          travelTime: 15 * 60,
+          stopCount: 0,
+          intermediateStops: const [],
+        ),
+      ],
+    );
   }
 }
 

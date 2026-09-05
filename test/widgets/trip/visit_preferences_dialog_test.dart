@@ -170,10 +170,11 @@ void main() {
       MaterialApp(
         home: ItineraryResultPage(
           itinerary: itinerary,
-          onRecalculate: (inputs) async {
-            captured = inputs;
-            return itinerary;
-          },
+          onRecalculate:
+              (inputs, travelModeOverrides, previousItinerary) async {
+                captured = inputs;
+                return itinerary;
+              },
         ),
       ),
     );
