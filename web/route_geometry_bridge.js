@@ -24,6 +24,7 @@
 
     const input = JSON.parse(requestJson);
     const { Route } = await google.maps.importLibrary('routes');
+    const travelMode = input.travelMode || 'TRANSIT';
     const request = {
       origin: {
         lat: input.origin.latitude,
@@ -33,13 +34,17 @@
         lat: input.destination.latitude,
         lng: input.destination.longitude,
       },
-      travelMode: 'TRANSIT',
-      departureTime: usableDepartureTime(input.departureTime),
+      travelMode,
       fields: ['path', 'legs'],
       polylineQuality: 'HIGH_QUALITY',
       language: 'zh-TW',
       region: 'TW',
     };
+    if (travelMode === 'TRANSIT') {
+      request.departureTime = usableDepartureTime(input.departureTime);
+    } else if (travelMode === 'DRIVING') {
+      request.routingPreference = 'TRAFFIC_UNAWARE';
+    }
 
     const { routes } = await Route.computeRoutes(request);
     if (!routes || routes.length === 0) return '[]';
@@ -60,5 +65,39 @@
       }
     }
     return JSON.stringify(segments);
+  };
+
+  window.computeGoogleRouteInformation = async function (requestJson) {
+    if (!window.google || !google.maps || !google.maps.importLibrary) {
+      throw new Error('Google Maps JavaScript API 尚未載入。');
+    }
+
+    const input = JSON.parse(requestJson);
+    const { Route } = await google.maps.importLibrary('routes');
+    const request = {
+      origin: {
+        lat: input.origin.latitude,
+        lng: input.origin.longitude,
+      },
+      destination: {
+        lat: input.destination.latitude,
+        lng: input.destination.longitude,
+      },
+      travelMode: input.travelMode,
+      fields: ['durationMillis', 'distanceMeters'],
+      language: 'zh-TW',
+      region: 'TW',
+    };
+    if (input.travelMode === 'DRIVING') {
+      request.routingPreference = 'TRAFFIC_UNAWARE';
+    }
+
+    const { routes } = await Route.computeRoutes(request);
+    if (!routes || routes.length === 0) return 'null';
+    const route = routes[0];
+    return JSON.stringify({
+      durationMillis: route.durationMillis || 0,
+      distanceMeters: route.distanceMeters || null,
+    });
   };
 })();

@@ -5,6 +5,7 @@ class RouteStop {
   final String name;
   final double latitude;
   final double longitude;
+  final String county;
   final int stayDurationMinutes;
   final int? earliestTimeMinutes;
   final int? latestTimeMinutes;
@@ -15,6 +16,7 @@ class RouteStop {
     required this.name,
     required this.latitude,
     required this.longitude,
+    this.county = '',
     this.stayDurationMinutes = 60,
     this.earliestTimeMinutes,
     this.latestTimeMinutes,
@@ -27,6 +29,7 @@ class RouteStop {
       name: place.name,
       latitude: place.latitude,
       longitude: place.longitude,
+      county: place.county,
       stayDurationMinutes: place.stayTime,
       earliestTimeMinutes: place.openMinutes,
       latestTimeMinutes: place.closeMinutes,
@@ -53,6 +56,8 @@ class RouteOptimizer {
     required List<List<double>> durationMatrix,
     required int startTimeMinutes,
     List<double>? travelTimesFromStart,
+    List<double>? travelTimesToEnd,
+    List<double>? endPenaltyScores,
   }) {
     if (stopsToVisit.isEmpty) {
       return const OptimizationResult(
@@ -63,8 +68,29 @@ class RouteOptimizer {
     }
 
     _validateDurationMatrix(stopsToVisit.length, durationMatrix);
-    if (travelTimesFromStart != null && travelTimesFromStart.length != stopsToVisit.length) {
-      throw ArgumentError.value(travelTimesFromStart, 'travelTimesFromStart', '起點交通時間必須與景點數量相同。');
+    if (travelTimesFromStart != null &&
+        travelTimesFromStart.length != stopsToVisit.length) {
+      throw ArgumentError.value(
+        travelTimesFromStart,
+        'travelTimesFromStart',
+        '起點交通時間必須與景點數量相同。',
+      );
+    }
+    if (travelTimesToEnd != null &&
+        travelTimesToEnd.length != stopsToVisit.length) {
+      throw ArgumentError.value(
+        travelTimesToEnd,
+        'travelTimesToEnd',
+        '終點交通時間必須與景點數量相同。',
+      );
+    }
+    if (endPenaltyScores != null &&
+        endPenaltyScores.length != stopsToVisit.length) {
+      throw ArgumentError.value(
+        endPenaltyScores,
+        'endPenaltyScores',
+        '終點懲罰分數必須與景點數量相同。',
+      );
     }
     List<RouteStop> bestSequence = [];
     var minimumCost = double.infinity;
@@ -91,13 +117,15 @@ class RouteOptimizer {
           currentCost += travelTime;
         }
 
-        if (stop.earliestTimeMinutes != null && currentTime < stop.earliestTimeMinutes!) {
+        if (stop.earliestTimeMinutes != null &&
+            currentTime < stop.earliestTimeMinutes!) {
           final waitTime = stop.earliestTimeMinutes! - currentTime;
           currentTime += waitTime;
           currentCost += waitTime * 0.5;
         }
 
-        if (stop.latestTimeMinutes != null && currentTime > stop.latestTimeMinutes!) {
+        if (stop.latestTimeMinutes != null &&
+            currentTime > stop.latestTimeMinutes!) {
           routeValid = false;
           currentCost += 10000;
         }
@@ -106,7 +134,17 @@ class RouteOptimizer {
         currentCost -= stop.priorityScore * 15;
       }
 
-      if (currentCost < minimumCost) {
+      if (travelTimesToEnd != null) {
+        final endTravel = travelTimesToEnd[permutation.last];
+        currentCost += endTravel;
+        currentTime += endTravel.round();
+      }
+      if (endPenaltyScores != null) {
+        currentCost += endPenaltyScores[permutation.last];
+      }
+
+      if ((routeValid && !bestIsValid) ||
+          (routeValid == bestIsValid && currentCost < minimumCost)) {
         minimumCost = currentCost;
         bestSequence = permutation.map((index) => stopsToVisit[index]).toList();
         bestIsValid = routeValid;
@@ -121,9 +159,17 @@ class RouteOptimizer {
     );
   }
 
-  void _validateDurationMatrix(int stopCount, List<List<double>> durationMatrix) {
-    if (durationMatrix.length != stopCount || durationMatrix.any((row) => row.length != stopCount)) {
-      throw ArgumentError.value(durationMatrix, 'durationMatrix', '必須是與景點數量相同的 N x N 矩陣。');
+  void _validateDurationMatrix(
+    int stopCount,
+    List<List<double>> durationMatrix,
+  ) {
+    if (durationMatrix.length != stopCount ||
+        durationMatrix.any((row) => row.length != stopCount)) {
+      throw ArgumentError.value(
+        durationMatrix,
+        'durationMatrix',
+        '必須是與景點數量相同的 N x N 矩陣。',
+      );
     }
   }
 

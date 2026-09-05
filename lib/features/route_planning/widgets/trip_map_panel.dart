@@ -7,6 +7,7 @@ import '../../../services/map_service.dart';
 import '../../../services/route_geometry_gateway.dart';
 import '../../../services/route_geometry_normalizer.dart';
 import '../models/route_day.dart';
+import '../models/route_visit.dart';
 
 class TripMapPanel extends StatefulWidget {
   final RouteDay day;
@@ -41,7 +42,7 @@ class _TripMapPanelState extends State<TripMapPanel> {
   @override
   void didUpdateWidget(covariant TripMapPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.day.day != widget.day.day) {
+    if (!identical(oldWidget.day, widget.day)) {
       _loadRouteGeometry();
     }
   }
@@ -114,12 +115,13 @@ class _TripMapPanelState extends State<TripMapPanel> {
       final transfers = <RouteGeometryTransfer>[];
       for (final leg in widget.day.travelLegs) {
         final routeGeometry = _geometryNormalizer.normalize(
-          await _routeGeometryGateway.getTransitRoute(
+          await _routeGeometryGateway.getRoute(
             originLatitude: leg.origin.latitude,
             originLongitude: leg.origin.longitude,
             destinationLatitude: leg.destination.latitude,
             destinationLongitude: leg.destination.longitude,
             departureTime: leg.requestedDeparture,
+            travelMode: leg.travelMode,
           ),
         );
         segments.addAll(routeGeometry.segments);
@@ -156,9 +158,16 @@ class _TripMapPanelState extends State<TripMapPanel> {
         .toList();
   }
 
+  bool get _originIsFirstVisit =>
+      widget.day.visits.isNotEmpty &&
+      widget.day.origin.id == widget.day.visits.first.place.id;
+
+  Iterable<RouteVisit> get _visitsAfterOrigin =>
+      _originIsFirstVisit ? widget.day.visits.skip(1) : widget.day.visits;
+
   List<LatLng> get _coordinates => [
     LatLng(widget.day.origin.latitude, widget.day.origin.longitude),
-    ...widget.day.visits.map(
+    ..._visitsAfterOrigin.map(
       (visit) => LatLng(visit.place.latitude, visit.place.longitude),
     ),
   ];
@@ -170,12 +179,12 @@ class _TripMapPanelState extends State<TripMapPanel> {
       infoWindow: InfoWindow(title: '起點：${widget.day.origin.name}'),
       icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
     ),
-    ...widget.day.visits.map(
+    ..._visitsAfterOrigin.map(
       (visit) => Marker(
-        markerId: MarkerId('day-${widget.day.day}-${visit.place.id}'),
+        markerId: MarkerId('day-${widget.day.day}-${visit.occurrenceId}'),
         position: LatLng(visit.place.latitude, visit.place.longitude),
         infoWindow: InfoWindow(
-          title: '${visit.sequence}. ${visit.place.name}',
+          title: '${visit.sequence}. ${visit.label}',
           snippet: visit.place.address,
         ),
       ),
@@ -264,6 +273,7 @@ class _RouteLegend extends StatelessWidget {
             _LegendItem(color: Color(0xFF1565C0), label: '捷運'),
             _LegendItem(color: Color(0xFF7B1FA2), label: '台鐵'),
             _LegendItem(color: Color(0xFFC2185B), label: '高鐵'),
+            _LegendItem(color: Color(0xFF2E7D32), label: '汽車'),
           ],
         ),
       ),

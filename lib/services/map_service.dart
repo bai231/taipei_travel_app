@@ -82,6 +82,9 @@ class MapService {
     if (segment.travelMode.toUpperCase() == 'WALKING') {
       return const Color(0xFF616161);
     }
+    if (segment.travelMode.toUpperCase() == 'DRIVING') {
+      return const Color(0xFF2E7D32);
+    }
     if (vehicleType.contains('SUBWAY') || vehicleType.contains('METRO')) {
       return const Color(0xFF1565C0);
     }
