@@ -37,8 +37,14 @@ class DayItineraryView extends StatelessWidget {
             ),
           ),
         for (var index = 0; index < day.visits.length; index++) ...[
-          if (index < day.travelLegs.length)
-            TravelLegCard(leg: day.travelLegs[index]),
+          if (day.travelLegs.any(
+            (leg) => leg.destination.id == day.visits[index].occurrenceId,
+          ))
+            TravelLegCard(
+              leg: day.travelLegs.firstWhere(
+                (leg) => leg.destination.id == day.visits[index].occurrenceId,
+              ),
+            ),
           _VisitCard(visit: day.visits[index]),
         ],
       ],
@@ -71,7 +77,7 @@ class _VisitCard extends StatelessWidget {
                     children: [
                       Expanded(
                         child: Text(
-                          visit.place.name,
+                          visit.label,
                           style: const TextStyle(
                             fontSize: 17,
                             fontWeight: FontWeight.bold,
@@ -95,6 +101,14 @@ class _VisitCard extends StatelessWidget {
                     visit.place.address,
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
+                  if (visit.information.isNotEmpty)
+                    ExpansionTile(
+                      title: const Text('設定與資訊來源'),
+                      children: [
+                        for (final item in visit.information)
+                          ListTile(title: Text(item)),
+                      ],
+                    ),
                 ],
               ),
             ),

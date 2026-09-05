@@ -100,4 +100,36 @@ void main() {
       23,
     );
   });
+
+  test('單次候選中同一路線多個班次會選擇可搭且最早抵達者', () {
+    final requestedDeparture = DateTime(2026, 8, 15, 10);
+    TdxRoute busAt(int departureMinute, int arrivalMinute) {
+      return TdxRoute(
+        transfers: 0,
+        travelTime: (arrivalMinute - departureMinute) * 60,
+        startTime: DateTime(2026, 8, 15, 10, departureMinute),
+        endTime: DateTime(2026, 8, 15, 10, arrivalMinute),
+        sections: [
+          RouteSection(
+            mode: 'bus',
+            lineName: '藍1',
+            travelTime: 20 * 60,
+            stopCount: 0,
+            intermediateStops: [],
+          ),
+        ],
+      );
+    }
+
+    final missed = busAt(0, 20);
+    final catchable = busAt(8, 28);
+    final slower = busAt(5, 35);
+
+    final selected = scheduleService.selectRouteForDeparture(
+      routes: [missed, catchable, slower],
+      requestedDeparture: DateTime(2026, 8, 15, 10, 3),
+    );
+
+    expect(selected, same(catchable));
+  });
 }

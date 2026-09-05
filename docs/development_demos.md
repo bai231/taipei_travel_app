@@ -20,7 +20,7 @@ flutter run -d chrome -t lib/main_tdx_demo.dart
 
 - 入口：`lib/main_route_planning_demo.dart`
 - 功能模組：`lib/features/route_planning/`
-- 用途：獨立測試固定台北車站起點、景點排序、逐段 TDX 查詢、停留時間、每日行程、交通資訊與 Google Map 顯示。
+- 用途：獨立測試自動選擇首站、景點排序、逐段 TDX 查詢、停留時間、每日行程、交通資訊與 Google Map 顯示。
 - 維護範圍：GPS、地圖、路線與 TDX 行程串接功能。
 
 執行方式：

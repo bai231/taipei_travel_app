@@ -37,7 +37,7 @@ class _PlaceCardState extends State<PlaceCard> {
             const SizedBox(height: 2),
             Text(widget.place.category),
             const SizedBox(height: 2),
-            Text(widget.place.description),
+            //Text(widget.place.description),
             const SizedBox(height: 2),
             Text("⭐ ${widget.place.rating}"),
             Text("停留時間：${widget.place.stayTime} 分鐘"),
@@ -54,7 +54,9 @@ class _PlaceCardState extends State<PlaceCard> {
                 ElevatedButton.icon(
                   onPressed: () {
                     // 1. 切換收藏狀態（加入 / 移出）
-                    final isAdded = _favoriteService.toggleFavorite(widget.place);
+                    final isAdded = _favoriteService.toggleFavorite(
+                      widget.place,
+                    );
 
                     // 2. 局部刷新卡片自己，讓愛心圖示與文字即時變色！
                     setState(() {});

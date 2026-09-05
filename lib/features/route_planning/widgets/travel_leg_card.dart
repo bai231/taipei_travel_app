@@ -1,59 +1,139 @@
 import 'package:flutter/material.dart';
 
 import '../../../models/tdx_route.dart';
+import '../../../services/google_maps_navigation_service.dart';
+import '../models/route_travel_mode.dart';
 import '../models/travel_leg.dart';
 
-class TravelLegCard extends StatelessWidget {
+class TravelLegCard extends StatefulWidget {
   final TravelLeg leg;
+  final ValueChanged<RouteTravelMode>? onTravelModeChanged;
 
-  const TravelLegCard({super.key, required this.leg});
+  const TravelLegCard({super.key, required this.leg, this.onTravelModeChanged});
+
+  @override
+  State<TravelLegCard> createState() => _TravelLegCardState();
+}
+
+class _TravelLegCardState extends State<TravelLegCard> {
+  final GoogleMapsNavigationService _navigationService =
+      GoogleMapsNavigationService();
+  bool _isOpeningNavigation = false;
 
   @override
   Widget build(BuildContext context) {
+    final leg = widget.leg;
     final route = leg.route;
+    final colorScheme = Theme.of(context).colorScheme;
+    final usesEstimate = route == null;
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 6),
-      color: route == null
-          ? Theme.of(context).colorScheme.errorContainer
-          : Theme.of(context).colorScheme.surfaceContainerLow,
+      color: usesEstimate
+          ? colorScheme.secondaryContainer
+          : colorScheme.surfaceContainerLow,
       child: ExpansionTile(
-        leading: Icon(route == null ? Icons.warning_amber : Icons.directions),
+        initiallyExpanded: widget.onTravelModeChanged != null,
+        leading: Icon(
+          usesEstimate ? Icons.info_outline : Icons.directions,
+          color: usesEstimate ? colorScheme.onSecondaryContainer : null,
+        ),
         title: Text('${leg.origin.name} → ${leg.destination.name}'),
         subtitle: Text(_summary()),
         childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         children: [
+          if (widget.onTravelModeChanged != null)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: SegmentedButton<RouteTravelMode>(
+                segments: [
+                  for (final mode in RouteTravelMode.values)
+                    ButtonSegment(value: mode, label: Text(mode.label)),
+                ],
+                selected: {leg.travelMode},
+                onSelectionChanged: (selection) {
+                  final mode = selection.single;
+                  if (mode != leg.travelMode) {
+                    widget.onTravelModeChanged!(mode);
+                  }
+                },
+              ),
+            ),
+          if (widget.onTravelModeChanged != null) const SizedBox(height: 8),
           if (leg.errorMessage != null)
             Align(
               alignment: Alignment.centerLeft,
               child: Text(
                 leg.errorMessage!,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
+                style: TextStyle(color: colorScheme.onSecondaryContainer),
               ),
             ),
           if (route != null && route.sections.isEmpty)
-            const Align(
+            Align(
               alignment: Alignment.centerLeft,
-              child: Text('TDX 沒有提供更細的路段資訊。'),
+              child: Text('${leg.travelMode.sourceLabel} 沒有提供更細的路段資訊。'),
             ),
           if (route != null)
             ...route.sections.asMap().entries.map(
-              (entry) => _RouteSectionTile(
-                index: entry.key,
-                section: entry.value,
-              ),
+              (entry) =>
+                  _RouteSectionTile(index: entry.key, section: entry.value),
             ),
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerRight,
+            child: OutlinedButton.icon(
+              onPressed: _isOpeningNavigation ? null : _openNavigation,
+              icon: _isOpeningNavigation
+                  ? const SizedBox.square(
+                      dimension: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.navigation_outlined),
+              label: const Text('在 Google Maps 導航'),
+            ),
+          ),
         ],
       ),
     );
   }
 
   String _summary() {
+    final leg = widget.leg;
     final departure = _formatMinutes(leg.schedule.departureMinutes);
     final arrival = _formatMinutes(leg.schedule.arrivalMinutes);
     final duration =
         leg.schedule.arrivalMinutes - leg.schedule.departureMinutes;
-    final source = leg.usesEstimatedTravelTime ? '估計' : 'TDX';
-    return '$departure 出發・$arrival 抵達・$source 約 $duration 分鐘';
+    final distance = leg.route?.distanceMeters;
+    final distanceLabel = distance == null
+        ? ''
+        : distance < 1000
+        ? '・$distance 公尺'
+        : '・${(distance / 1000).toStringAsFixed(1)} 公里';
+    return '$departure 出發・$arrival 抵達・'
+        '${leg.routeSourceLabel} 約 $duration 分鐘$distanceLabel';
+  }
+
+  Future<void> _openNavigation() async {
+    setState(() => _isOpeningNavigation = true);
+    try {
+      final result = await _navigationService.openTravelLeg(widget.leg);
+      if (!mounted) return;
+      if (!result.launched) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('無法開啟 Google Maps')));
+      } else if (!result.usedCurrentLocation) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('無法取得 GPS，已改用前一站作為起點')));
+      }
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('開啟導航失敗：$error')));
+    } finally {
+      if (mounted) setState(() => _isOpeningNavigation = false);
+    }
   }
 }
 
@@ -68,16 +148,12 @@ class _RouteSectionTile extends StatelessWidget {
     final details = <String>[
       if (section.departureTime != null) '${section.departureTime} 出發',
       if (section.arrivalTime != null) '${section.arrivalTime} 抵達',
-      if (section.travelTime > 0)
-        '約 ${(section.travelTime / 60).ceil()} 分鐘',
+      if (section.travelTime > 0) '約 ${(section.travelTime / 60).ceil()} 分鐘',
       if (section.stopCount > 0) '${section.stopCount} 站',
     ];
     return ListTile(
       contentPadding: EdgeInsets.zero,
-      leading: CircleAvatar(
-        radius: 15,
-        child: Text('${index + 1}'),
-      ),
+      leading: CircleAvatar(radius: 15, child: Text('${index + 1}')),
       title: Text(_sectionTitle(section)),
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -119,7 +195,17 @@ class _RouteSectionTile extends StatelessWidget {
         return '捷運';
       case 'train':
       case 'rail':
-        return '火車';
+        return '台鐵／火車';
+      case 'high_speed_rail':
+      case 'high_speed_train':
+      case 'thsr':
+        return '高鐵';
+      case 'ferry':
+      case 'ship':
+        return '渡輪';
+      case 'cable_car':
+      case 'gondola':
+        return '纜車';
       case 'bike':
       case 'cycle':
         return '自行車';

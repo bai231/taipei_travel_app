@@ -9,6 +9,7 @@ void main() {
     final service = TimedTdxRouteService(
       gateway: gateway,
       requestInterval: Duration.zero,
+      searchOffsetsMinutes: const [0, 15, 30],
     );
     final requestedDeparture = DateTime(2026, 8, 15, 10);
 
@@ -30,6 +31,71 @@ void main() {
       requestedDeparture.add(const Duration(minutes: 15)),
     ]);
   });
+
+  test('預設只送出一次查詢，避免空結果放大請求量', () async {
+    final gateway = _EmptyTdxRoutingGateway();
+    final service = TimedTdxRouteService(
+      gateway: gateway,
+      requestInterval: Duration.zero,
+    );
+
+    final result = await service.getRouteAtOrAfter(
+      origin: '25.0,121.0',
+      destination: '25.1,121.1',
+      requestedDeparture: DateTime(2026, 8, 15, 10),
+    );
+
+    expect(result, isNull);
+    expect(gateway.queryCount, 1);
+  });
+
+  test('收到 429 後冷卻期間不再呼叫 TDX', () async {
+    final gateway = _RateLimitedTdxRoutingGateway();
+    final now = DateTime(2026, 8, 15, 10);
+    final service = TimedTdxRouteService(
+      gateway: gateway,
+      requestInterval: Duration.zero,
+      now: () => now,
+    );
+
+    Future<void> query() => service.getRouteAtOrAfter(
+      origin: '25.0,121.0',
+      destination: '25.1,121.1',
+      requestedDeparture: now,
+    );
+
+    await expectLater(query(), throwsA(isA<TdxRateLimitException>()));
+    await expectLater(query(), throwsA(isA<TdxRateLimitException>()));
+    expect(gateway.queryCount, 1);
+  });
+}
+
+class _EmptyTdxRoutingGateway implements TdxRoutingGateway {
+  int queryCount = 0;
+
+  @override
+  Future<List<TdxRoute>> getRoutingOptions({
+    required String origin,
+    required String destination,
+    DateTime? departureTime,
+  }) async {
+    queryCount++;
+    return [];
+  }
+}
+
+class _RateLimitedTdxRoutingGateway implements TdxRoutingGateway {
+  int queryCount = 0;
+
+  @override
+  Future<List<TdxRoute>> getRoutingOptions({
+    required String origin,
+    required String destination,
+    DateTime? departureTime,
+  }) async {
+    queryCount++;
+    throw const TdxRateLimitException(retryAfter: Duration(minutes: 1));
+  }
 }
 
 class _FakeTdxRoutingGateway implements TdxRoutingGateway {
