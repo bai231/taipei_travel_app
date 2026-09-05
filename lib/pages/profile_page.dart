@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../services/favorite_service.dart';
 import '../models/place.dart';
+import 'itinerary_result_page.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -25,7 +26,10 @@ class _ProfilePageState extends State<ProfilePage> {
   @override
   void initState() {
     super.initState();
+    // 1. 監聽收藏狀態變化（首頁或詳情頁按愛心時，這裡自動同步刷新）
     _favoriteService.addListener(_onFavoritesChanged);
+    // 🌟 關鍵修復：進入頁面時主動向 Supabase 撈取雲端收藏！
+    _favoriteService.fetchFavoritesFromCloud();
   }
 
   @override
@@ -40,7 +44,7 @@ class _ProfilePageState extends State<ProfilePage> {
     }
   }
 
-  // 1. 三個點點的磨砂選單（包 Material 避免 No Material widget found 報錯）
+  // 1. 三個點點的磨砂選單
   void _showFrostedMenu(BuildContext parentContext, Place place) {
     showDialog(
       context: parentContext,
@@ -84,7 +88,7 @@ class _ProfilePageState extends State<ProfilePage> {
                         },
                       ),
 
-                      // 2. 加入資料夾（無資料夾或點擊新增時可直接建立）
+                      // 2. 加入資料夾
                       _buildDialogOption(
                         icon: Icons.folder_open_rounded,
                         label: '加入資料夾',
@@ -94,18 +98,20 @@ class _ProfilePageState extends State<ProfilePage> {
                         },
                       ),
 
-                      // 3. 取消收藏
+                      // 3. 取消收藏（安全呼叫 toggleFavorite）
                       _buildDialogOption(
                         icon: Icons.favorite_border_rounded,
                         label: '取消收藏',
                         textColor: Colors.redAccent,
                         iconColor: Colors.redAccent,
-                        onTap: () {
+                        onTap: () async {
                           Navigator.pop(dialogCtx);
-                          _favoriteService.removeFavorite(place);
-                          ScaffoldMessenger.of(parentContext).showSnackBar(
-                            SnackBar(content: Text('已取消收藏「${place.name}」')),
-                          );
+                          await _favoriteService.toggleFavorite(place);
+                          if (parentContext.mounted) {
+                            ScaffoldMessenger.of(parentContext).showSnackBar(
+                              SnackBar(content: Text('已取消收藏「${place.name}」')),
+                            );
+                          }
                         },
                       ),
 
@@ -164,7 +170,7 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  // 🌟 2. 點開查看「資料夾內容」的彈窗視窗
+  // 2. 點開查看「資料夾內容」的彈窗視窗
   void _showFolderContentDialog(BuildContext parentContext, Map<String, dynamic> folder) {
     showDialog(
       context: parentContext,
@@ -233,12 +239,10 @@ class _ProfilePageState extends State<ProfilePage> {
                                 icon: const Icon(Icons.remove_circle_outline, color: Colors.redAccent, size: 20),
                                 tooltip: "移出資料夾",
                                 onPressed: () {
-                                  // 從資料夾中移除該景點
                                   setModalState(() {
                                     places.removeAt(index);
                                     folder["places"] = places;
                                   });
-                                  // 刷新外層 ProfilePage 卡片
                                   setState(() {});
                                 },
                               ),
@@ -260,7 +264,7 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  // 3. 選擇資料夾彈窗（內含建立新資料夾按鈕）
+  // 3. 選擇資料夾彈窗
   void _showSelectFolderDialog(BuildContext parentContext, Place place) {
     showDialog(
       context: parentContext,
@@ -591,26 +595,47 @@ class _ProfilePageState extends State<ProfilePage> {
 
   // 行程卡片
   Widget _buildTripCard(String title) {
-    return Container(
+  return GestureDetector(
+    behavior: HitTestBehavior.opaque, // 確保整張卡片區域都能被點擊
+    onTap: () {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ItineraryResultPage(tripTitle: title),
+        ),
+      );
+    },
+    child: Container(
       width: 110,
       decoration: BoxDecoration(
         color: AppColors.primary,
         borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.textPrimary.withValues(alpha: 0.08),
+            blurRadius: 8,
+            offset: const Offset(0, 3),
+          ),
+        ],
       ),
       alignment: Alignment.center,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
       child: Text(
         title,
         textAlign: TextAlign.center,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
         style: const TextStyle(
           color: AppColors.textPrimary,
           fontSize: 14,
           fontWeight: FontWeight.bold,
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
-  // 🌟 資料夾卡片（點擊卡片即可彈窗開啟該資料夾並檢視存了什麼）
+  // 資料夾卡片
   Widget _buildFolderCard(Map<String, dynamic> folder) {
     final title = folder["title"].toString();
     final places = List<Place>.from(folder["places"] as Iterable);

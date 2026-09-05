@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart'; 
+import '../services/auth_service.dart';
 import 'guide_overlay_screen.dart';
 import '../theme/app_theme.dart'; // 引入色彩系統
 
@@ -15,6 +17,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
+
+  final AuthService _authService = AuthService();
+  bool _isLoading = false;
 
   // 藍色系色彩直接參照（亦可引入 AppColors）
   static const Color backgroundColor = Color(0xFFF2F6F9);
@@ -33,15 +38,45 @@ class _RegisterScreenState extends State<RegisterScreen> {
     super.dispose();
   }
 
-  void _handleSignUp() {
-    if (_formKey.currentState!.validate()) {
+  Future<void> _handleSignUp() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() => _isLoading = true);
+
+    try {
+      // 1. 呼叫 Supabase 註冊帳號並寫入 profiles 表
+      await _authService.signUp(
+        email: _emailController.text.trim(),
+        password: _passwordController.text.trim(),
+        username: _nameController.text.trim(),
+      );
+
+      if (!mounted) return;
+
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('註冊成功！準備開始你的旅程 ✈️')),
       );
-      // 註冊成功後返回或跳轉
-      // 註冊成功後：
-      Navigator.pop(context); // 關閉註冊頁
-      showUserGuide(context); // 立即跳出使用指南疊層
+
+      // 2. 註冊成功後關閉註冊頁並開啟使用指南
+      Navigator.pop(context);
+      showUserGuide(context);
+
+    } on AuthException catch (e) {
+      // 捕捉 Supabase 驗證錯誤（例如信箱已被註冊、密碼太弱等）
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message)),
+      );
+    } catch (e) {
+      // 捕捉其他網路或資料庫錯誤
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('註冊失敗，請稍後再試：$e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -130,19 +165,24 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 const SizedBox(height: 14),
 
                 TextFormField(
-                  controller: _emailController,
-                  keyboardType: TextInputType.emailAddress,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(color: inputTextColor, fontSize: 15),
-                  decoration: _buildInputDeco(hint: 'Email'),
-                  validator: (v) {
-                    if (v == null || v.trim().isEmpty) return '請輸入電子郵件';
-                    if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(v)) {
-                      return '請輸入有效的電子信箱格式';
-                    }
-                    return null;
-                  },
-                ),
+  controller: _emailController,
+  keyboardType: TextInputType.emailAddress,
+  textAlign: TextAlign.center,
+  style: const TextStyle(color: inputTextColor, fontSize: 15),
+  decoration: _buildInputDeco(hint: 'Email'),
+  validator: (v) {
+    if (v == null || v.trim().isEmpty) {
+      return '請輸入電子郵件';
+    }
+    final email = v.trim();
+    // 只要有字元 + @ + 網域名稱 + 小數點 就判定通過，不再刁難格式
+    final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,}$');
+    if (!emailRegex.hasMatch(email)) {
+      return '請輸入有效的電子信箱格式';
+    }
+    return null;
+  },
+),
                 const SizedBox(height: 14),
 
                 TextFormField(
@@ -173,20 +213,29 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   width: double.infinity,
                   height: 54,
                   child: ElevatedButton(
-                    onPressed: _handleSignUp,
+                    onPressed: _isLoading ? null : _handleSignUp, // 👈 載入時禁用防止重複點擊
                     style: ElevatedButton.styleFrom(
                       backgroundColor: buttonColor,
                       foregroundColor: Colors.white,
                       elevation: 0,
                       shape: const StadiumBorder(),
                     ),
-                    child: const Text(
+                    child: _isLoading
+                      ? const SizedBox(
+                        height: 22,
+                        width: 22,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2.5,
+                        ),
+                      )
+                    : const Text(
                       'Sign Up',
                       style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
                     ),
                   ),
                 ),
-
+               
                 const Spacer(flex: 2),
 
                 // 6. 已有帳號？返回登入

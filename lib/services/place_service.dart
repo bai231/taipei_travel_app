@@ -92,48 +92,38 @@ class PlaceService {
     bool forceType = true,
   }) async {
     final rows = <Map<String, dynamic>>[];
-    for (var from = 0; ; from += _pageSize) {
-      final data = await _supabase
-          .from(table)
-          .select()
-          .range(from, from + _pageSize - 1);
-      rows.addAll(data.map((row) => Map<String, dynamic>.from(row)));
-      if (data.length < _pageSize) break;
+    try {
+      for (var from = 0; ; from += _pageSize) {
+        final data = await _supabase
+            .from(table)
+            .select()
+            .range(from, from + _pageSize - 1);
+        rows.addAll(data.map((row) => Map<String, dynamic>.from(row)));
+        if (data.length < _pageSize) break;
+      }
+    } catch (e) {
+      // 網路或連線錯誤時回傳空陣列，避免 App 直接崩潰
+      return [];
     }
 
     _countyResolver ??= await TaiwanCountyResolver.load();
-    return rows
-        .map<Place>(
-          (json) => Place.fromJson(
-            json,
-            forcedType: forceType ? expectedType : null,
-            idPrefix: table,
-          ),
-        )
-        .map(_withResolvedCounty)
-        .where((place) => place.type == expectedType)
-        .toList();
-  }
-
-  static List<Place> filterCatalog({
-    required Iterable<Place> places,
-    required PlaceType type,
-    String? county,
-    String keyword = '',
-  }) {
-    final normalizedCounty = _normalizeTaiwanText(county ?? '');
-    final normalizedKeyword = _normalizeTaiwanText(keyword).toLowerCase();
-    return places.where((place) {
-      if (place.type != type) return false;
-      if (normalizedCounty.isNotEmpty && countyFor(place) != normalizedCounty) {
-        return false;
+    
+    final parsedPlaces = <Place>[];
+    for (final json in rows) {
+      try {
+        final place = Place.fromJson(
+          json,
+          forcedType: forceType ? expectedType : null,
+          idPrefix: table,
+        );
+        parsedPlaces.add(_withResolvedCounty(place));
+      } catch (_) {
+        // 單筆資料格式不符時直接跳過，不中斷整批載入
+        continue;
       }
-      if (normalizedKeyword.isEmpty) return true;
-      final searchable = _normalizeTaiwanText(
-        [place.name, place.category, place.address, ...place.tags].join(' '),
-      ).toLowerCase();
-      return searchable.contains(normalizedKeyword);
-    }).toList();
+    }
+
+    return parsedPlaces.where((place) => place.type == expectedType).toList();
   }
 
   static List<String> availableCounties(Iterable<Place> places) {

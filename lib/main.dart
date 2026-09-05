@@ -4,6 +4,8 @@ import 'routes/app_routes.dart';
 import 'theme/app_theme.dart';
 import 'models/place.dart';
 
+final supabase = Supabase.instance.client;
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
