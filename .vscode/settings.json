@@ -1,4 +1,5 @@
 {
+<<<<<<< HEAD
 
   "deno.enablePaths": [
     "supabase/functions"
@@ -29,3 +30,7 @@
   "cmake.sourceDirectory": "C:/Users/cianj/Desktop/project/taipei_travel_app/linux"
 
   }
+=======
+    "cmake.sourceDirectory": "C:/Users/cianj/Desktop/project/taipei_travel_app/linux"
+}
+>>>>>>> aeb07361075c78da1516076383329a59ba1bfe3c
