@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:taipei_travel_app/algorithm/route_optimizer.dart';
+import 'package:taipei_travel_app/features/route_planning/models/route_travel_mode.dart';
 import 'package:taipei_travel_app/features/route_planning/models/travel_leg.dart';
 import 'package:taipei_travel_app/models/scheduled_visit.dart';
 import 'package:taipei_travel_app/services/google_maps_navigation_service.dart';
@@ -43,6 +44,26 @@ void main() {
     expect(launchedUri?.queryParameters['origin'], '25.0478,121.517');
     expect(launchedUri?.queryParameters['destination'], '25.03,121.56');
   });
+
+  for (final scenario in const [
+    (mode: RouteTravelMode.walking, query: 'walking'),
+    (mode: RouteTravelMode.driving, query: 'driving'),
+  ]) {
+    test('${scenario.mode.label}行程會開啟對應的 Google Maps 導航模式', () async {
+      Uri? launchedUri;
+      final service = GoogleMapsNavigationService(
+        locationGateway: const _FakeLocationGateway(null),
+        launcher: (uri) async {
+          launchedUri = uri;
+          return true;
+        },
+      );
+
+      await service.openTravelLeg(_leg(travelMode: scenario.mode));
+
+      expect(launchedUri?.queryParameters['travelmode'], scenario.query);
+    });
+  }
 }
 
 class _FakeLocationGateway implements CurrentLocationGateway {
@@ -54,7 +75,7 @@ class _FakeLocationGateway implements CurrentLocationGateway {
   Future<LocationPoint?> getCurrentLocation() async => location;
 }
 
-TravelLeg _leg() {
+TravelLeg _leg({RouteTravelMode travelMode = RouteTravelMode.transit}) {
   return TravelLeg(
     origin: const RouteStop(
       id: 'origin',
@@ -77,5 +98,6 @@ TravelLeg _leg() {
       waitingMinutes: 0,
       stayMinutes: 60,
     ),
+    travelMode: travelMode,
   );
 }

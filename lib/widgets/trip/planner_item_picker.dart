@@ -33,6 +33,7 @@ class _PlannerItemPickerState extends State<PlannerItemPicker> {
         .where(
           (place) =>
               place.type == widget.type &&
+              PlaceService.hasUsableCoordinates(place) &&
               widget.selectedPlaceIds.contains(place.id),
         )
         .map((place) => place.id)
@@ -155,6 +156,9 @@ class _PlannerItemPickerState extends State<PlannerItemPicker> {
                       final place = filteredPlaces[index];
                       final alreadyAdded = _selectedPlaceIds.contains(place.id);
                       final county = PlaceService.countyFor(place);
+                      final isRoutable = PlaceService.hasUsableCoordinates(
+                        place,
+                      );
 
                       return CheckboxListTile(
                         value: alreadyAdded,
@@ -167,13 +171,16 @@ class _PlannerItemPickerState extends State<PlannerItemPicker> {
                           [
                             if (county.isNotEmpty) county,
                             if (place.category.isNotEmpty) place.category,
+                            if (!isRoutable) '缺少座標，暫不可排入行程',
                             '⭐ ${place.rating}',
                             '停留 ${place.stayTime} 分鐘',
                           ].join('・'),
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
-                        onChanged: (_) => _togglePlace(place),
+                        onChanged: isRoutable
+                            ? (_) => _togglePlace(place)
+                            : null,
                       );
                     },
                   ),

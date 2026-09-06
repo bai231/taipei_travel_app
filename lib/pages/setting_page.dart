@@ -1,8 +1,11 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'edit_profile_screen.dart'; // 引入編輯個人資料頁面
 
 import 'guide_overlay_screen.dart'; // 引入使用指南
 import 'login_screen.dart';         // 引入登入頁面
+import '../theme/app_colors.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -182,8 +185,15 @@ class _SettingsPageState extends State<SettingsPage> {
                   icon: Icons.person_outline_rounded,
                   title: "編輯個人資料",
                   subtitle: "修改頭像、暱稱與個人簡介",
-                  onTap: () {
-                    // TODO: 跳轉編輯個人資料頁面
+                  onTap: () async{
+                    final bool? updated = await Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const EditProfileScreen()),
+                    );
+                    // 儲存成功後若回傳 true，可重新刷新設定頁的名片資訊
+                    if (updated == true && mounted) {
+                      setState(() {});
+                    }
                   },
                 ),
                 _buildSettingTile(
@@ -270,71 +280,107 @@ class _SettingsPageState extends State<SettingsPage> {
 
   // 個人資料頂部卡片
   Widget _buildProfileHeaderCard() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: cardColor,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Row(
-        children: [
-          // 圓形頭像
-          Container(
-            width: 56,
-            height: 56,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: Colors.white.withValues(alpha: 0.8),
-            ),
-            child: const Icon(Icons.person_rounded, size: 36, color: textDark),
+  // 1. 取得目前 Supabase 登入者物件
+  final user = Supabase.instance.client.auth.currentUser;
+  final bool isLoggedIn = user != null;
+
+  // 2. 取得使用者名稱（優先讀取註冊/Google回傳的 username/full_name，沒有的話抓 Email 前綴）
+  final String displayName = isLoggedIn
+      ? (user.userMetadata?['username'] ?? 
+         user.userMetadata?['full_name'] ?? 
+         user.email?.split('@').first ?? 
+         '旅人')
+      : '訪客旅人';
+
+  // 3. 取得副標題（已登入顯示信箱，未登入顯示引導提示）
+  final String displaySubtitle = isLoggedIn 
+      ? (user.email ?? '') 
+      : '登入以同步自訂行程與收藏';
+
+  return Container(
+    padding: const EdgeInsets.all(16),
+    decoration: BoxDecoration(
+      color: AppColors.primary, // 或你的 cardColor
+      borderRadius: BorderRadius.circular(20),
+    ),
+    child: Row(
+      children: [
+        // 圓形大頭貼
+        Container(
+          width: 56,
+          height: 56,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: Colors.white.withValues(alpha: 0.8),
           ),
-          const SizedBox(width: 14),
-          // 姓名與簡介
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _isLoggedIn ? "王小明 (Alex)" : "訪客旅人",
-                  style: const TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.bold,
-                    color: textDark,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  _isLoggedIn ? "alex.wang@example.com" : "登入以同步自訂行程與收藏",
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: textDark.withValues(alpha: 0.8),
-                  ),
-                ),
-              ],
-            ),
+          child: Icon(
+            isLoggedIn ? Icons.person_rounded : Icons.person_outline_rounded,
+            size: 36,
+            color: AppColors.textPrimary,
           ),
-          // 登入按鈕/箭頭
-          if (!_isLoggedIn)
-            ElevatedButton(
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const LoginScreen()),
-                );
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.white,
-                foregroundColor: textDark,
-                elevation: 0,
-                shape: const StadiumBorder(),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        ),
+        const SizedBox(width: 14),
+
+        // 姓名與信箱/提示
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                displayName, // 👈 這裡會自動呈現登入者名字或「訪客旅人」
+                style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.textPrimary,
+                ),
               ),
-              child: const Text("登入", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 4),
+              Text(
+                displaySubtitle,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: AppColors.textPrimary.withValues(alpha: 0.8),
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        // 未登入時顯示「登入」按鈕，已登入時可顯示「登出」快捷按鈕
+        if (!isLoggedIn)
+          ElevatedButton(
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const LoginScreen()),
+              );
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.white,
+              foregroundColor: AppColors.textPrimary,
+              elevation: 0,
+              shape: const StadiumBorder(),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
             ),
-        ],
-      ),
-    );
-  }
+            child: const Text("登入", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+          )
+        else
+          IconButton(
+            icon: Icon(Icons.logout_rounded, color: AppColors.textPrimary),
+            tooltip: '登出帳號',
+            onPressed: () async {
+              await Supabase.instance.client.auth.signOut();
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('已安全登出 🌿')),
+                );
+              }
+            },
+          ),
+      ],
+    ),
+  );
+}
 
   // 設定卡片群組包裹器
   Widget _buildSettingsGroup(List<Widget> children) {

@@ -1,4 +1,5 @@
 import 'place.dart';
+import 'visit_preferences.dart';
 
 class TripPlaceConstraint {
   final Place place;
@@ -14,11 +15,15 @@ class TripPlaceConstraint {
   // 是否鎖定
   // true = 系統不能更改這個景點的時間
   bool locked;
+  VisitPreferences preferences;
+
+  int get stayMinutes => preferences.durationFor(place);
 
   TripPlaceConstraint({
     required this.place,
     this.day,
     this.startMinutes,
     this.locked = false,
+    this.preferences = const VisitPreferences(),
   });
 }
