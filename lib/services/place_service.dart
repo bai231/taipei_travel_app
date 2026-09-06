@@ -134,6 +134,27 @@ class PlaceService {
     return taiwanCounties.where(available.contains).toList();
   }
 
+  static List<Place> filterCatalog({
+    required Iterable<Place> places,
+    required PlaceType type,
+    String? county,
+    String keyword = '',
+  }) {
+    final normalizedCounty = _normalizeTaiwanText(county ?? '');
+    final normalizedKeyword = _normalizeTaiwanText(keyword).toLowerCase();
+    return places.where((place) {
+      if (place.type != type) return false;
+      if (normalizedCounty.isNotEmpty && countyFor(place) != normalizedCounty) {
+        return false;
+      }
+      if (normalizedKeyword.isEmpty) return true;
+      final searchable = _normalizeTaiwanText(
+        [place.name, place.category, place.address, ...place.tags].join(' '),
+      ).toLowerCase();
+      return searchable.contains(normalizedKeyword);
+    }).toList();
+  }
+
   static String countyFor(
     Place place, {
     TaiwanCountyResolver? coordinateResolver,
