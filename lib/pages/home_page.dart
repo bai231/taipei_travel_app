@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/place.dart';
 import '../services/place_service.dart';
+import '../services/location_service.dart';
 import '../widgets/place_card.dart';
 import '../pages/place_detail_page.dart';
 import '../pages/itinerary_result_page.dart';
@@ -14,6 +15,7 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   final PlaceService placeService = PlaceService();
+  final LocationService _locationService = const LocationService(); // 📍 定位服務實例
 
   // 網上熱門行程清單（包含行程名稱與圖片，未來可替換為 Supabase 雲端網址）
   final List<Map<String, String>> hotTrips = const [
@@ -35,6 +37,8 @@ class _HomePageState extends State<HomePage> {
   bool isLoading = true;
   String? errorMessage;
 
+  LocationPoint? _currentUserLocation; // 📍 紀錄是否成功抓到使用者的經緯度
+
   @override
   void initState() {
     super.initState();
@@ -43,11 +47,41 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> loadPlaces() async {
     try {
-      final result = await placeService.getPlaces();
+      // 1. 同步平行啟動「撈取景點」與「取得手機 GPS 位置」
+      final placesFuture = placeService.getPlaces();
+      final locationFuture = _locationService.getCurrentLocation();
+
+      final results = await Future.wait([placesFuture, locationFuture]);
+      List<Place> fetchedPlaces = results[0] as List<Place>;
+      final LocationPoint? userLocation = results[1] as LocationPoint?;
+
+      // 2. 若有成功抓到使用者定位，計算距離並排序
+      if (userLocation != null) {
+        fetchedPlaces = fetchedPlaces.map((place) {
+          if (place.latitude != 0.0 && place.longitude != 0.0) {
+            final dist = LocationService.getDistance(
+              userLocation.latitude,
+              userLocation.longitude,
+              place.latitude,
+              place.longitude,
+            );
+            return place.copyWith(distanceInMeters: dist);
+          }
+          return place;
+        }).toList();
+
+        // 依距離由小到大（由近到遠）排序
+        fetchedPlaces.sort((a, b) {
+          if (a.distanceInMeters == null) return 1;
+          if (b.distanceInMeters == null) return -1;
+          return a.distanceInMeters!.compareTo(b.distanceInMeters!);
+        });
+      }
 
       if (!mounted) return;
       setState(() {
-        places = result;
+        places = fetchedPlaces;
+        _currentUserLocation = userLocation;
         isLoading = false;
       });
     } catch (e) {
@@ -219,15 +253,43 @@ class _HomePageState extends State<HomePage> {
               ),
 
               // 3. 區塊二：景點推薦標題
-              const Padding(
-                padding: EdgeInsets.fromLTRB(16, 24, 16, 12),
-                child: Text(
-                  "景點推薦",
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 0.5,
-                  ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 24, 16, 12),
+                child: Row(
+                  children: [
+                    Text(
+                      _currentUserLocation != null ? "附近景點推薦" : "景點推薦",
+                      style: const TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    if (_currentUserLocation != null)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF70B19B).withValues(alpha: 0.25),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.near_me_rounded, size: 12, color: Color(0xFF1E3A2F)),
+                            SizedBox(width: 3),
+                            Text(
+                              "依距離排序",
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Color(0xFF1E3A2F),
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
                 ),
               ),
 

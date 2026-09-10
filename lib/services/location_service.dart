@@ -44,4 +44,7 @@ class LocationService implements CurrentLocationGateway {
       return null;
     }
   }
+  static double getDistance(double startLat, double startLng, double endLat, double endLng) {
+    return Geolocator.distanceBetween(startLat, startLng, endLat, endLng);
+  }
 }
