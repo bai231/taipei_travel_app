@@ -58,11 +58,18 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
   late List<TripPlaceConstraint> _constraints;
   late Map<RouteLegKey, RouteTravelMode> _travelModeOverrides;
   int _selectedDayIndex = 0;
+  int? _mapDayIndex;
   bool _isMapVisible = false;
   bool _isRecalculating = false;
   double _mapHeightRatio = 0.34;
 
-  RouteDay get _selectedDay => _itinerary.days[_selectedDayIndex];
+  int? get _validMapDayIndex =>
+      _mapDayIndex != null && _mapDayIndex! < _itinerary.days.length
+      ? _mapDayIndex
+      : null;
+
+  RouteDay get _mapDay =>
+      _itinerary.days[_validMapDayIndex ?? _selectedDayIndex];
 
   @override
   void initState() {
@@ -77,6 +84,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.itinerary, widget.itinerary)) {
       _itinerary = widget.itinerary;
+      _mapDayIndex = _validMapDayIndex;
       _constraints = _constraintsFromItinerary(_itinerary);
       _travelModeOverrides = Map.of(_itinerary.travelModeOverrides);
       _selectedDayIndex = min(
@@ -131,9 +139,48 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
                   if (_pendingPlaces.isNotEmpty) _buildPendingArea(),
                   if (_itinerary.warnings.isNotEmpty) _buildWarnings(),
                   if (_isMapVisible) ...[
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.calendar_today_outlined, size: 18),
+                          const SizedBox(width: 8),
+                          const Text('地圖日期：'),
+                          Expanded(
+                            child: DropdownButton<int>(
+                              key: const ValueKey('map-day-selector'),
+                              isExpanded: true,
+                              value: _validMapDayIndex ?? -1,
+                              items: [
+                                DropdownMenuItem(
+                                  value: -1,
+                                  child: Text(
+                                    '跟隨行程（Day ${_itinerary.days[_selectedDayIndex].day}）',
+                                  ),
+                                ),
+                                for (
+                                  var index = 0;
+                                  index < _itinerary.days.length;
+                                  index++
+                                )
+                                  DropdownMenuItem(
+                                    value: index,
+                                    child: Text(
+                                      'Day ${_itinerary.days[index].day} · ${_itinerary.days[index].date.month}/${_itinerary.days[index].date.day}',
+                                    ),
+                                  ),
+                              ],
+                              onChanged: (value) => setState(() {
+                                _mapDayIndex = value == -1 ? null : value;
+                              }),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                     SizedBox(
                       height: constraints.maxHeight * _mapHeightRatio,
-                      child: TripMapPanel(day: _selectedDay),
+                      child: TripMapPanel(day: _mapDay),
                     ),
                     _buildResizeHandle(constraints.maxHeight),
                   ],
@@ -613,6 +660,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
       if (!mounted) return false;
       setState(() {
         _itinerary = result;
+        _mapDayIndex = _validMapDayIndex;
         _constraints = _constraintsFromItinerary(result);
         _travelModeOverrides = Map.of(result.travelModeOverrides);
         _selectedDayIndex = min(
