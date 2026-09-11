@@ -8,6 +8,8 @@ class PlannerItemPicker extends StatefulWidget {
   final List<Place> places;
   final Set<String> selectedPlaceIds;
   final ValueChanged<List<Place>> onConfirmed;
+  final Set<String>? favoritePlaceIds;
+  final String favoritesUnavailableMessage;
 
   const PlannerItemPicker({
     super.key,
@@ -15,6 +17,8 @@ class PlannerItemPicker extends StatefulWidget {
     required this.places,
     required this.selectedPlaceIds,
     required this.onConfirmed,
+    this.favoritePlaceIds,
+    this.favoritesUnavailableMessage = '收藏功能準備中，請先使用全部清單',
   });
 
   @override
@@ -25,6 +29,7 @@ class _PlannerItemPickerState extends State<PlannerItemPicker> {
   final TextEditingController _searchController = TextEditingController();
   late final Set<String> _selectedPlaceIds;
   String? _selectedCounty;
+  bool _favoritesOnly = false;
 
   @override
   void initState() {
@@ -53,7 +58,11 @@ class _PlannerItemPickerState extends State<PlannerItemPicker> {
         .toList();
     final counties = PlaceService.availableCounties(typePlaces);
     final filteredPlaces = PlaceService.filterCatalog(
-      places: typePlaces,
+      places: _favoritesOnly
+          ? typePlaces.where(
+              (place) => widget.favoritePlaceIds?.contains(place.id) ?? false,
+            )
+          : typePlaces,
       type: widget.type,
       county: _selectedCounty,
       keyword: _searchController.text,
@@ -78,6 +87,25 @@ class _PlannerItemPickerState extends State<PlannerItemPicker> {
                   tooltip: '關閉',
                   onPressed: () => Navigator.pop(context),
                   icon: const Icon(Icons.close),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Wrap(
+              spacing: 8,
+              children: [
+                ChoiceChip(
+                  label: const Text('全部'),
+                  selected: !_favoritesOnly,
+                  onSelected: (_) => setState(() => _favoritesOnly = false),
+                ),
+                ChoiceChip(
+                  avatar: const Icon(Icons.favorite_border, size: 18),
+                  label: const Text('我的收藏'),
+                  selected: _favoritesOnly,
+                  onSelected: (_) => setState(() => _favoritesOnly = true),
                 ),
               ],
             ),
@@ -144,7 +172,11 @@ class _PlannerItemPickerState extends State<PlannerItemPicker> {
             child: filteredPlaces.isEmpty
                 ? Center(
                     child: Text(
-                      '目前沒有符合條件的${_typeName(widget.type)}',
+                      _favoritesOnly && widget.favoritePlaceIds == null
+                          ? widget.favoritesUnavailableMessage
+                          : _favoritesOnly
+                          ? '目前沒有符合條件的收藏${_typeName(widget.type)}'
+                          : '目前沒有符合條件的${_typeName(widget.type)}',
                       style: TextStyle(color: Colors.grey.shade600),
                     ),
                   )
