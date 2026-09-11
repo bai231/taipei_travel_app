@@ -52,3 +52,10 @@ app.*.map.json
 
 # Local data backfill reports
 /tool/output/
+
+
+supabase/.env.local
+node_modules/
+supabase/.temp/
+.env
+*.env
