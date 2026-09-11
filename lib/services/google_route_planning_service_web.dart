@@ -5,6 +5,7 @@ import '../features/route_planning/models/route_travel_mode.dart';
 import '../models/tdx_route.dart';
 import 'google_route_planning_gateway.dart';
 import 'google_route_planning_response.dart';
+import 'google_route_request_cache.dart';
 
 @JS('computeGoogleRouteInformation')
 external JSPromise<JSString> _computeGoogleRouteInformation(
@@ -12,8 +13,6 @@ external JSPromise<JSString> _computeGoogleRouteInformation(
 );
 
 class GoogleRoutePlanningService implements GoogleRoutePlanningGateway {
-  static final Map<String, Map<String, dynamic>?> _cache = {};
-
   const GoogleRoutePlanningService();
 
   @override
@@ -29,17 +28,20 @@ class GoogleRoutePlanningService implements GoogleRoutePlanningGateway {
       throw ArgumentError.value(travelMode, 'travelMode', '大眾運輸必須使用 TDX 查詢。');
     }
 
-    final request = jsonEncode({
-      'origin': {'latitude': originLatitude, 'longitude': originLongitude},
-      'destination': {
-        'latitude': destinationLatitude,
-        'longitude': destinationLongitude,
-      },
-      'travelMode': travelMode.googleTravelMode,
-    });
-    final response = _cache.containsKey(request)
-        ? _cache[request]
-        : await _load(request);
+    final request = GoogleRouteRequestCache.request(
+      originLatitude: originLatitude,
+      originLongitude: originLongitude,
+      destinationLatitude: destinationLatitude,
+      destinationLongitude: destinationLongitude,
+      departureTime: requestedDeparture,
+      travelMode: travelMode,
+    );
+    final response = await GoogleRouteRequestCache.shared.get(
+      'information:$request',
+      () => _load(request),
+      canCache: (value) =>
+          value != null && ((value['durationMillis'] as num?) ?? 0) > 0,
+    );
     return parseGoogleRouteInformation(
       response: response,
       requestedDeparture: requestedDeparture,
@@ -53,7 +55,6 @@ class GoogleRoutePlanningService implements GoogleRoutePlanningGateway {
     ).toDart).toDart;
     final decoded = jsonDecode(raw);
     final response = decoded is Map<String, dynamic> ? decoded : null;
-    _cache[request] = response;
     return response;
   }
 }
