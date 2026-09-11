@@ -6,6 +6,7 @@ import '../../../models/place.dart';
 import '../../../models/trip_place_constraint.dart';
 import '../../../models/visit_preferences.dart';
 import '../../../widgets/trip/visit_preferences_dialog.dart';
+import '../../../widgets/trip/save_itinerary_button.dart';
 import '../models/route_day.dart';
 import '../models/route_itinerary.dart';
 import '../models/route_travel_mode.dart';
@@ -111,6 +112,13 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
               : _itinerary.request.title,
         ),
         actions: [
+          SaveItineraryButton(
+            itinerary: _itinerary,
+            enabled:
+                _itinerary.days.isNotEmpty &&
+                !_isRecalculating &&
+                _pendingPlaces.isEmpty,
+          ),
           TextButton.icon(
             onPressed: _itinerary.days.isEmpty
                 ? null
