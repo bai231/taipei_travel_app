@@ -1,23 +1,31 @@
 import 'package:flutter/material.dart';
 
 import '../../models/place.dart';
+import '../../models/planner_favorites.dart';
 import '../../services/place_service.dart';
+import '../../services/planner_candidate_ranking.dart';
 
 class PlannerItemPicker extends StatefulWidget {
   final PlaceType type;
   final List<Place> places;
+
+  /// Optional teammate-defined scores; affects display order only.
+  final Map<String, num> candidateScoresByPlaceId;
   final Set<String> selectedPlaceIds;
   final ValueChanged<List<Place>> onConfirmed;
   final Set<String>? favoritePlaceIds;
+  final List<PlannerFavoriteFolder> favoriteFolders;
   final String favoritesUnavailableMessage;
 
   const PlannerItemPicker({
     super.key,
     required this.type,
     required this.places,
+    this.candidateScoresByPlaceId = const {},
     required this.selectedPlaceIds,
     required this.onConfirmed,
     this.favoritePlaceIds,
+    this.favoriteFolders = const [],
     this.favoritesUnavailableMessage = '收藏功能準備中，請先使用全部清單',
   });
 
@@ -29,6 +37,7 @@ class _PlannerItemPickerState extends State<PlannerItemPicker> {
   final TextEditingController _searchController = TextEditingController();
   late final Set<String> _selectedPlaceIds;
   String? _selectedCounty;
+  String? _selectedFolderId;
   bool _favoritesOnly = false;
 
   @override
@@ -53,19 +62,33 @@ class _PlannerItemPickerState extends State<PlannerItemPicker> {
 
   @override
   Widget build(BuildContext context) {
+    final favoritesMode = widget.type == PlaceType.attraction && _favoritesOnly;
+    final folderId =
+        widget.favoriteFolders.any((f) => f.id == _selectedFolderId)
+        ? _selectedFolderId
+        : null;
+    final folder = folderId == null
+        ? null
+        : widget.favoriteFolders.firstWhere((f) => f.id == folderId);
     final typePlaces = widget.places
         .where((place) => place.type == widget.type)
         .toList();
     final counties = PlaceService.availableCounties(typePlaces);
-    final filteredPlaces = PlaceService.filterCatalog(
-      places: _favoritesOnly
+    final matchingPlaces = PlaceService.filterCatalog(
+      places: favoritesMode
           ? typePlaces.where(
-              (place) => widget.favoritePlaceIds?.contains(place.id) ?? false,
+              (place) =>
+                  (widget.favoritePlaceIds?.contains(place.id) ?? false) &&
+                  (folder == null || folder.placeIds.contains(place.id)),
             )
           : typePlaces,
       type: widget.type,
-      county: _selectedCounty,
+      county: favoritesMode ? null : _selectedCounty,
       keyword: _searchController.text,
+    );
+    final filteredPlaces = rankPlannerCandidates(
+      matchingPlaces,
+      scoresByPlaceId: widget.candidateScoresByPlaceId,
     );
 
     return SafeArea(
@@ -91,25 +114,26 @@ class _PlannerItemPickerState extends State<PlannerItemPicker> {
               ],
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-            child: Wrap(
-              spacing: 8,
-              children: [
-                ChoiceChip(
-                  label: const Text('全部'),
-                  selected: !_favoritesOnly,
-                  onSelected: (_) => setState(() => _favoritesOnly = false),
-                ),
-                ChoiceChip(
-                  avatar: const Icon(Icons.favorite_border, size: 18),
-                  label: const Text('我的收藏'),
-                  selected: _favoritesOnly,
-                  onSelected: (_) => setState(() => _favoritesOnly = true),
-                ),
-              ],
+          if (widget.type == PlaceType.attraction)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Wrap(
+                spacing: 8,
+                children: [
+                  ChoiceChip(
+                    label: const Text('全部'),
+                    selected: !_favoritesOnly,
+                    onSelected: (_) => setState(() => _favoritesOnly = false),
+                  ),
+                  ChoiceChip(
+                    avatar: const Icon(Icons.favorite_border, size: 18),
+                    label: const Text('我的收藏'),
+                    selected: _favoritesOnly,
+                    onSelected: (_) => setState(() => _favoritesOnly = true),
+                  ),
+                ],
+              ),
             ),
-          ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(
@@ -139,29 +163,60 @@ class _PlannerItemPickerState extends State<PlannerItemPicker> {
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: DropdownButtonFormField<String?>(
-                    initialValue: _selectedCounty,
-                    decoration: const InputDecoration(
-                      labelText: '縣市',
-                      border: OutlineInputBorder(),
-                      isDense: true,
-                    ),
-                    items: [
-                      const DropdownMenuItem<String?>(
-                        value: null,
-                        child: Text('全部縣市'),
-                      ),
-                      ...counties.map(
-                        (county) => DropdownMenuItem<String?>(
-                          value: county,
-                          child: Text(county),
+                  child: favoritesMode
+                      ? DropdownButtonFormField<String?>(
+                          key: ValueKey('folders:$folderId'),
+                          initialValue: folderId,
+                          isExpanded: true,
+                          decoration: const InputDecoration(
+                            labelText: '收藏資料夾',
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                          items: [
+                            const DropdownMenuItem<String?>(
+                              value: null,
+                              child: Text('全部收藏'),
+                            ),
+                            ...widget.favoriteFolders.map(
+                              (folder) => DropdownMenuItem<String?>(
+                                value: folder.id,
+                                child: Text(
+                                  folder.title,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ),
+                          ],
+                          onChanged: widget.favoritePlaceIds == null
+                              ? null
+                              : (value) =>
+                                    setState(() => _selectedFolderId = value),
+                        )
+                      : DropdownButtonFormField<String?>(
+                          key: const ValueKey('counties'),
+                          initialValue: _selectedCounty,
+                          decoration: const InputDecoration(
+                            labelText: '縣市',
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                          items: [
+                            const DropdownMenuItem<String?>(
+                              value: null,
+                              child: Text('全部縣市'),
+                            ),
+                            ...counties.map(
+                              (county) => DropdownMenuItem<String?>(
+                                value: county,
+                                child: Text(county),
+                              ),
+                            ),
+                          ],
+                          onChanged: (value) {
+                            setState(() => _selectedCounty = value);
+                          },
                         ),
-                      ),
-                    ],
-                    onChanged: (value) {
-                      setState(() => _selectedCounty = value);
-                    },
-                  ),
                 ),
               ],
             ),
@@ -172,9 +227,9 @@ class _PlannerItemPickerState extends State<PlannerItemPicker> {
             child: filteredPlaces.isEmpty
                 ? Center(
                     child: Text(
-                      _favoritesOnly && widget.favoritePlaceIds == null
+                      favoritesMode && widget.favoritePlaceIds == null
                           ? widget.favoritesUnavailableMessage
-                          : _favoritesOnly
+                          : favoritesMode
                           ? '目前沒有符合條件的收藏${_typeName(widget.type)}'
                           : '目前沒有符合條件的${_typeName(widget.type)}',
                       style: TextStyle(color: Colors.grey.shade600),

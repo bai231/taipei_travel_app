@@ -9,17 +9,21 @@ import '../features/route_planning/models/route_itinerary.dart';
 import '../features/route_planning/pages/itinerary_result_page.dart';
 import '../features/route_planning/services/itinerary_planning_service.dart';
 import '../services/place_service.dart';
-import '../widgets/trip/planner_item_picker.dart';
+import '../widgets/trip/cloud_planner_item_picker.dart';
 import '../widgets/trip/visit_preferences_dialog.dart';
 
 class TripPlannerPage extends StatefulWidget {
   final TripRequest request;
   final List<Place> places;
 
+  /// Precomputed display scores for attraction/restaurant/accommodation pickers.
+  final Map<String, num> candidateScoresByPlaceId;
+
   const TripPlannerPage({
     super.key,
     required this.request,
     required this.places,
+    this.candidateScoresByPlaceId = const {},
   });
 
   @override
@@ -53,9 +57,10 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
       builder: (context) {
         return SizedBox(
           height: MediaQuery.of(context).size.height * 0.82,
-          child: PlannerItemPicker(
+          child: CloudPlannerItemPicker(
             type: _selectedType,
             places: widget.places,
+            candidateScoresByPlaceId: widget.candidateScoresByPlaceId,
             selectedPlaceIds: _selectedPlaces
                 .map((item) => item.place.id)
                 .toSet(),
@@ -877,9 +882,10 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
       builder: (context) {
         return SizedBox(
           height: MediaQuery.of(context).size.height * 0.82,
-          child: PlannerItemPicker(
+          child: CloudPlannerItemPicker(
             type: selectedType,
             places: widget.places,
+            candidateScoresByPlaceId: widget.candidateScoresByPlaceId,
             selectedPlaceIds: selectedPlaceIds,
             onConfirmed: (places) {
               // PlannerItemPicker 回傳的是該種類目前所有已勾選項目，
