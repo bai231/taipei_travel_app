@@ -774,7 +774,7 @@ TripRequest _request({required int days}) {
     endDate: DateTime(2026, 8, 20 + days - 1),
     location: '台北市',
     people: 2,
-    budget: 5000,
+    budget_level: 5000,
     preferences: const ['攝影'],
     aiPrompt: '',
   );

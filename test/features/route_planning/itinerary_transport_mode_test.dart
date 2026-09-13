@@ -99,7 +99,7 @@ RouteItinerary _itinerary(RouteTravelMode travelMode) {
       endDate: DateTime(2030, 1, 1),
       location: '台北市',
       people: 1,
-      budget: 1000,
+      budget_level: 1000,
       preferences: const [],
       aiPrompt: '',
     ),

@@ -245,7 +245,7 @@ TripRequest _request() => TripRequest(
   endDate: DateTime(2030, 1, 3),
   location: '',
   people: 2,
-  budget: 5000,
+  budget_level: 5000,
   preferences: const [],
   aiPrompt: '',
 );

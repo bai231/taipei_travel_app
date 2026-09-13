@@ -10,7 +10,7 @@ void main() {
     endDate: DateTime(2026, 8, 21),
     location: '台北',
     people: 4,
-    budget: 8000,
+    budget_level: 8000,
     preferences: ['攝影', '美食', '夜景'],
     aiPrompt: '',
   );

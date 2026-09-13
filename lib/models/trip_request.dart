@@ -7,7 +7,7 @@ class TripRequest {
   final DateTime endDate;
   final String location;
   final int people;
-  final double budget;
+  final int budget_level;
   final List<String> preferences;
   final String aiPrompt;
   final TravelPreference? parsedPreference;
@@ -19,7 +19,7 @@ class TripRequest {
     required this.endDate,
     required this.location,
     required this.people,
-    required this.budget,
+    required this.budget_level,
     required this.preferences, //使用者透過按鈕或標籤選擇的偏好
     required this.aiPrompt, // 使用者輸入的原始自然語言
     this.parsedPreference, // Gemini 將 aiPrompt 解析後產生的結構化偏好
