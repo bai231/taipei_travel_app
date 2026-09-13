@@ -60,7 +60,8 @@ RouteItinerary _itinerary(RouteTravelMode travelMode) {
     stayTime: 60,
     rating: 0,
     tags: const [],
-    estimatedCost: 0,
+    //estimatedCost: 0,
+    price_level: 1,
     openMinutes: 0,
     closeMinutes: 1440,
   );

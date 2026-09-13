@@ -262,7 +262,7 @@ Place _place(PlaceType type) => Place(
   stayTime: 60,
   rating: 0,
   tags: const [],
-  estimatedCost: 0,
+  price_level: 0,
   openMinutes: 0,
   closeMinutes: 1440,
 );

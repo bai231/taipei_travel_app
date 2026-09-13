@@ -14,7 +14,7 @@ class RecommendService {
       score += _calculateRatingScore(place);
 
       // ③ 預算分數
-      score += _calculateBudgetScore(place, request);
+      //score += _calculateBudgetScore(place, request);
 
       // ④ 時間分數
       score += _calculateTimeScore(place, request);
@@ -48,7 +48,7 @@ class RecommendService {
     return (place.rating / 5.0) * 25;
   }
 
-  double _calculateBudgetScore(Place place, TripRequest request) {
+  /*double _calculateBudgetScore(Place place, TripRequest request) {
     // 每人每天的平均預算
     final dailyBudgetPerPerson = request.budget / request.people / request.days;
 
@@ -77,7 +77,7 @@ class RecommendService {
 
     // 太貴
     return 0;
-  }
+  }*/
 
   double _calculateTimeScore(Place place, TripRequest request) {
     // 假設一天可以安排 12 小時

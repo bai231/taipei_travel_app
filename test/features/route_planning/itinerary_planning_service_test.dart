@@ -800,8 +800,8 @@ Place _place(
     stayTime: stayMinutes,
     rating: 4.5,
     tags: const [],
-    //priceLevel: 1,
-    estimatedCost: 100,
+    price_level: 1,
+    //estimatedCost: 100,
     openMinutes: openMinutes,
     closeMinutes: closeMinutes,
   );
