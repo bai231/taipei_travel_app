@@ -9,6 +9,8 @@ import '../widgets/trip/next_step_button.dart';
 import '../models/trip_request.dart';
 import '../services/place_service.dart';
 import 'trip_planner_page.dart';
+import '../services/ai_preference_service.dart';
+import '../models/travel_preference.dart';
 
 class TripPage extends StatefulWidget {
   const TripPage({super.key});
@@ -20,6 +22,9 @@ class TripPage extends StatefulWidget {
 class _TripPageState extends State<TripPage> {
   final PlaceService _placeService = PlaceService();
 
+  final AiPreferenceService _aiPreferenceService = AiPreferenceService();
+
+  bool _isSubmitting = false;
   final TextEditingController _tripNameController = TextEditingController();
 
   DateTime? _startDate;
@@ -62,38 +67,59 @@ class _TripPageState extends State<TripPage> {
       return;
     }
 
-    if (_budgetController.text.isEmpty) {
+    final budgetText = _budgetController.text.trim();
+
+    if (budgetText.isEmpty) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text("請輸入預算")));
-
+      ).showSnackBar(const SnackBar(content: Text("請輸入行程總預算")));
       return;
     }
 
-    final budget = double.tryParse(_budgetController.text);
+    final budget = double.tryParse(budgetText);
 
-    if (budget == null) {
+    if (budget == null || budget <= 0) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text("請輸入有效的預算")));
+      ).showSnackBar(const SnackBar(content: Text("行程總預算必須大於 0 元")));
       return;
     }
 
-    final request = TripRequest(
-      title: _tripNameController.text,
-      startDate: _startDate!,
-      endDate: _endDate!,
-      location: '全台',
-      people: _people,
-      budget: budget,
-      preferences: _preferences,
-      aiPrompt: _aiPromptController.text,
-    );
+    if (_isSubmitting) {
+      return;
+    }
+
+    setState(() {
+      _isSubmitting = true;
+    });
 
     try {
+      final aiPrompt = _aiPromptController.text.trim();
+
+      TravelPreference? parsedPreference;
+
+      // 使用者有輸入其他需求時，才呼叫 Gemini。
+      if (aiPrompt.isNotEmpty) {
+        parsedPreference = await _aiPreferenceService.parsePreference(aiPrompt);
+      }
+
+      final request = TripRequest(
+        title: _tripNameController.text.trim(),
+        startDate: _startDate!,
+        endDate: _endDate!,
+        location: '全台',
+        people: _people,
+        budget: budget,
+        preferences: _preferences,
+        aiPrompt: aiPrompt,
+        parsedPreference: parsedPreference,
+      );
+
       final places = await _placeService.getTripCatalog();
 
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
 
       if (places.isEmpty) {
         ScaffoldMessenger.of(
@@ -109,12 +135,28 @@ class _TripPageState extends State<TripPage> {
               TripPlannerPage(request: request, places: places),
         ),
       );
-    } catch (e) {
-      if (!mounted) return;
+    } on AiPreferenceException catch (error) {
+      if (!mounted) {
+        return;
+      }
 
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text("讀取景點失敗：$e")));
+      ).showSnackBar(SnackBar(content: Text('AI 偏好解析失敗：${error.message}')));
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('建立行程失敗：$error')));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSubmitting = false;
+        });
+      }
     }
   }
 
@@ -173,14 +215,18 @@ class _TripPageState extends State<TripPage> {
             AIPromptField(controller: _aiPromptController),
 
             const SizedBox(height: 30),
-            NextStepButton(
-              onPressed: () {
-                _generateTrip();
-              },
-            ),
+            NextStepButton(isLoading: _isSubmitting, onPressed: _generateTrip),
           ],
         ),
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    _tripNameController.dispose();
+    _budgetController.dispose();
+    _aiPromptController.dispose();
+    super.dispose();
   }
 }

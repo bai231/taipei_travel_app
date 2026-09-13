@@ -1,4 +1,5 @@
 import 'trip_place_constraint.dart';
+import 'travel_preference.dart';
 
 class TripRequest {
   final String title;
@@ -9,6 +10,7 @@ class TripRequest {
   final double budget;
   final List<String> preferences;
   final String aiPrompt;
+  final TravelPreference? parsedPreference;
   final List<TripPlaceConstraint> selectedPlaces;
 
   TripRequest({
@@ -18,8 +20,9 @@ class TripRequest {
     required this.location,
     required this.people,
     required this.budget,
-    required this.preferences,
-    required this.aiPrompt,
+    required this.preferences, //使用者透過按鈕或標籤選擇的偏好
+    required this.aiPrompt, // 使用者輸入的原始自然語言
+    this.parsedPreference, // Gemini 將 aiPrompt 解析後產生的結構化偏好
     this.selectedPlaces = const [],
   });
 
