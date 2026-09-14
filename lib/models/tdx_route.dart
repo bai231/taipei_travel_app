@@ -3,6 +3,7 @@ class TdxRoute {
   final int travelTime;
   final DateTime? startTime;
   final DateTime? endTime;
+  final int? distanceMeters;
   final List<RouteSection> sections;
 
   TdxRoute({
@@ -10,6 +11,7 @@ class TdxRoute {
     required this.travelTime,
     this.startTime,
     this.endTime,
+    this.distanceMeters,
     required this.sections,
   });
 
@@ -20,6 +22,7 @@ class TdxRoute {
       travelTime: json['travel_time'] ?? json['duration'] ?? 0,
       startTime: DateTime.tryParse(json['start_time']?.toString() ?? ''),
       endTime: DateTime.tryParse(json['end_time']?.toString() ?? ''),
+      distanceMeters: (json['distance_meters'] as num?)?.toInt(),
       sections: sectionsList.map((s) => RouteSection.fromJson(s)).toList(),
     );
   }

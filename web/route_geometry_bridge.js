@@ -6,15 +6,16 @@
   }
 
   function usableDepartureTime(value) {
-    if (!value) return undefined;
+    if (!value) throw new Error('缺少大眾運輸出發日期，未查詢其他日期的路線。');
     const departure = new Date(value);
-    if (Number.isNaN(departure.getTime())) return undefined;
+    if (Number.isNaN(departure.getTime())) throw new Error('出發日期格式無效。');
     const now = Date.now();
     const minimum = now - 7 * 24 * 60 * 60 * 1000;
     const maximum = now + 100 * 24 * 60 * 60 * 1000;
-    return departure.getTime() >= minimum && departure.getTime() <= maximum
-      ? departure
-      : undefined;
+    if (departure.getTime() < minimum || departure.getTime() > maximum) {
+      throw new Error('出發日期超出目前地圖查詢範圍（過去 7 天至未來 100 天），未改用其他日期。');
+    }
+    return departure;
   }
 
   window.computeTransitRouteGeometry = async function (requestJson) {
@@ -24,6 +25,7 @@
 
     const input = JSON.parse(requestJson);
     const { Route } = await google.maps.importLibrary('routes');
+    const travelMode = input.travelMode || 'TRANSIT';
     const request = {
       origin: {
         lat: input.origin.latitude,
@@ -33,13 +35,17 @@
         lat: input.destination.latitude,
         lng: input.destination.longitude,
       },
-      travelMode: 'TRANSIT',
-      departureTime: usableDepartureTime(input.departureTime),
+      travelMode,
       fields: ['path', 'legs'],
       polylineQuality: 'HIGH_QUALITY',
       language: 'zh-TW',
       region: 'TW',
     };
+    if (travelMode === 'TRANSIT') {
+      request.departureTime = usableDepartureTime(input.departureTime);
+    } else if (travelMode === 'DRIVING') {
+      request.routingPreference = 'TRAFFIC_UNAWARE';
+    }
 
     const { routes } = await Route.computeRoutes(request);
     if (!routes || routes.length === 0) return '[]';
@@ -60,5 +66,39 @@
       }
     }
     return JSON.stringify(segments);
+  };
+
+  window.computeGoogleRouteInformation = async function (requestJson) {
+    if (!window.google || !google.maps || !google.maps.importLibrary) {
+      throw new Error('Google Maps JavaScript API 尚未載入。');
+    }
+
+    const input = JSON.parse(requestJson);
+    const { Route } = await google.maps.importLibrary('routes');
+    const request = {
+      origin: {
+        lat: input.origin.latitude,
+        lng: input.origin.longitude,
+      },
+      destination: {
+        lat: input.destination.latitude,
+        lng: input.destination.longitude,
+      },
+      travelMode: input.travelMode,
+      fields: ['durationMillis', 'distanceMeters'],
+      language: 'zh-TW',
+      region: 'TW',
+    };
+    if (input.travelMode === 'DRIVING') {
+      request.routingPreference = 'TRAFFIC_UNAWARE';
+    }
+
+    const { routes } = await Route.computeRoutes(request);
+    if (!routes || routes.length === 0) return 'null';
+    const route = routes[0];
+    return JSON.stringify({
+      durationMillis: route.durationMillis || 0,
+      distanceMeters: route.distanceMeters || null,
+    });
   };
 })();

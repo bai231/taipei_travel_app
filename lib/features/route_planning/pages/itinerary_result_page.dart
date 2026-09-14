@@ -4,9 +4,13 @@ import 'package:flutter/material.dart';
 
 import '../../../models/place.dart';
 import '../../../models/trip_place_constraint.dart';
+import '../../../models/visit_preferences.dart';
+import '../../../widgets/trip/visit_preferences_dialog.dart';
 import '../models/route_day.dart';
 import '../models/route_itinerary.dart';
+import '../models/route_travel_mode.dart';
 import '../models/route_visit.dart';
+import '../models/travel_leg.dart';
 import '../widgets/travel_leg_card.dart';
 import '../widgets/trip_map_panel.dart';
 
@@ -16,7 +20,11 @@ typedef AddItineraryPlaces =
       Set<String> selectedPlaceIds,
     );
 typedef RecalculateItinerary =
-    Future<RouteItinerary> Function(List<TripPlaceConstraint> constraints);
+    Future<RouteItinerary> Function(
+      List<TripPlaceConstraint> constraints,
+      Map<RouteLegKey, RouteTravelMode> travelModeOverrides,
+      RouteItinerary previousItinerary,
+    );
 
 class ItineraryResultPage extends StatefulWidget {
   final RouteItinerary itinerary;
@@ -48,18 +56,27 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
 
   late RouteItinerary _itinerary;
   late List<TripPlaceConstraint> _constraints;
+  late Map<RouteLegKey, RouteTravelMode> _travelModeOverrides;
   int _selectedDayIndex = 0;
+  int? _mapDayIndex;
   bool _isMapVisible = false;
   bool _isRecalculating = false;
   double _mapHeightRatio = 0.34;
 
-  RouteDay get _selectedDay => _itinerary.days[_selectedDayIndex];
+  int? get _validMapDayIndex =>
+      _mapDayIndex != null && _mapDayIndex! < _itinerary.days.length
+      ? _mapDayIndex
+      : null;
+
+  RouteDay get _mapDay =>
+      _itinerary.days[_validMapDayIndex ?? _selectedDayIndex];
 
   @override
   void initState() {
     super.initState();
     _itinerary = widget.itinerary;
     _constraints = _constraintsFromItinerary(_itinerary);
+    _travelModeOverrides = Map.of(_itinerary.travelModeOverrides);
   }
 
   @override
@@ -67,7 +84,9 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.itinerary, widget.itinerary)) {
       _itinerary = widget.itinerary;
+      _mapDayIndex = _validMapDayIndex;
       _constraints = _constraintsFromItinerary(_itinerary);
+      _travelModeOverrides = Map.of(_itinerary.travelModeOverrides);
       _selectedDayIndex = min(
         _selectedDayIndex,
         max(0, _itinerary.days.length - 1),
@@ -120,9 +139,48 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
                   if (_pendingPlaces.isNotEmpty) _buildPendingArea(),
                   if (_itinerary.warnings.isNotEmpty) _buildWarnings(),
                   if (_isMapVisible) ...[
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.calendar_today_outlined, size: 18),
+                          const SizedBox(width: 8),
+                          const Text('地圖日期：'),
+                          Expanded(
+                            child: DropdownButton<int>(
+                              key: const ValueKey('map-day-selector'),
+                              isExpanded: true,
+                              value: _validMapDayIndex ?? -1,
+                              items: [
+                                DropdownMenuItem(
+                                  value: -1,
+                                  child: Text(
+                                    '跟隨行程（Day ${_itinerary.days[_selectedDayIndex].day}）',
+                                  ),
+                                ),
+                                for (
+                                  var index = 0;
+                                  index < _itinerary.days.length;
+                                  index++
+                                )
+                                  DropdownMenuItem(
+                                    value: index,
+                                    child: Text(
+                                      'Day ${_itinerary.days[index].day} · ${_itinerary.days[index].date.month}/${_itinerary.days[index].date.day}',
+                                    ),
+                                  ),
+                              ],
+                              onChanged: (value) => setState(() {
+                                _mapDayIndex = value == -1 ? null : value;
+                              }),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                     SizedBox(
                       height: constraints.maxHeight * _mapHeightRatio,
-                      child: TripMapPanel(day: _selectedDay),
+                      child: TripMapPanel(day: _mapDay),
                     ),
                     _buildResizeHandle(constraints.maxHeight),
                   ],
@@ -337,7 +395,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
               child: _buildDropCell(day, hour),
             ),
           for (var i = 0; i < day.visits.length; i++)
-            _buildVisit(day, day.visits[i], i, startHour),
+            _buildVisit(day, day.visits[i], startHour),
         ],
       ),
     );
@@ -412,22 +470,17 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
     return dropDateTime.isBefore(minimumDateTime);
   }
 
-  Widget _buildVisit(
-    RouteDay day,
-    RouteVisit visit,
-    int visitIndex,
-    int startHour,
-  ) {
+  Widget _buildVisit(RouteDay day, RouteVisit visit, int startHour) {
+    final travelLegIndex = day.travelLegs.indexWhere(
+      (leg) => leg.destination.id == visit.occurrenceId,
+    );
     final top = (visit.startMinutes - startHour * 60) / 60 * _hourHeight;
-    final height = max(110.0, visit.stayMinutes / 60 * _hourHeight - 6);
+    final height = max(28.0, visit.stayMinutes / 60 * _hourHeight - 4);
     final card = _VisitCard(
       visit: visit,
-      onTap: () {
-        final index = _itinerary.days.indexWhere((item) => item.day == day.day);
-        if (index >= 0) setState(() => _selectedDayIndex = index);
-      },
-      onShowTravel: visitIndex < day.travelLegs.length
-          ? () => _showTravelLeg(day, visitIndex)
+      onTap: _isRecalculating ? null : () => _editVisitPreferences(visit),
+      onShowTravel: travelLegIndex >= 0
+          ? () => _showTravelLeg(day, travelLegIndex)
           : null,
       onDelete: _isRecalculating ? null : () => _deletePlace(visit.place),
     );
@@ -436,7 +489,10 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
       right: 6,
       top: max(0.0, top),
       height: height,
-      child: visit.locked
+      child:
+          visit.locked ||
+              visit.place.type == PlaceType.accommodation ||
+              _isRecalculating
           ? card
           : MouseRegion(
               cursor: SystemMouseCursors.grab,
@@ -521,14 +577,19 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
     required int day,
     required int startMinutes,
   }) async {
+    if (_isRecalculating) return;
     final backup = _copyConstraints(_constraints);
     final pendingBackup = List<Place>.of(_pendingPlaces);
     final index = _constraints.indexWhere((item) => item.place.id == place.id);
+    final preferences = index < 0
+        ? const VisitPreferences()
+        : _constraints[index].preferences;
     final changed = TripPlaceConstraint(
       place: place,
-      day: day,
+      day: preferences.hotelStay?.checkInDay ?? day,
       startMinutes: startMinutes,
       locked: true,
+      preferences: preferences,
     );
     if (index < 0) {
       _constraints.add(changed);
@@ -556,6 +617,34 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
     }
   }
 
+  Future<void> _editVisitPreferences(RouteVisit visit) async {
+    final index = _constraints.indexWhere(
+      (item) => item.place.id == visit.place.id,
+    );
+    if (index < 0) return;
+    final constraint = _constraints[index];
+    final preferences = await showVisitPreferencesDialog(
+      context: context,
+      place: visit.place,
+      request: _itinerary.request,
+      initial: constraint.preferences,
+      day: constraint.day,
+      suggestedMealType: constraint.preferences.mealType == MealType.unspecified
+          ? visit.mealType
+          : null,
+      information: visit.information,
+    );
+    if (!mounted || preferences == null) return;
+    final backup = _copyConstraints(_constraints);
+    constraint.preferences = preferences;
+    if (preferences.hotelStay != null) {
+      constraint.day = preferences.hotelStay!.checkInDay;
+    }
+    if (!await _recalculate() && mounted) {
+      setState(() => _constraints = backup);
+    }
+  }
+
   Future<bool> _recalculate() async {
     if (widget.onRecalculate == null) {
       _showMessage('請先在上一層頁面接上 onRecalculate。');
@@ -565,11 +654,15 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
     try {
       final result = await widget.onRecalculate!(
         _copyConstraints(_constraints),
+        Map.of(_travelModeOverrides),
+        _itinerary,
       );
       if (!mounted) return false;
       setState(() {
         _itinerary = result;
+        _mapDayIndex = _validMapDayIndex;
         _constraints = _constraintsFromItinerary(result);
+        _travelModeOverrides = Map.of(result.travelModeOverrides);
         _selectedDayIndex = min(
           _selectedDayIndex,
           max(0, result.days.length - 1),
@@ -585,6 +678,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
   }
 
   void _showTravelLeg(RouteDay day, int index) {
+    final leg = day.travelLegs[index];
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -593,11 +687,40 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
           child: SingleChildScrollView(
-            child: TravelLegCard(leg: day.travelLegs[index]),
+            child: TravelLegCard(
+              leg: leg,
+              onTravelModeChanged: (travelMode) {
+                Navigator.of(context).pop();
+                _changeTravelLegMode(day.day, leg, travelMode);
+              },
+            ),
           ),
         ),
       ),
     );
+  }
+
+  Future<void> _changeTravelLegMode(
+    int day,
+    TravelLeg leg,
+    RouteTravelMode travelMode,
+  ) async {
+    final key = routeLegKey(
+      day: day,
+      originId: leg.origin.id,
+      destinationId: leg.destination.id,
+    );
+    final backup = Map<RouteLegKey, RouteTravelMode>.of(_travelModeOverrides);
+    setState(() {
+      if (travelMode == RouteTravelMode.transit) {
+        _travelModeOverrides.remove(key);
+      } else {
+        _travelModeOverrides[key] = travelMode;
+      }
+    });
+    if (!await _recalculate() && mounted) {
+      setState(() => _travelModeOverrides = backup);
+    }
   }
 
   bool _overlapsLockedVisit({
@@ -606,7 +729,11 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
     required int startMinutes,
     required String ignoredPlaceId,
   }) {
-    final endMinutes = startMinutes + place.stayTime;
+    final matching = _constraints.where((item) => item.place.id == place.id);
+    final duration = matching.isEmpty
+        ? const VisitPreferences().durationFor(place)
+        : matching.first.stayMinutes;
+    final endMinutes = startMinutes + duration;
     for (final item in _constraints) {
       if (!item.locked ||
           item.day != day ||
@@ -615,7 +742,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
         continue;
       }
       final lockedStart = item.startMinutes!;
-      final lockedEnd = lockedStart + item.place.stayTime;
+      final lockedEnd = lockedStart + item.stayMinutes;
       if (startMinutes < lockedEnd && endMinutes > lockedStart) return true;
     }
     return false;
@@ -629,6 +756,18 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
   List<TripPlaceConstraint> _constraintsFromItinerary(
     RouteItinerary itinerary,
   ) {
+    if (itinerary.inputs.isNotEmpty) {
+      return [
+        for (final input in itinerary.inputs)
+          TripPlaceConstraint(
+            place: input.place,
+            day: input.day,
+            startMinutes: input.startMinutes,
+            locked: input.locked,
+            preferences: input.preferences,
+          ),
+      ];
+    }
     return [
       for (final day in itinerary.days)
         for (final visit in day.visits)
@@ -639,6 +778,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
                 ? visit.requestedStartMinutes ?? visit.startMinutes
                 : null,
             locked: visit.locked,
+            preferences: visit.preferences,
           ),
     ];
   }
@@ -651,17 +791,14 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
             day: item.day,
             startMinutes: item.startMinutes,
             locked: item.locked,
+            preferences: item.preferences,
           ),
         )
         .toList();
   }
 
   int get _startHour {
-    final starts = [
-      for (final day in _itinerary.days)
-        for (final visit in day.visits) visit.startMinutes,
-    ];
-    return starts.isEmpty ? 8 : min(8, starts.reduce(min) ~/ 60);
+    return 0;
   }
 
   int get _endHour {
@@ -669,7 +806,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
       for (final day in _itinerary.days)
         for (final visit in day.visits) visit.endMinutes,
     ];
-    return ends.isEmpty ? 22 : max(22, (ends.reduce(max) / 60).ceil());
+    return ends.isEmpty ? 24 : max(24, (ends.reduce(max) / 60).ceil());
   }
 
   void _showMessage(String message) {
@@ -744,7 +881,7 @@ class _VisitCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    return Card(
+    final expandedCard = Card(
       clipBehavior: Clip.antiAlias,
       margin: EdgeInsets.zero,
       color: visit.locked ? colors.primaryContainer : colors.secondaryContainer,
@@ -765,14 +902,16 @@ class _VisitCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      visit.place.name,
+                      visit.label,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
                     Text(
                       '${_formatMinutes(visit.startMinutes)}–'
-                      '${_formatMinutes(visit.endMinutes)}',
+                      '${_formatMinutes(visit.endMinutes)}・點擊設定／資訊',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                     if (onShowTravel != null)
@@ -790,7 +929,9 @@ class _VisitCard extends StatelessWidget {
                 ),
               ),
               IconButton(
-                tooltip: '刪除景點',
+                tooltip: visit.place.type == PlaceType.accommodation
+                    ? '移除整筆跨日住宿'
+                    : '移除項目',
                 onPressed: onDelete,
                 icon: const Icon(Icons.delete_outline, size: 20),
               ),
@@ -798,6 +939,61 @@ class _VisitCard extends StatelessWidget {
           ),
         ),
       ),
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxHeight >= 110) return expandedCard;
+        return Tooltip(
+          message:
+              '${visit.label}\n${_formatMinutes(visit.startMinutes)}–${_formatMinutes(visit.endMinutes)}\n點擊設定／資訊',
+          child: Card(
+            margin: EdgeInsets.zero,
+            color: visit.locked
+                ? colors.primaryContainer
+                : colors.secondaryContainer,
+            child: InkWell(
+              onTap: onTap,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '${_formatMinutes(visit.startMinutes)} ${visit.label}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (onShowTravel != null)
+                      IconButton(
+                        tooltip: '交通方式',
+                        onPressed: onShowTravel,
+                        constraints: const BoxConstraints.tightFor(
+                          width: 28,
+                          height: 28,
+                        ),
+                        padding: EdgeInsets.zero,
+                        icon: const Icon(Icons.directions_transit, size: 18),
+                      ),
+                    IconButton(
+                      tooltip: visit.place.type == PlaceType.accommodation
+                          ? '移除整筆跨日住宿'
+                          : '移除項目',
+                      onPressed: onDelete,
+                      constraints: const BoxConstraints.tightFor(
+                        width: 28,
+                        height: 28,
+                      ),
+                      padding: EdgeInsets.zero,
+                      icon: const Icon(Icons.delete_outline, size: 18),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 

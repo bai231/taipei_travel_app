@@ -1,8 +1,11 @@
 {
+
+
   "deno.enablePaths": [
     "supabase/functions"
   ],
-  "deno.importMap": "./supabase/functions/deno.json",
+  "deno.importMap": "./supabase/functions/parse-travel-preference/deno.json",
+
   "deno.lint": true,
   "deno.unstable": [
     "bare-node-builtins",
@@ -21,5 +24,10 @@
   ],
   "[typescript]": {
     "editor.defaultFormatter": "denoland.vscode-deno"
+
+  },
+
+
+  "cmake.sourceDirectory": "${workspaceFolder}/linux"
+
   }
-}

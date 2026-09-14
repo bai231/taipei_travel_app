@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 
 import '../../../models/tdx_route.dart';
 import '../../../services/google_maps_navigation_service.dart';
+import '../models/route_travel_mode.dart';
 import '../models/travel_leg.dart';
 
 class TravelLegCard extends StatefulWidget {
   final TravelLeg leg;
+  final ValueChanged<RouteTravelMode>? onTravelModeChanged;
 
-  const TravelLegCard({super.key, required this.leg});
+  const TravelLegCard({super.key, required this.leg, this.onTravelModeChanged});
 
   @override
   State<TravelLegCard> createState() => _TravelLegCardState();
@@ -30,6 +32,7 @@ class _TravelLegCardState extends State<TravelLegCard> {
           ? colorScheme.secondaryContainer
           : colorScheme.surfaceContainerLow,
       child: ExpansionTile(
+        initiallyExpanded: widget.onTravelModeChanged != null,
         leading: Icon(
           usesEstimate ? Icons.info_outline : Icons.directions,
           color: usesEstimate ? colorScheme.onSecondaryContainer : null,
@@ -38,6 +41,24 @@ class _TravelLegCardState extends State<TravelLegCard> {
         subtitle: Text(_summary()),
         childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         children: [
+          if (widget.onTravelModeChanged != null)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: SegmentedButton<RouteTravelMode>(
+                segments: [
+                  for (final mode in RouteTravelMode.values)
+                    ButtonSegment(value: mode, label: Text(mode.label)),
+                ],
+                selected: {leg.travelMode},
+                onSelectionChanged: (selection) {
+                  final mode = selection.single;
+                  if (mode != leg.travelMode) {
+                    widget.onTravelModeChanged!(mode);
+                  }
+                },
+              ),
+            ),
+          if (widget.onTravelModeChanged != null) const SizedBox(height: 8),
           if (leg.errorMessage != null)
             Align(
               alignment: Alignment.centerLeft,
@@ -47,9 +68,9 @@ class _TravelLegCardState extends State<TravelLegCard> {
               ),
             ),
           if (route != null && route.sections.isEmpty)
-            const Align(
+            Align(
               alignment: Alignment.centerLeft,
-              child: Text('TDX 沒有提供更細的路段資訊。'),
+              child: Text('${leg.travelMode.sourceLabel} 沒有提供更細的路段資訊。'),
             ),
           if (route != null)
             ...route.sections.asMap().entries.map(
@@ -81,8 +102,14 @@ class _TravelLegCardState extends State<TravelLegCard> {
     final arrival = _formatMinutes(leg.schedule.arrivalMinutes);
     final duration =
         leg.schedule.arrivalMinutes - leg.schedule.departureMinutes;
-    final source = leg.usesEstimatedTravelTime ? '估計' : 'TDX';
-    return '$departure 出發・$arrival 抵達・$source 約 $duration 分鐘';
+    final distance = leg.route?.distanceMeters;
+    final distanceLabel = distance == null
+        ? ''
+        : distance < 1000
+        ? '・$distance 公尺'
+        : '・${(distance / 1000).toStringAsFixed(1)} 公里';
+    return '$departure 出發・$arrival 抵達・'
+        '${leg.routeSourceLabel} 約 $duration 分鐘$distanceLabel';
   }
 
   Future<void> _openNavigation() async {

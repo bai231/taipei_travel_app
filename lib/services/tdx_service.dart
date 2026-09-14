@@ -27,8 +27,10 @@ class TdxService implements TdxRoutingGateway {
   static const String walkingMileMode = '0';
   static const String maximumWalkingMileMinutes = '40';
 
-  final String clientId = 'clairelee20041020-1df10dd6-36e4-4dd8';
-  final String clientSecret = '691da7f7-9311-4f4d-b777-9afb94dbb428';
+  static const String clientId = String.fromEnvironment('TDX_CLIENT_ID');
+  static const String clientSecret = String.fromEnvironment(
+    'TDX_CLIENT_SECRET',
+  );
   final Duration minimumRequestInterval;
   final TdxRouteRanker routeRanker;
 
@@ -43,6 +45,13 @@ class TdxService implements TdxRoutingGateway {
 
   Future<String> fetchAccessToken() async {
     if (_accessToken != null) return _accessToken!;
+
+    if (clientId.isEmpty || clientSecret.isEmpty) {
+      throw StateError(
+        '找不到 TDX API 金鑰，請使用 '
+        '--dart-define-from-file=config/secrets.json 啟動程式。',
+      );
+    }
 
     final response = await http.post(
       Uri.parse(
