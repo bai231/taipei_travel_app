@@ -3,12 +3,23 @@ import '../features/route_planning/models/route_itinerary.dart';
 import '../models/place.dart';
 import '../models/visit_preferences.dart';
 
+const currentItinerarySnapshotVersion = 2;
+
+/// Only v2 snapshots use the current budget and price-level contract.
+Map<String, dynamic> decodeItinerarySnapshot(Map<String, dynamic> snapshot) {
+  if (snapshot['schemaVersion'] != currentItinerarySnapshotVersion ||
+      snapshot['days'] is! List) {
+    throw const FormatException('不支援或損壞的行程資料');
+  }
+  return snapshot;
+}
+
 /// Versioned display snapshot, independent of the current place catalog.
 /// List order is authoritative; minutes are offsets from each day's date.
 Map<String, dynamic> itinerarySnapshot(RouteItinerary itinerary) {
   final request = itinerary.request;
   return {
-    'schemaVersion': 1,
+    'schemaVersion': currentItinerarySnapshotVersion,
     'timeZone': 'Asia/Taipei',
     'generatedAt': itinerary.generatedAt.toIso8601String(),
     'request': {
@@ -17,9 +28,10 @@ Map<String, dynamic> itinerarySnapshot(RouteItinerary itinerary) {
       'endDate': request.endDate.toIso8601String(),
       'location': request.location,
       'people': request.people,
-      'budget': request.budget,
+      'budgetLevel': request.budget_level,
       'preferences': request.preferences,
       'aiPrompt': request.aiPrompt,
+      'parsedPreference': request.parsedPreference?.toJson(),
     },
     'origin': _stop(itinerary.origin),
     'warnings': itinerary.warnings,
@@ -149,7 +161,7 @@ Map<String, dynamic> _place(Place place) => {
   'stayTime': place.stayTime,
   'rating': place.rating,
   'tags': place.tags,
-  'estimatedCost': place.estimatedCost,
+  'priceLevel': place.price_level,
   'openMinutes': place.openMinutes,
   'closeMinutes': place.closeMinutes,
 };

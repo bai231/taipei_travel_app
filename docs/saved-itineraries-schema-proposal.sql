@@ -1,5 +1,8 @@
--- PROPOSAL ONLY: not executed. Review the existing trips schema with the teammate
--- before choosing this independent table. Do not blindly run on an existing table.
+-- 2026-09-18: user reported success, owner policy verified, and RLS enabled=true.
+-- Do NOT rerun in that database. Retained for reference/new environments only.
+-- Run ONCE in the correct project's SQL Editor as postgres.
+-- Creates only the independent saved_itineraries table and its support objects.
+-- Does not change trips/trip_places. If objects already exist, stop and inspect.
 begin;
 create table public.saved_itineraries (
   id text not null check (id ~ '^[0-9a-f]{32}$'),
@@ -7,7 +10,7 @@ create table public.saved_itineraries (
   title text not null,
   snapshot jsonb not null check (
     jsonb_typeof(snapshot) = 'object'
-    and snapshot ? 'schemaVersion' and snapshot->>'schemaVersion' = '1'
+    and snapshot ? 'schemaVersion' and snapshot->'schemaVersion' = '2'::jsonb
     and snapshot ? 'days' and jsonb_typeof(snapshot->'days') = 'array'
   ),
   created_at timestamptz not null default now(),
@@ -18,8 +21,8 @@ alter table public.saved_itineraries enable row level security;
 create policy saved_itineraries_owner on public.saved_itineraries
   for all to authenticated
   using (auth.uid() = user_id) with check (auth.uid() = user_id);
+revoke all on public.saved_itineraries from public, anon, authenticated;
 grant select, insert, update, delete on public.saved_itineraries to authenticated;
-revoke all on public.saved_itineraries from anon;
 create function public.touch_saved_itinerary_updated_at()
 returns trigger language plpgsql set search_path = '' as $$
 begin

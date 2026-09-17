@@ -1,4 +1,5 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'itinerary_snapshot.dart';
 
 abstract interface class SavedItineraryGateway {
   String? get currentUserId;
@@ -28,7 +29,10 @@ class SavedItineraryService implements SavedItineraryGateway {
     if (currentUserId == null || currentUserId != userId) {
       throw StateError('登入狀態已變更，請重新登入後儲存');
     }
-    if (snapshot['schemaVersion'] != 1) throw FormatException('不支援的行程版本');
+    if (snapshot['schemaVersion'] != currentItinerarySnapshotVersion) {
+      throw const FormatException('儲存必須使用最新行程版本');
+    }
+    decodeItinerarySnapshot(snapshot);
     await client.from('saved_itineraries').upsert({
       'id': id,
       'user_id': userId,
@@ -68,9 +72,6 @@ class SavedItineraryService implements SavedItineraryGateway {
         .single();
     if (currentUserId != uid) throw StateError('帳號已變更');
     final snapshot = Map<String, dynamic>.from(row['snapshot'] as Map);
-    if (snapshot['schemaVersion'] != 1 || snapshot['days'] is! List) {
-      throw FormatException('不支援或損壞的行程資料');
-    }
-    return snapshot;
+    return decodeItinerarySnapshot(snapshot);
   }
 }

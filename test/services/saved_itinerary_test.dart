@@ -12,6 +12,7 @@ import 'package:taipei_travel_app/features/route_planning/models/route_travel_mo
 import 'package:taipei_travel_app/models/place.dart';
 import 'package:taipei_travel_app/models/scheduled_visit.dart';
 import 'package:taipei_travel_app/models/trip_request.dart';
+import 'package:taipei_travel_app/models/travel_preference.dart';
 import 'package:taipei_travel_app/services/itinerary_snapshot.dart';
 import 'package:taipei_travel_app/services/saved_itinerary_service.dart';
 import 'package:taipei_travel_app/widgets/trip/save_itinerary_button.dart';
@@ -37,13 +38,14 @@ class FakeSaveGateway implements SavedItineraryGateway {
   }
 }
 
-RouteItinerary sample() {
+RouteItinerary sample({bool withPreference = false}) {
   final date = DateTime(2026, 9, 12);
   final place = Place.fromJson({
     'id': 42,
     'name': '測試景點',
     'latitude': 25.0,
     'longitude': 121.0,
+    'priceLevel': 3,
   });
   final stop = RouteStop(
     id: '42',
@@ -59,9 +61,16 @@ RouteItinerary sample() {
       endDate: date.add(const Duration(days: 1)),
       location: '台北市',
       people: 2,
-      budget: 2000,
+      budget_level: 2,
       preferences: ['自然'],
       aiPrompt: '',
+      parsedPreference: withPreference
+          ? TravelPreference.fromJson({
+              'preferredCategories': ['nature'],
+              'dailyBudget': 2000,
+              'summary': '喜歡自然景點',
+            })
+          : null,
     ),
     origin: stop,
     generatedAt: date,
@@ -108,11 +117,53 @@ RouteItinerary sample() {
 }
 
 void main() {
+  test('v2 keeps parsed monetary daily budget separate from budget level', () {
+    final data = jsonDecode(
+      jsonEncode(itinerarySnapshot(sample(withPreference: true))),
+    );
+    expect(data['request']['budgetLevel'], 2);
+    expect(data['request']['parsedPreference']['dailyBudget'], 2000);
+    expect(data['request']['parsedPreference']['preferredCategories'], [
+      'nature',
+    ]);
+    expect(decodeItinerarySnapshot(Map<String, dynamic>.from(data)), data);
+  });
+
+  test('v1, missing, string and unknown versions fail; days are required', () {
+    final legacy = <String, dynamic>{
+      'schemaVersion': 1,
+      'request': {'budget': 2000},
+      'days': [],
+    };
+    expect(() => decodeItinerarySnapshot(legacy), throwsFormatException);
+    expect(() => decodeItinerarySnapshot({'days': []}), throwsFormatException);
+    expect(
+      () => decodeItinerarySnapshot({'schemaVersion': '2', 'days': []}),
+      throwsFormatException,
+    );
+    expect(
+      () => decodeItinerarySnapshot({'schemaVersion': 99, 'days': []}),
+      throwsFormatException,
+    );
+    expect(
+      () => decodeItinerarySnapshot({'schemaVersion': 2}),
+      throwsFormatException,
+    );
+  });
+
   test(
     'JSON snapshot preserves days, occurrences, cross-midnight time and modes',
     () {
       final data = jsonDecode(jsonEncode(itinerarySnapshot(sample())));
-      expect(data['schemaVersion'], 1);
+      expect(data['schemaVersion'], 2);
+      expect(data['request']['budgetLevel'], 2);
+      expect(data['request'].containsKey('budget'), isFalse);
+      expect(data['request']['parsedPreference'], isNull);
+      expect(data['days'][0]['visits'][0]['place']['priceLevel'], 3);
+      expect(
+        data['days'][0]['visits'][0]['place'].containsKey('estimatedCost'),
+        isFalse,
+      );
       expect(data['days'].length, 2);
       expect(data['days'][0]['visits'][0]['startMinutes'], 1450);
       expect(data['days'][1]['visits'][0]['occurrenceId'], '42:day:2');
