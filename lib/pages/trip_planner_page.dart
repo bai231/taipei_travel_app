@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-
+import 'dart:convert';
 import '../models/place.dart';
 import '../models/trip_request.dart';
 import '../models/trip_place_constraint.dart';
@@ -91,6 +91,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
 
       body: Column(
         children: [
+          //_buildAiPreferenceCard(),
           _buildTypeSelector(),
 
           // Day 選擇
@@ -105,6 +106,53 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
       bottomNavigationBar: _buildGenerateBar(),
     );
   }
+
+  //測試用
+  /*Widget _buildAiPreferenceCard() {
+    final preference = widget.request.parsedPreference;
+
+    // 使用者沒有輸入 AI 偏好時，不顯示卡片。
+    if (preference == null) {
+      return const SizedBox.shrink();
+    }
+
+    final prettyJson = const JsonEncoder.withIndent(
+      '  ',
+    ).convert(preference.toJson());
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+      child: Card(
+        child: ExpansionTile(
+          leading: const Icon(Icons.auto_awesome),
+          title: const Text(
+            'AI 已理解你的旅遊需求',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          subtitle: preference.summary.isNotEmpty
+              ? Text(
+                  preference.summary,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                )
+              : const Text('點擊查看解析結果'),
+          children: [
+            const Divider(height: 1),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: SelectableText(
+                  prettyJson,
+                  style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }*/
 
   Widget _buildGenerateBar() {
     final fixedTimeCount = _selectedPlaces

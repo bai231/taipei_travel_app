@@ -52,7 +52,7 @@ class _RoutePlanningDemoLoaderState extends State<_RoutePlanningDemoLoader> {
         endDate: tripDate,
         location: '台北市',
         people: 2,
-        budget: 3000,
+        budget_level: 3000,
         preferences: const ['攝影'],
         aiPrompt: '',
       ),

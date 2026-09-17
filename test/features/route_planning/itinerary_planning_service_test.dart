@@ -774,7 +774,7 @@ TripRequest _request({required int days}) {
     endDate: DateTime(2026, 8, 20 + days - 1),
     location: '台北市',
     people: 2,
-    budget: 5000,
+    budget_level: 5000,
     preferences: const ['攝影'],
     aiPrompt: '',
   );
@@ -800,8 +800,8 @@ Place _place(
     stayTime: stayMinutes,
     rating: 4.5,
     tags: const [],
-    //priceLevel: 1,
-    estimatedCost: 100,
+    price_level: 1,
+    //estimatedCost: 100,
     openMinutes: openMinutes,
     closeMinutes: closeMinutes,
   );
