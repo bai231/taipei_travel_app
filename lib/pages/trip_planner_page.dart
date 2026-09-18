@@ -1,4 +1,8 @@
 import 'package:flutter/material.dart';
+import '../models/recommendation_criteria.dart';
+import '../services/recommendation/recommendation_criteria_factory.dart';
+import '../models/place_recommendation.dart';
+import '../services/recommendation/place_recommendation_service.dart';
 import 'dart:convert';
 import '../models/place.dart';
 import '../models/trip_request.dart';
@@ -11,6 +15,9 @@ import '../features/route_planning/services/itinerary_planning_service.dart';
 import '../services/place_service.dart';
 import '../widgets/trip/cloud_planner_item_picker.dart';
 import '../widgets/trip/visit_preferences_dialog.dart';
+import '../services/recommendation/recommendation_candidate_filter.dart';
+import '../models/must_visit_resolution.dart';
+import '../services/recommendation/must_visit_resolver.dart';
 
 class TripPlannerPage extends StatefulWidget {
   final TripRequest request;
@@ -31,7 +38,14 @@ class TripPlannerPage extends StatefulWidget {
 }
 
 class _TripPlannerPageState extends State<TripPlannerPage> {
+  late final RecommendationCriteria _recommendationCriteria;
+  late final List<Place> _candidatePlaces;
+  late final int _allAttractionCount;
+  late final List<PlaceRecommendation> _recommendations;
+  late final MustVisitResolution _mustVisitResolution;
   final ItineraryPlanningService _planningService = ItineraryPlanningService();
+  late final Set<String> _mustVisitPlaceIds;
+  late final Set<String> _conflictingMustVisitPlaceIds;
 
   // ============================================================
   // 使用者已經加入的景點
@@ -73,6 +87,70 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
   }
 
   @override
+  void initState() {
+    super.initState();
+
+    _recommendationCriteria = RecommendationCriteriaFactory.fromTripRequest(
+      widget.request,
+    );
+
+    final allAttractions = widget.places
+        .where((place) => place.type == PlaceType.attraction)
+        .toList();
+
+    _allAttractionCount = allAttractions.length;
+
+    _candidatePlaces = RecommendationCandidateFilter.filter(
+      places: allAttractions,
+      criteria: _recommendationCriteria,
+    );
+
+    _recommendations = PlaceRecommendationService().rank(
+      candidates: _candidatePlaces,
+      criteria: _recommendationCriteria,
+    );
+
+    _mustVisitResolution = MustVisitResolver().resolve(
+      criteria: _recommendationCriteria,
+      places: widget.places,
+    );
+
+    final addableConflictingPlaces = _mustVisitResolution.conflictingPlaces
+        .where(PlaceService.hasUsableCoordinates)
+        .toList();
+
+    final autoAddedMustVisitPlaces = [
+      ..._mustVisitResolution.matchedPlaces,
+      ...addableConflictingPlaces,
+    ];
+
+    _mustVisitPlaceIds = autoAddedMustVisitPlaces
+        .map((place) => place.id)
+        .toSet();
+
+    _conflictingMustVisitPlaceIds = addableConflictingPlaces
+        .map((place) => place.id)
+        .toSet();
+
+    final existingIds = _selectedPlaces
+        .map((constraint) => constraint.place.id)
+        .toSet();
+
+    for (final place in autoAddedMustVisitPlaces) {
+      if (existingIds.add(place.id)) {
+        _selectedPlaces.add(
+          TripPlaceConstraint(
+            place: place,
+            day: null,
+            startMinutes: null,
+            locked: false,
+          ),
+        );
+      }
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
@@ -91,7 +169,19 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
 
       body: Column(
         children: [
+          // 手動輸入prompt需求
           //_buildAiPreferenceCard(),
+
+          // 推薦條件
+          //_buildRecommendationCriteriaCard(),
+
+          //顯示篩選
+          //_buildCandidateFilterCard(),
+          _buildMustVisitResultCard(),
+
+          //顯示推薦結果
+          _buildRecommendationResultCard(),
+
           _buildTypeSelector(),
 
           // Day 選擇
@@ -108,7 +198,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
   }
 
   //測試用
-  /*Widget _buildAiPreferenceCard() {
+  Widget _buildAiPreferenceCard() {
     final preference = widget.request.parsedPreference;
 
     // 使用者沒有輸入 AI 偏好時，不顯示卡片。
@@ -152,7 +242,282 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
         ),
       ),
     );
-  }*/
+  }
+
+  Widget _buildRecommendationCriteriaCard() {
+    final prettyJson = const JsonEncoder.withIndent(
+      '  ',
+    ).convert(_recommendationCriteria.toJson());
+
+    final categoryCount = _recommendationCriteria.preferredCategories.length;
+
+    final tagCount = _recommendationCriteria.preferredTags.length;
+
+    final excludedCount =
+        _recommendationCriteria.excludedCategories.length +
+        _recommendationCriteria.excludedTags.length;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+      child: Card(
+        child: ExpansionTile(
+          leading: const Icon(Icons.tune),
+          title: const Text(
+            '已整合的推薦條件',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          subtitle: Text(
+            '分類 $categoryCount 個・'
+            '標籤 $tagCount 個・'
+            '排除條件 $excludedCount 個',
+          ),
+          children: [
+            const Divider(height: 1),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: SelectableText(
+                  prettyJson,
+                  style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCandidateFilterCard() {
+    final removedCount = _allAttractionCount - _candidatePlaces.length;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+      child: Card(
+        child: ExpansionTile(
+          leading: const Icon(Icons.filter_alt),
+          title: const Text(
+            '景點候選過濾結果',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          subtitle: Text(
+            '$_allAttractionCount 個景點'
+            ' → ${_candidatePlaces.length} 個候選'
+            '・排除 $removedCount 個',
+          ),
+          children: [
+            const Divider(height: 1),
+
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  '地區：${_recommendationCriteria.location}\n'
+                  '最高價格等級：'
+                  '${_recommendationCriteria.budgetLevel}',
+                ),
+              ),
+            ),
+
+            if (_candidatePlaces.isEmpty)
+              const Padding(
+                padding: EdgeInsets.all(16),
+                child: Text(
+                  '沒有符合目前條件的景點，'
+                  '可能需要放寬地區、預算或排除條件。',
+                  style: TextStyle(color: Colors.orange),
+                ),
+              )
+            else ...[
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 8, 16, 4),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    '前 10 個候選景點：',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+
+              ..._candidatePlaces.take(10).map((place) {
+                return ListTile(
+                  dense: true,
+                  leading: const Icon(Icons.place_outlined, size: 20),
+                  title: Text(place.name),
+                  subtitle: Text(
+                    '${place.category}'
+                    '・價格等級 ${place.price_level}',
+                  ),
+                );
+              }),
+            ],
+
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRecommendationResultCard() {
+    final removedCount = _allAttractionCount - _candidatePlaces.length;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+      child: Card(
+        child: ExpansionTile(
+          leading: const Icon(Icons.recommend),
+          title: const Text(
+            '景點推薦結果',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          subtitle: Text(
+            '${_candidatePlaces.length} 個候選'
+            '・排除 $removedCount 個'
+            '・依適合程度排序',
+          ),
+          children: [
+            const Divider(height: 1),
+
+            if (_recommendations.isEmpty)
+              const Padding(
+                padding: EdgeInsets.all(16),
+                child: Text(
+                  '目前沒有符合條件的推薦景點。',
+                  style: TextStyle(color: Colors.orange),
+                ),
+              )
+            else ...[
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    '前 10 名推薦景點',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+
+              ..._recommendations.take(10).toList().asMap().entries.map((
+                entry,
+              ) {
+                final rank = entry.key + 1;
+                final recommendation = entry.value;
+                final place = recommendation.place;
+
+                return ListTile(
+                  isThreeLine: true,
+                  leading: CircleAvatar(child: Text('$rank')),
+                  title: Text(place.name),
+                  subtitle: Text(
+                    '${place.category}\n'
+                    '${recommendation.reasons.join('・')}',
+                  ),
+                  trailing: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        recommendation.totalScore.toStringAsFixed(1),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
+                      const Text('分', style: TextStyle(fontSize: 12)),
+                    ],
+                  ),
+                );
+              }),
+            ],
+
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMustVisitResultCard() {
+    if (_recommendationCriteria.mustVisitPlaceNames.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final matchedCount = _mustVisitResolution.matchedPlaces.length;
+
+    final conflictCount = _mustVisitResolution.conflictingPlaces.length;
+
+    final unmatchedCount = _mustVisitResolution.unmatchedNames.length;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+      child: Card(
+        child: ExpansionTile(
+          leading: const Icon(Icons.push_pin),
+          title: const Text(
+            '必去景點確認',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          subtitle: Text(
+            '找到 $matchedCount 個・'
+            '衝突 $conflictCount 個・'
+            '找不到 $unmatchedCount 個',
+          ),
+          children: [
+            const Divider(height: 1),
+
+            if (_mustVisitResolution.matchedPlaces.isNotEmpty) ...[
+              const _ResultSectionTitle(title: '成功找到', color: Colors.green),
+              ..._mustVisitResolution.matchedPlaces.map((place) {
+                return ListTile(
+                  dense: true,
+                  leading: const Icon(Icons.check_circle, color: Colors.green),
+                  title: Text(place.name),
+                  subtitle: Text(
+                    '${place.category}・'
+                    '${PlaceService.countyFor(place)}',
+                  ),
+                );
+              }),
+            ],
+
+            if (_mustVisitResolution.conflictingPlaces.isNotEmpty) ...[
+              const _ResultSectionTitle(title: '與目前條件衝突', color: Colors.red),
+              ..._mustVisitResolution.conflictingPlaces.map((place) {
+                return ListTile(
+                  dense: true,
+                  leading: const Icon(Icons.warning_amber, color: Colors.red),
+                  title: Text(place.name),
+                  subtitle: Text(
+                    '${place.category}・'
+                    '${PlaceService.countyFor(place)}\n'
+                    '可能與縣市、預算或排除條件衝突',
+                  ),
+                );
+              }),
+            ],
+
+            if (_mustVisitResolution.unmatchedNames.isNotEmpty) ...[
+              const _ResultSectionTitle(title: '資料庫找不到', color: Colors.orange),
+              ..._mustVisitResolution.unmatchedNames.map((name) {
+                return ListTile(
+                  dense: true,
+                  leading: const Icon(Icons.help_outline, color: Colors.orange),
+                  title: Text(name),
+                  subtitle: const Text('請確認景點名稱，或稍後手動搜尋'),
+                );
+              }),
+            ],
+
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
 
   Widget _buildGenerateBar() {
     final fixedTimeCount = _selectedPlaces
@@ -601,6 +966,23 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
 
                 style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
               ),
+
+              if (_conflictingMustVisitPlaceIds.contains(
+                constraint.place.id,
+              )) ...[
+                const SizedBox(height: 4),
+                Text(
+                  '提醒：此景點並非預設遊玩範圍，'
+                  '但因為是必去景點仍會保留。',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.orange.shade800,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
 
               const Spacer(),
 
@@ -1118,8 +1500,10 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
       _selectedPlaces.removeWhere(
         (constraint) =>
             constraint.place.type == type &&
-            !selectedIds.contains(constraint.place.id),
+            !selectedIds.contains(constraint.place.id) &&
+            !_mustVisitPlaceIds.contains(constraint.place.id),
       );
+
       final existingIds = _selectedPlaces
           .map((constraint) => constraint.place.id)
           .toSet();
@@ -1138,6 +1522,19 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
   // ============================================================
 
   void _removePlace(TripPlaceConstraint constraint) {
+    if (_mustVisitPlaceIds.contains(constraint.place.id)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${constraint.place.name} 是必去景點，'
+            '若要移除，請返回修改旅遊需求。',
+          ),
+        ),
+      );
+
+      return;
+    }
+
     setState(() {
       _selectedPlaces.remove(constraint);
     });
@@ -1173,5 +1570,26 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
 
     return "${hour.toString().padLeft(2, '0')}:"
         "${minute.toString().padLeft(2, '0')}";
+  }
+}
+
+class _ResultSectionTitle extends StatelessWidget {
+  final String title;
+  final Color color;
+
+  const _ResultSectionTitle({required this.title, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Text(
+          title,
+          style: TextStyle(color: color, fontWeight: FontWeight.bold),
+        ),
+      ),
+    );
   }
 }
