@@ -51,6 +51,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
   late final Map<String, num> _candidateScoresByPlaceId;
   final TripAutoFillService _autoFillService = const TripAutoFillService();
   final Set<String> _autoRecommendedPlaceIds = {};
+  final Map<String, List<String>> _autoRecommendationReasonsByPlaceId = {};
 
   // ============================================================
   // 使用者已經加入的景點
@@ -889,7 +890,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
     return Container(
       width: double.infinity,
 
-      constraints: const BoxConstraints(minHeight: 150, maxHeight: 280),
+      constraints: const BoxConstraints(minHeight: 180, maxHeight: 330),
 
       padding: const EdgeInsets.all(12),
 
@@ -1030,6 +1031,8 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
                 ),
               ],
 
+              _buildAutoRecommendationReason(constraint),
+
               const Spacer(),
 
               // 指定日期
@@ -1094,6 +1097,8 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
 
                     style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
                   ),
+
+                  _buildAutoRecommendationReason(constraint),
                 ],
               ),
             ),
@@ -1566,6 +1571,10 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
           .toSet();
 
       _autoRecommendedPlaceIds.removeWhere((id) => !remainingIds.contains(id));
+
+      _autoRecommendationReasonsByPlaceId.removeWhere(
+        (id, _) => !remainingIds.contains(id),
+      );
     });
   }
 
@@ -1590,6 +1599,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
     setState(() {
       _selectedPlaces.remove(constraint);
       _autoRecommendedPlaceIds.remove(constraint.place.id);
+      _autoRecommendationReasonsByPlaceId.remove(constraint.place.id);
     });
   }
 
@@ -1761,6 +1771,11 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
         .map((constraint) => constraint.place.id)
         .toSet();
 
+    final recommendationsByPlaceId = {
+      for (final recommendation in _recommendations)
+        recommendation.place.id: recommendation,
+    };
+
     setState(() {
       for (final place in plan.placesToAdd) {
         if (!existingIds.add(place.id)) {
@@ -1777,11 +1792,41 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
         );
 
         _autoRecommendedPlaceIds.add(place.id);
+
+        final recommendation = recommendationsByPlaceId[place.id];
+
+        if (recommendation != null) {
+          _autoRecommendationReasonsByPlaceId[place.id] = List.unmodifiable(
+            recommendation.reasons,
+          );
+        }
       }
     });
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('已補入 ${plan.actualAddCount} 個推薦景點。')),
+    );
+  }
+
+  Widget _buildAutoRecommendationReason(TripPlaceConstraint constraint) {
+    final reasons = _autoRecommendationReasonsByPlaceId[constraint.place.id];
+
+    if (reasons == null || reasons.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Text(
+        '推薦原因：${reasons.join('・')}',
+        maxLines: 3,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          color: Colors.blue.shade700,
+          fontSize: 11,
+          height: 1.3,
+        ),
+      ),
     );
   }
 }
