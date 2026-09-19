@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../models/place.dart';
 import '../../services/place_service.dart';
+import '../../services/favorite_service.dart';
+import '../../services/user_data_service.dart';
 
 class PlannerItemPicker extends StatefulWidget {
   final PlaceType type;
@@ -26,6 +28,40 @@ class _PlannerItemPickerState extends State<PlannerItemPicker> {
   late final Set<String> _selectedPlaceIds;
   String? _selectedCounty;
 
+  final FavoriteService _favoriteService = FavoriteService();
+  final UserDataService _userDataService = UserDataService();
+  String _selectedFolderKey = 'all'; // 'all', 'uncategorized' 或 folder_id
+  List<Map<String, dynamic>> _folders = [];
+
+  // 載入資料夾與收藏
+  Future<void> _loadFavoritesAndFolders() async {
+    await _favoriteService.fetchFavoritesFromCloud();
+    final folders = await _userDataService.fetchFolders();
+    if (mounted) {
+      setState(() {
+        _folders = folders;
+      });
+    }
+  }
+
+  // 取得已在任何資料夾內的景點 ID
+  Set<String> get _categorizedPlaceIds {
+    final ids = <String>{};
+    for (var f in _folders) {
+      final places = List<Place>.from(f['places'] ?? []);
+      for (var p in places) {
+        ids.add(p.id);
+      }
+    }
+    return ids;
+  }
+
+  // 取得未分類景點（已在收藏但不在任何自訂資料夾中）
+  List<Place> _getUncategorizedPlaces(List<Place> favPlaces) {
+    final catIds = _categorizedPlaceIds;
+    return favPlaces.where((p) => !catIds.contains(p.id)).toList();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -38,6 +74,9 @@ class _PlannerItemPickerState extends State<PlannerItemPicker> {
         )
         .map((place) => place.id)
         .toSet();
+    if (widget.type == PlaceType.attraction) {
+      _loadFavoritesAndFolders();
+    }
   }
 
   @override
@@ -52,12 +91,45 @@ class _PlannerItemPickerState extends State<PlannerItemPicker> {
         .where((place) => place.type == widget.type)
         .toList();
     final counties = PlaceService.availableCounties(typePlaces);
-    final filteredPlaces = PlaceService.filterCatalog(
-      places: typePlaces,
-      type: widget.type,
-      county: _selectedCounty,
-      keyword: _searchController.text,
+    // ✅ 替換為：
+final List<Place> filteredPlaces;
+if (widget.type == PlaceType.attraction) {
+  final favPlaces = typePlaces.where((p) => _favoriteService.isFavorite(p)).toList();
+  List<Place> baseList;
+
+  if (_selectedFolderKey == 'uncategorized') {
+    // 1. 選擇未分類景點
+    baseList = _getUncategorizedPlaces(favPlaces);
+  } else if (_selectedFolderKey != 'all') {
+    // 2. 選擇特定自訂資料夾
+    final folder = _folders.firstWhere(
+      (f) => f['id'].toString() == _selectedFolderKey,
+      orElse: () => {'places': <Place>[]},
     );
+    baseList = List<Place>.from(folder['places'] ?? []);
+  } else {
+    // 3. 全部收藏
+    baseList = favPlaces;
+  }
+
+  // 套用關鍵字搜尋
+  final q = _searchController.text.trim().toLowerCase();
+  filteredPlaces = q.isEmpty
+      ? baseList
+      : baseList.where((p) {
+          return p.name.toLowerCase().contains(q) ||
+              p.category.toLowerCase().contains(q) ||
+              p.address.toLowerCase().contains(q);
+        }).toList();
+} else {
+  // 餐廳與住宿走原有的縣市過濾
+  filteredPlaces = PlaceService.filterCatalog(
+    places: typePlaces,
+    type: widget.type,
+    county: _selectedCounty,
+    keyword: _searchController.text,
+  );
+}
 
     return SafeArea(
       child: Column(
@@ -111,30 +183,65 @@ class _PlannerItemPickerState extends State<PlannerItemPicker> {
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: DropdownButtonFormField<String?>(
-                    initialValue: _selectedCounty,
-                    decoration: const InputDecoration(
-                      labelText: '縣市',
-                      border: OutlineInputBorder(),
-                      isDense: true,
-                    ),
-                    items: [
-                      const DropdownMenuItem<String?>(
-                        value: null,
-                        child: Text('全部縣市'),
-                      ),
-                      ...counties.map(
-                        (county) => DropdownMenuItem<String?>(
-                          value: county,
-                          child: Text(county),
-                        ),
-                      ),
-                    ],
-                    onChanged: (value) {
-                      setState(() => _selectedCounty = value);
-                    },
-                  ),
-                ),
+  child: widget.type == PlaceType.attraction
+      ? DropdownButtonFormField<String>(
+          initialValue: _selectedFolderKey,
+          decoration: const InputDecoration(
+            labelText: '資料夾',
+            border: OutlineInputBorder(),
+            isDense: true,
+          ),
+          items: [
+            DropdownMenuItem(
+              value: 'all',
+              child: Text(
+                '全部收藏 (${typePlaces.where((p) => _favoriteService.isFavorite(p)).length})',
+              ),
+            ),
+            DropdownMenuItem(
+              value: 'uncategorized',
+              child: Text(
+                '未分類景點 (${_getUncategorizedPlaces(typePlaces.where((p) => _favoriteService.isFavorite(p)).toList()).length})',
+              ),
+            ),
+            ..._folders.map((folder) {
+              final places = List<Place>.from(folder['places'] ?? []);
+              return DropdownMenuItem(
+                value: folder['id'].toString(),
+                child: Text('${folder['title']} (${places.length})'),
+              );
+            }),
+          ],
+          onChanged: (value) {
+            if (value != null) {
+              setState(() => _selectedFolderKey = value);
+            }
+          },
+        )
+      : DropdownButtonFormField<String?>(
+          initialValue: _selectedCounty,
+          decoration: const InputDecoration(
+            labelText: '縣市',
+            border: OutlineInputBorder(),
+            isDense: true,
+          ),
+          items: [
+            const DropdownMenuItem<String?>(
+              value: null,
+              child: Text('全部縣市'),
+            ),
+            ...counties.map(
+              (county) => DropdownMenuItem<String?>(
+                value: county,
+                child: Text(county),
+              ),
+            ),
+          ],
+          onChanged: (value) {
+            setState(() => _selectedCounty = value);
+          },
+        ),
+),
               ],
             ),
           ),
