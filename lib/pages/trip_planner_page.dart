@@ -18,6 +18,8 @@ import '../widgets/trip/visit_preferences_dialog.dart';
 import '../services/recommendation/recommendation_candidate_filter.dart';
 import '../models/must_visit_resolution.dart';
 import '../services/recommendation/must_visit_resolver.dart';
+import '../models/trip_auto_fill_plan.dart';
+import '../services/recommendation/trip_auto_fill_service.dart';
 
 class TripPlannerPage extends StatefulWidget {
   final TripRequest request;
@@ -46,6 +48,9 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
   final ItineraryPlanningService _planningService = ItineraryPlanningService();
   late final Set<String> _mustVisitPlaceIds;
   late final Set<String> _conflictingMustVisitPlaceIds;
+  late final Map<String, num> _candidateScoresByPlaceId;
+  final TripAutoFillService _autoFillService = const TripAutoFillService();
+  final Set<String> _autoRecommendedPlaceIds = {};
 
   // ============================================================
   // 使用者已經加入的景點
@@ -74,7 +79,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
           child: CloudPlannerItemPicker(
             type: _selectedType,
             places: widget.places,
-            candidateScoresByPlaceId: widget.candidateScoresByPlaceId,
+            candidateScoresByPlaceId: _candidateScoresByPlaceId,
             selectedPlaceIds: _selectedPlaces
                 .map((item) => item.place.id)
                 .toSet(),
@@ -109,6 +114,28 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
       candidates: _candidatePlaces,
       criteria: _recommendationCriteria,
     );
+
+    // 選擇器排名不限制最初選擇的縣市，
+    // 但仍套用景點類型、有效座標、排除條件與價格限制。
+    final rankingCandidates = RecommendationCandidateFilter.filter(
+      places: allAttractions,
+      criteria: _recommendationCriteria,
+      applyLocation: false,
+    );
+
+    final allCountyRecommendations = PlaceRecommendationService().rank(
+      candidates: rankingCandidates,
+      criteria: _recommendationCriteria,
+    );
+
+    _candidateScoresByPlaceId = {
+      // 保留外部提供的餐廳與住宿分數。
+      ...widget.candidateScoresByPlaceId,
+
+      // 加入所有縣市的景點推薦分數。
+      for (final recommendation in allCountyRecommendations)
+        recommendation.place.id: recommendation.totalScore,
+    };
 
     _mustVisitResolution = MustVisitResolver().resolve(
       criteria: _recommendationCriteria,
@@ -550,6 +577,13 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
                 style: Theme.of(context).textTheme.bodySmall,
                 textAlign: TextAlign.center,
               ),
+
+              OutlinedButton.icon(
+                onPressed: _isGenerating ? null : _autoFillAttractions,
+                icon: const Icon(Icons.auto_awesome),
+                label: const Text('智慧補齊景點'),
+              ),
+
               const SizedBox(height: 8),
               FilledButton.icon(
                 onPressed: _isGenerating ? null : _generateItinerary,
@@ -984,6 +1018,18 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
                 ),
               ],
 
+              if (_autoRecommendedPlaceIds.contains(constraint.place.id)) ...[
+                const SizedBox(height: 4),
+                Text(
+                  '系統推薦・可自行移除',
+                  style: TextStyle(
+                    color: Colors.blue.shade700,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+
               const Spacer(),
 
               // 指定日期
@@ -1315,7 +1361,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
           child: CloudPlannerItemPicker(
             type: selectedType,
             places: widget.places,
-            candidateScoresByPlaceId: widget.candidateScoresByPlaceId,
+            candidateScoresByPlaceId: _candidateScoresByPlaceId,
             selectedPlaceIds: selectedPlaceIds,
             onConfirmed: (places) {
               // PlannerItemPicker 回傳的是該種類目前所有已勾選項目，
@@ -1514,6 +1560,12 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
           );
         }
       }
+
+      final remainingIds = _selectedPlaces
+          .map((constraint) => constraint.place.id)
+          .toSet();
+
+      _autoRecommendedPlaceIds.removeWhere((id) => !remainingIds.contains(id));
     });
   }
 
@@ -1537,6 +1589,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
 
     setState(() {
       _selectedPlaces.remove(constraint);
+      _autoRecommendedPlaceIds.remove(constraint.place.id);
     });
   }
 
@@ -1570,6 +1623,166 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
 
     return "${hour.toString().padLeft(2, '0')}:"
         "${minute.toString().padLeft(2, '0')}";
+  }
+
+  // ============================================================
+  // 智慧補齊景點
+  // ============================================================
+  String _paceLabel(String pace) {
+    return switch (pace.trim().toLowerCase()) {
+      'relaxed' => '悠閒',
+      'intensive' => '緊湊',
+      _ => '平衡',
+    };
+  }
+
+  Future<bool?> _showAutoFillDialog(TripAutoFillPlan plan) {
+    final remainingAfterFill = plan.requestedAddCount - plan.actualAddCount;
+
+    return showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('智慧補齊景點'),
+          content: SizedBox(
+            width: 420,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '目前已有 '
+                    '${plan.currentAttractionCount} 個景點。\n'
+                    '依照 ${widget.request.days} 天、'
+                    '${_paceLabel(_recommendationCriteria.pace)}行程，'
+                    '建議安排 '
+                    '${plan.targetAttractionCount} 個景點。',
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  Text(
+                    '將補入 ${plan.actualAddCount} 個景點：',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+
+                  const SizedBox(height: 8),
+
+                  ...plan.placesToAdd.map(
+                    (place) => Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Icon(Icons.add_location_alt_outlined, size: 18),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              '${place.name}・'
+                              '${place.category}',
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  if (remainingAfterFill > 0) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      '目前符合條件的景點不足，'
+                      '補入後仍少 $remainingAfterFill 個。',
+                      style: TextStyle(color: Colors.orange.shade800),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop(false);
+              },
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop(true);
+              },
+              child: Text('補入 ${plan.actualAddCount} 個景點'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _autoFillAttractions() async {
+    final selectedAttractions = _selectedPlaces
+        .where((constraint) => constraint.place.type == PlaceType.attraction)
+        .map((constraint) => constraint.place)
+        .toList();
+
+    final plan = _autoFillService.createPlan(
+      days: widget.request.days,
+      pace: _recommendationCriteria.pace,
+      selectedAttractions: selectedAttractions,
+      rankedRecommendations: _recommendations,
+    );
+
+    if (plan.alreadyEnough) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '目前已有 ${plan.currentAttractionCount} 個景點，'
+            '已達建議數量 ${plan.targetAttractionCount} 個。',
+          ),
+        ),
+      );
+      return;
+    }
+
+    if (plan.placesToAdd.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('目前沒有其他符合條件的推薦景點可以補入。')));
+      return;
+    }
+
+    final confirmed = await _showAutoFillDialog(plan);
+
+    if (confirmed != true || !mounted) {
+      return;
+    }
+
+    final existingIds = _selectedPlaces
+        .map((constraint) => constraint.place.id)
+        .toSet();
+
+    setState(() {
+      for (final place in plan.placesToAdd) {
+        if (!existingIds.add(place.id)) {
+          continue;
+        }
+
+        _selectedPlaces.add(
+          TripPlaceConstraint(
+            place: place,
+            day: null,
+            startMinutes: null,
+            locked: false,
+          ),
+        );
+
+        _autoRecommendedPlaceIds.add(place.id);
+      }
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('已補入 ${plan.actualAddCount} 個推薦景點。')),
+    );
   }
 }
 

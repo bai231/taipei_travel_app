@@ -8,15 +8,21 @@ class RecommendationCandidateFilter {
   static List<Place> filter({
     required Iterable<Place> places,
     required RecommendationCriteria criteria,
+    bool applyLocation = true,
   }) {
     return places.where((place) {
-      return isEligible(place: place, criteria: criteria);
+      return isEligible(
+        place: place,
+        criteria: criteria,
+        applyLocation: applyLocation,
+      );
     }).toList();
   }
 
   static bool isEligible({
     required Place place,
     required RecommendationCriteria criteria,
+    bool applyLocation = true,
   }) {
     // 目前推薦階段只處理景點。
     // 餐廳與住宿之後會有各自的推薦條件。
@@ -30,7 +36,7 @@ class RecommendationCandidateFilter {
     }
 
     // 全台不需要限制縣市。
-    if (!_isAllTaiwan(criteria.location)) {
+    if (applyLocation && !_isAllTaiwan(criteria.location)) {
       final placeCounty = PlaceService.countyFor(place);
 
       if (placeCounty != _normalizeTaiwanText(criteria.location)) {
