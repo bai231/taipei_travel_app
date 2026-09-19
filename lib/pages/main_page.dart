@@ -84,7 +84,7 @@ class _MainPageState extends State<MainPage> {
     if (navRect != null) {
       steps.add(GuideStep(
         title: '底部切換導航',
-        desc: '隨時在「首頁」、「行程安排」、「我的收藏」與「靈感搜尋」之間切換。',
+        desc: '隨時在「首頁」、「行程安排」、「個人空間」與「靈感搜尋」之間切換。',
         targetRect: navRect,
         isUpwards: true,
       ));
@@ -209,7 +209,7 @@ class _MainPageState extends State<MainPage> {
             items: const [
               BottomNavigationBarItem(icon: Icon(Icons.home_rounded), label: '首頁'),
               BottomNavigationBarItem(icon: Icon(Icons.auto_fix_high_rounded), label: '行程'),
-              BottomNavigationBarItem(icon: Icon(Icons.star_rounded), label: '我的收藏'),
+              BottomNavigationBarItem(icon: Icon(Icons.person_outline_rounded), label: '個人空間'),
               BottomNavigationBarItem(icon: Icon(Icons.search_rounded), label: '靈感'),
               BottomNavigationBarItem(icon: Icon(Icons.settings_rounded), label: '設定'),
             ],
