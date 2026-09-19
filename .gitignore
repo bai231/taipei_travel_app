@@ -59,3 +59,5 @@ node_modules/
 supabase/.temp/
 .env
 *.env
+# Widget Preview related
+.widget_preview/

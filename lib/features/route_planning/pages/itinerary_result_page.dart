@@ -5,6 +5,9 @@ import 'package:flutter/material.dart';
 import '../../../models/place.dart';
 import '../../../models/trip_place_constraint.dart';
 import '../../../models/visit_preferences.dart';
+import '../../../services/live_itinerary_tracking_service.dart';
+import '../../../services/location_service.dart';
+import '../../../services/trip_notification_service.dart';
 import '../../../widgets/trip/visit_preferences_dialog.dart';
 import '../../../widgets/trip/save_itinerary_button.dart';
 import '../models/route_day.dart';
@@ -54,6 +57,9 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
   final _horizontalController = ScrollController();
   final _verticalController = ScrollController();
   final List<Place> _pendingPlaces = [];
+  final _tripTracker = LiveItineraryTrackingService();
+  final _notificationService = TripNotificationService();
+  final _liveDayReplanner = LiveDayItineraryReplanner();
 
   late RouteItinerary _itinerary;
   late List<TripPlaceConstraint> _constraints;
@@ -62,6 +68,10 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
   int? _mapDayIndex;
   bool _isMapVisible = false;
   bool _isRecalculating = false;
+  bool _isTracking = false;
+  bool _isLiveReplanning = false;
+  LocationPoint? _currentLocation;
+  List<LocationPoint> _trackedRoute = const [];
   double _mapHeightRatio = 0.34;
 
   int? get _validMapDayIndex =>
@@ -78,6 +88,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
     _itinerary = widget.itinerary;
     _constraints = _constraintsFromItinerary(_itinerary);
     _travelModeOverrides = Map.of(_itinerary.travelModeOverrides);
+    _tripTracker.updates.listen(_handleTrackingUpdate);
   }
 
   @override
@@ -88,6 +99,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
       _mapDayIndex = _validMapDayIndex;
       _constraints = _constraintsFromItinerary(_itinerary);
       _travelModeOverrides = Map.of(_itinerary.travelModeOverrides);
+      _tripTracker.updateItinerary(_itinerary);
       _selectedDayIndex = min(
         _selectedDayIndex,
         max(0, _itinerary.days.length - 1),
@@ -97,6 +109,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
 
   @override
   void dispose() {
+    _tripTracker.dispose();
     _horizontalController.dispose();
     _verticalController.dispose();
     super.dispose();
@@ -125,6 +138,15 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
                 : () => setState(() => _isMapVisible = !_isMapVisible),
             icon: Icon(_isMapVisible ? Icons.map_outlined : Icons.map),
             label: Text(_isMapVisible ? '隱藏地圖' : '顯示地圖'),
+          ),
+          TextButton.icon(
+            onPressed: _isTracking ? _stopTracking : _startTracking,
+            icon: Icon(
+              _isTracking
+                  ? Icons.stop_circle_outlined
+                  : Icons.play_circle_outline,
+            ),
+            label: Text(_isTracking ? '停止追蹤' : '開始行程'),
           ),
           IconButton(
             tooltip: '編輯行程',
@@ -188,7 +210,11 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
                     ),
                     SizedBox(
                       height: constraints.maxHeight * _mapHeightRatio,
-                      child: TripMapPanel(day: _mapDay),
+                      child: TripMapPanel(
+                        day: _mapDay,
+                        currentLocation: _currentLocation,
+                        trackedRoute: _trackedRoute,
+                      ),
                     ),
                     _buildResizeHandle(constraints.maxHeight),
                   ],
@@ -210,6 +236,12 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
             label: const Text('新增景點'),
           ),
           const SizedBox(width: 12),
+          if (_isTracking) ...[
+            const Icon(Icons.gps_fixed, size: 18),
+            const SizedBox(width: 6),
+            const Text('GPS 追蹤中'),
+            const SizedBox(width: 12),
+          ],
           const Expanded(
             child: Text(
               '長按景點後拖到新的 Day 與時間；鎖定時段不接受放置。',
@@ -555,6 +587,81 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
     );
   }
 
+  Future<void> _startTracking() async {
+    final started = await _tripTracker.start(_itinerary);
+    if (!mounted) return;
+    if (!started) {
+      _showMessage('無法取得 GPS 位置，請確認已開啟定位服務並允許位置權限。');
+      return;
+    }
+    setState(() {
+      _isTracking = true;
+      _isMapVisible = true;
+    });
+    _showMessage('已開始 GPS 行程追蹤；若明顯延誤，系統會更新今天剩餘行程。');
+  }
+
+  Future<void> _stopTracking() async {
+    await _tripTracker.stop();
+    if (mounted) setState(() => _isTracking = false);
+  }
+
+  Future<void> _handleTrackingUpdate(TripTrackingUpdate update) async {
+    if (!mounted) return;
+    setState(() {
+      _currentLocation = update.location;
+      _trackedRoute = update.route;
+    });
+    final alert = update.delayAlert;
+    if (alert == null || _isLiveReplanning) return;
+
+    final now = DateTime.now();
+    final dayIndex = _itinerary.days.indexWhere(
+      (day) =>
+          day.date.year == now.year &&
+          day.date.month == now.month &&
+          day.date.day == now.day,
+    );
+    if (dayIndex < 0) return;
+
+    _isLiveReplanning = true;
+    try {
+      final revisedDay = _liveDayReplanner.replan(
+        day: _itinerary.days[dayIndex],
+        currentLocation: update.location,
+        now: now,
+      );
+      final revisedDays = List.of(_itinerary.days)..[dayIndex] = revisedDay;
+      final revised = RouteItinerary(
+        request: _itinerary.request,
+        origin: _itinerary.origin,
+        days: revisedDays,
+        generatedAt: DateTime.now(),
+        warnings: _itinerary.warnings,
+        inputs: _itinerary.inputs,
+        travelModeOverrides: _itinerary.travelModeOverrides,
+      );
+      _tripTracker.updateItinerary(revised);
+      if (!mounted) return;
+      setState(() {
+        _itinerary = revised;
+        _selectedDayIndex = dayIndex;
+        _mapDayIndex = dayIndex;
+      });
+      await _notificationService.showScheduleAdjusted(
+        lateMinutes: alert.lateMinutes,
+        nextStopName: alert.nextStopName,
+      );
+      if (mounted) {
+        _showMessage('已依目前位置更新 Day ${revisedDay.day} 的後續行程。');
+      }
+    } catch (_) {
+      if (mounted) _showMessage('偵測到延誤，但暫時無法重新安排今日行程。');
+    } finally {
+      _isLiveReplanning = false;
+    }
+  }
+
   Future<void> _addPlace() async {
     if (widget.onAddPlace == null) {
       _showMessage('請先在上一層頁面接上 onAddPlace。');
@@ -676,6 +783,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
           max(0, result.days.length - 1),
         );
       });
+      _tripTracker.updateItinerary(result);
       return true;
     } catch (error) {
       if (mounted) _showMessage('重新安排行程失敗：$error');
@@ -754,11 +862,6 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
       if (startMinutes < lockedEnd && endMinutes > lockedStart) return true;
     }
     return false;
-  }
-
-  bool _containsPlace(String id) {
-    return _constraints.any((item) => item.place.id == id) ||
-        _pendingPlaces.any((item) => item.id == id);
   }
 
   List<TripPlaceConstraint> _constraintsFromItinerary(
