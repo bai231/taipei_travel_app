@@ -6,6 +6,7 @@ import 'edit_profile_screen.dart'; // 引入編輯個人資料頁面
 import 'guide_overlay_screen.dart'; // 引入使用指南
 import 'login_screen.dart';         // 引入登入頁面
 import '../theme/app_colors.dart';
+import '../services/language_service.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -32,8 +33,11 @@ class _SettingsPageState extends State<SettingsPage> {
     showDialog(
       context: context,
       barrierColor: Colors.black.withValues(alpha: 0.2),
-      builder: (context) {
+      builder: (dialogCtx) {
+        final currentLang = LanguageService().currentLanguageName;
         return Center(
+          child: Material(
+          type: MaterialType.transparency,
           child: ClipRRect(
             borderRadius: BorderRadius.circular(20),
             child: BackdropFilter(
@@ -61,25 +65,26 @@ class _SettingsPageState extends State<SettingsPage> {
                       ),
                     ),
                     const SizedBox(height: 12),
-                    _buildLanguageOption('繁體中文'),
-                    _buildLanguageOption('English'),
-                    _buildLanguageOption('日本語'),
+                    _buildLanguageOption('繁體中文', currentLang, dialogCtx),
+                    _buildLanguageOption('English', currentLang, dialogCtx),
                   ],
                 ),
               ),
             ),
+          ),
           ),
         );
       },
     );
   }
 
-  Widget _buildLanguageOption(String lang) {
+  Widget _buildLanguageOption(String lang, String currentSelected, BuildContext dialogCtx) {
     final bool isSelected = _currentLanguage == lang;
     return InkWell(
       onTap: () {
-        setState(() => _currentLanguage = lang);
-        Navigator.pop(context);
+        LanguageService().changeLanguage(lang);
+        Navigator.pop(dialogCtx);
+        setState(() {});
       },
       borderRadius: BorderRadius.circular(12),
       child: Container(
@@ -175,8 +180,8 @@ class _SettingsPageState extends State<SettingsPage> {
               const SizedBox(height: 24),
 
               // 4. 區塊一：個人帳號設置
-              const Text(
-                "個人帳號設置",
+              Text(
+                LanguageService.tr(context, 'account_settings'),
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textDark),
               ),
               const SizedBox(height: 12),
@@ -231,8 +236,8 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
                 _buildSettingTile(
                   icon: Icons.language_rounded,
-                  title: "語言設定",
-                  trailingText: _currentLanguage,
+                  title: LanguageService.tr(context, 'language_setting'),
+                  trailingText: LanguageService().currentLanguageName,
                   onTap: _showFrostedLanguageDialog,
                 ),
                 _buildSettingTile(

@@ -209,7 +209,7 @@ class _MainPageState extends State<MainPage> {
             items: const [
               BottomNavigationBarItem(icon: Icon(Icons.home_rounded), label: '首頁'),
               BottomNavigationBarItem(icon: Icon(Icons.auto_fix_high_rounded), label: '行程'),
-              BottomNavigationBarItem(icon: Icon(Icons.star_rounded), label: '我的收藏'),
+              BottomNavigationBarItem(icon: Icon(Icons.star_rounded), label: '我的'),
               BottomNavigationBarItem(icon: Icon(Icons.search_rounded), label: '靈感'),
               BottomNavigationBarItem(icon: Icon(Icons.settings_rounded), label: '設定'),
             ],

@@ -3,6 +3,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'routes/app_routes.dart';
 import 'theme/app_theme.dart';
 import 'models/place.dart';
+import 'services/language_service.dart';
+import 'package:flutter_localizations/flutter_localizations.dart'; // 👈 解決 Undefined name[cite: 1, 2]
 
 final supabase = Supabase.instance.client;
 
@@ -24,15 +26,37 @@ class TravelApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      title: 'Travel App',
+    // 🌟 在外層監聽 LanguageService 的語系變化
+    return ValueListenableBuilder<Locale>(
+      valueListenable: LanguageService().currentLocale,
+      builder: (context, currentLocale, _) {
+        return MaterialApp(
+          debugShowCheckedModeBanner: false,
+          title: 'Travel App',
 
-      theme: AppTheme.lightTheme,
+          // 🌟 動態切換當前語言（zh_TW / en_US）
+          locale: currentLocale,
 
-      initialRoute: AppRoutes.home,
+          // 🌟 註冊支援的語系
+          supportedLocales: const [
+            Locale('zh', 'TW'),
+            Locale('en', 'US'),
+          ],
 
-      routes: AppRoutes.routes,
+          // 🌟 註冊 Flutter 內建元件（如彈窗、文字選單）的多語言支援
+          localizationsDelegates: const [
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+
+          theme: AppTheme.lightTheme,
+
+          initialRoute: AppRoutes.home,
+
+          routes: AppRoutes.routes,
+        );
+      },
     );
   }
 }
