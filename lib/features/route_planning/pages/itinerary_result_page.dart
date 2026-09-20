@@ -8,6 +8,7 @@ import '../../../models/visit_preferences.dart';
 import '../../../services/live_itinerary_tracking_service.dart';
 import '../../../services/location_service.dart';
 import '../../../services/trip_notification_service.dart';
+import '../../../services/weather_advisory_service.dart';
 import '../../../widgets/trip/visit_preferences_dialog.dart';
 import '../../../widgets/trip/save_itinerary_button.dart';
 import '../models/route_day.dart';
@@ -59,6 +60,9 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
   final List<Place> _pendingPlaces = [];
   final _tripTracker = LiveItineraryTrackingService();
   final _notificationService = TripNotificationService();
+  final _weatherAdvisoryService = WeatherAdvisoryService(
+    apiKey: String.fromEnvironment('CWA_API_KEY'),
+  );
   final _liveDayReplanner = LiveDayItineraryReplanner();
 
   late RouteItinerary _itinerary;
@@ -110,6 +114,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
   @override
   void dispose() {
     _tripTracker.dispose();
+    _weatherAdvisoryService.dispose();
     _horizontalController.dispose();
     _verticalController.dispose();
     super.dispose();
@@ -612,6 +617,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
       _currentLocation = update.location;
       _trackedRoute = update.route;
     });
+    await _weatherAdvisoryService.check(update.location);
     final alert = update.delayAlert;
     if (alert == null || _isLiveReplanning) return;
 
