@@ -136,9 +136,16 @@ class _PlannerItemPickerState extends State<PlannerItemPicker> {
             ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
+            child: Flex(
+              mainAxisSize: MainAxisSize.min,
+              direction:
+                  MediaQuery.sizeOf(context).width < 600 ||
+                      MediaQuery.textScalerOf(context).scale(16) > 20
+                  ? Axis.vertical
+                  : Axis.horizontal,
               children: [
-                Expanded(
+                Flexible(
+                  fit: FlexFit.loose,
                   flex: 2,
                   child: TextField(
                     controller: _searchController,
@@ -161,8 +168,9 @@ class _PlannerItemPickerState extends State<PlannerItemPicker> {
                     onChanged: (_) => setState(() {}),
                   ),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
+                const SizedBox(width: 12, height: 12),
+                Flexible(
+                  fit: FlexFit.loose,
                   child: favoritesMode
                       ? DropdownButtonFormField<String?>(
                           key: ValueKey('folders:$folderId'),
@@ -196,6 +204,7 @@ class _PlannerItemPickerState extends State<PlannerItemPicker> {
                       : DropdownButtonFormField<String?>(
                           key: const ValueKey('counties'),
                           initialValue: _selectedCounty,
+                          isExpanded: true,
                           decoration: const InputDecoration(
                             labelText: '縣市',
                             border: OutlineInputBorder(),
@@ -209,7 +218,10 @@ class _PlannerItemPickerState extends State<PlannerItemPicker> {
                             ...counties.map(
                               (county) => DropdownMenuItem<String?>(
                                 value: county,
-                                child: Text(county),
+                                child: Text(
+                                  county,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               ),
                             ),
                           ],

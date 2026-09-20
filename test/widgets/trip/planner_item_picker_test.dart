@@ -5,6 +5,36 @@ import 'package:taipei_travel_app/models/planner_favorites.dart';
 import 'package:taipei_travel_app/widgets/trip/planner_item_picker.dart';
 
 void main() {
+  testWidgets('窄螢幕放大字體時搜尋與縣市不溢出', (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      MaterialApp(
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(
+            context,
+          ).copyWith(textScaler: TextScaler.linear(1.5)),
+          child: child!,
+        ),
+        home: Scaffold(
+          body: PlannerItemPicker(
+            type: PlaceType.attraction,
+            places: [_place('景點')],
+            selectedPlaceIds: const {},
+            onConfirmed: (_) {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(
+      tester.getTopLeft(find.text('縣市')).dy,
+      greaterThan(tester.getTopLeft(find.byType(TextField)).dy),
+    );
+  });
   testWidgets('收藏以資料夾取代縣市，資料夾切換保留搜尋與原縣市', (tester) async {
     final a = _place('收藏甲');
     final b = _place('收藏乙');

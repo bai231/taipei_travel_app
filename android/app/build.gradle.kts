@@ -1,7 +1,16 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+}
+
+// Keep the actual Android Maps key in ignored local.properties, not in Git.
+val localConfig = Properties()
+val localConfigFile = rootProject.file("local.properties")
+if (localConfigFile.exists()) {
+    localConfigFile.inputStream().use { localConfig.load(it) }
 }
 
 android {
@@ -17,6 +26,10 @@ android {
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.example.taipei_travel_app"
+        manifestPlaceholders["GOOGLE_MAPS_API_KEY"] =
+            localConfig.getProperty("GOOGLE_MAPS_API_KEY", "")
+        manifestPlaceholders["GOOGLE_ROUTES_API_KEY"] =
+            localConfig.getProperty("GOOGLE_ROUTES_API_KEY", "")
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion

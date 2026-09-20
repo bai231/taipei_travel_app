@@ -14,6 +14,6 @@ class GoogleRouteGeometryService implements RouteGeometryGateway {
     required DateTime departureTime,
     required RouteTravelMode travelMode,
   }) async {
-    return const [];
+    throw UnsupportedError('此平台尚未支援路線線條，紅色虛線僅為示意。');
   }
 }

@@ -1,4 +1,5 @@
 import 'dart:math';
+import '../../../services/route_error_message.dart';
 
 import '../../../algorithm/route_optimizer.dart';
 import '../../../models/place.dart';
@@ -610,8 +611,7 @@ class ItineraryPlanningService {
                     'Google Maps 沒有提供可用的${travelMode.label}路線，已使用估計時間。';
               }
             } catch (error) {
-              errorMessage =
-                  'Google Maps ${travelMode.label}路線查詢失敗，已使用估計時間：$error';
+              errorMessage = routeErrorMessage(error);
             }
           } else {
             while (true) {
@@ -651,7 +651,7 @@ class ItineraryPlanningService {
                 }
                 onProgress?.call('TDX 冷卻結束，正在重新查詢目前路段…');
               } catch (error) {
-                errorMessage = 'TDX 路線查詢失敗，已使用估計時間：$error';
+                errorMessage = routeErrorMessage(error);
                 break;
               }
             }

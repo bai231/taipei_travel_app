@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../widgets/trip/android_layout.dart';
+import '../widgets/trip/android_planner_split.dart';
 import 'dart:convert';
 import '../models/place.dart';
 import '../models/trip_request.dart';
@@ -282,6 +284,12 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
   // ============================================================
 
   Widget _buildPlannerContent() {
+    if (usesAndroidTripLayout) {
+      return AndroidPlannerSplit(
+        timeline: _buildTimeline(),
+        unscheduled: _buildUnscheduledArea(),
+      );
+    }
     return Column(
       children: [
         // 時間軸
@@ -372,7 +380,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
         children: [
           // 時間
           SizedBox(
-            width: 55,
+            width: usesAndroidTripLayout ? 88 : 55,
 
             child: Text(
               "${hour.toString().padLeft(2, '0')}:00",
@@ -487,6 +495,56 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
         )
         .toList();
 
+    if (usesAndroidTripLayout) {
+      return ListView(
+        padding: const EdgeInsets.all(12),
+        children: [
+          Text(
+            '不限日期／時間的${_typeName(_selectedType)}',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          if (unscheduledPlaces.isEmpty) const Text('目前沒有待安排項目'),
+          for (final item in unscheduledPlaces)
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      item.place.name,
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    Text(item.preferences.summaryFor(item.place)),
+                    Wrap(
+                      spacing: 8,
+                      children: [
+                        TextButton(
+                          onPressed: _isGenerating
+                              ? null
+                              : () => _selectDay(item),
+                          child: Text(
+                            item.place.type == PlaceType.accommodation
+                                ? '調整住宿'
+                                : '指定日期',
+                          ),
+                        ),
+                        _preferencesButton(item),
+                        TextButton(
+                          onPressed: _isGenerating
+                              ? null
+                              : () => _removePlace(item),
+                          child: const Text('移除'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      );
+    }
     return Container(
       width: double.infinity,
 

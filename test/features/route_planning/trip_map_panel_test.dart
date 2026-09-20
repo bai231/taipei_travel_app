@@ -108,9 +108,12 @@ void main() {
     expect(gateway.calls, [25, 24, 23]);
     expect(platform.objects.polylines.length, 3);
     expect(find.textContaining('2 段已載入，1 段無法取得路徑'), findsOneWidget);
+    expect(find.textContaining('Google 參考路線'), findsNothing);
+    await tester.tap(find.text('圖例與說明'));
+    await tester.pumpAndSettle();
     expect(find.textContaining('Google 參考路線'), findsOneWidget);
     gateway.fail = false;
-    await tester.tap(find.text('重試失敗路段'));
+    await tester.tap(find.text('重試'));
     await tester.pumpAndSettle();
     expect(gateway.calls, [25, 24, 23, 24]);
     expect(find.textContaining('3 段已載入，0 段無法取得路徑'), findsOneWidget);
