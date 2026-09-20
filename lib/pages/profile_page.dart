@@ -6,6 +6,8 @@ import '../services/favorite_service.dart';
 import '../models/place.dart';
 import 'itinerary_result_page.dart';
 import '../services/user_data_service.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+// import '../services/saved_itinerary_service.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -25,6 +27,8 @@ class _ProfilePageState extends State<ProfilePage> {
     {"title": "必去美食", "places": <Place>[]},
     {"title": "拍照打卡", "places": <Place>[]},
   ];*/
+  List<Map<String, dynamic>> _exportedTrips = [];
+  bool _isLoadingExportedTrips = true;
 
   @override
   void initState() {
@@ -34,6 +38,7 @@ class _ProfilePageState extends State<ProfilePage> {
     // 🌟 關鍵修復：進入頁面時主動向 Supabase 撈取雲端收藏！
     _favoriteService.fetchFavoritesFromCloud();
     _loadCloudFolders();
+    //_loadExportedTrips();
   }
 
   Future<void> _loadCloudFolders() async {

@@ -4,7 +4,7 @@ import 'routes/app_routes.dart';
 import 'theme/app_theme.dart';
 import 'models/place.dart';
 import 'services/language_service.dart';
-import 'package:flutter_localizations/flutter_localizations.dart'; // 👈 解決 Undefined name[cite: 1, 2]
+import 'package:flutter_localizations/flutter_localizations.dart';
 
 final supabase = Supabase.instance.client;
 

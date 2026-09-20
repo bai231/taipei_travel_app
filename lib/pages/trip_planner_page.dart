@@ -11,6 +11,7 @@ import '../features/route_planning/services/itinerary_planning_service.dart';
 import '../services/place_service.dart';
 import '../widgets/trip/planner_item_picker.dart';
 import '../widgets/trip/visit_preferences_dialog.dart';
+import '../widgets/trip/planner_favorite_picker_dialog.dart';
 
 class TripPlannerPage extends StatefulWidget {
   final TripRequest request;

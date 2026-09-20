@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'place_detail_page.dart';
 import '../models/place.dart';
+import '../widgets/trip/planner_favorite_picker_dialog.dart';
 
 class ItineraryResultPage extends StatefulWidget {
   final String tripTitle;

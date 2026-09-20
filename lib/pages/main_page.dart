@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'home_page.dart';
-import 'search_page.dart';
+//import 'search_page.dart';
 import 'trip_page.dart';
 import 'profile_page.dart';
 import 'setting_page.dart';
@@ -29,7 +29,7 @@ class _MainPageState extends State<MainPage> {
     HomePage(),
     TripPage(),
     ProfilePage(),
-    SearchPage(),
+    // SearchPage(),
     SettingsPage(),
   ];
 
@@ -165,7 +165,7 @@ class _MainPageState extends State<MainPage> {
                     ),
                     onPressed: () {
                       setState(() {
-                        _currentIndex = 4; // 點擊直接切換至設定/個人頁
+                        _currentIndex = 3; // 點擊直接切換至設定/個人頁
                       });
                     },
                   ),
@@ -210,7 +210,7 @@ class _MainPageState extends State<MainPage> {
               BottomNavigationBarItem(icon: Icon(Icons.home_rounded), label: '首頁'),
               BottomNavigationBarItem(icon: Icon(Icons.auto_fix_high_rounded), label: '行程'),
               BottomNavigationBarItem(icon: Icon(Icons.star_rounded), label: '我的'),
-              BottomNavigationBarItem(icon: Icon(Icons.search_rounded), label: '靈感'),
+              //BottomNavigationBarItem(icon: Icon(Icons.search_rounded), label: '靈感'),
               BottomNavigationBarItem(icon: Icon(Icons.settings_rounded), label: '設定'),
             ],
           ),
