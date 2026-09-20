@@ -267,7 +267,7 @@ class Place {
               '24/7',
       rating: numberValue(['rating', 'Rating'])?.toDouble() ?? 0.0,
       tags: tags,
-      price_level: (json['priceLevel'] as num?)?.toInt() ?? 0,
+      price_level: (json['price_level'] as num?)?.toInt() ?? 0,
       //estimatedCost:
       //    numberValue(['estimatedCost', 'estimated_cost'])?.toDouble() ?? 0.0,
       openMinutes: numberValue(['openMinutes', 'open_minutes'])?.toInt() ?? 0,

@@ -58,7 +58,10 @@ class PlaceService {
     }
 
     _countyResolver ??= await TaiwanCountyResolver.load();
-    return rows.map(Place.fromJson).map(_withResolvedCounty).toList();
+    return rows
+        .map((row) => Place.fromJson(row, forcedType: PlaceType.attraction))
+        .map(_withResolvedCounty)
+        .toList();
   }
 
   Place _withResolvedCounty(Place place) {

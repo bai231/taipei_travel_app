@@ -7,14 +7,23 @@ import '../../../services/map_service.dart';
 import '../../../services/route_error_message.dart';
 import '../../../services/route_geometry_gateway.dart';
 import '../../../services/route_geometry_normalizer.dart';
+import '../../../services/location_service.dart';
 import '../models/route_day.dart';
 import '../models/route_visit.dart';
 
 class TripMapPanel extends StatefulWidget {
   final RouteDay day;
   final RouteGeometryGateway? routeGeometryGateway;
+  final LocationPoint? currentLocation;
+  final List<LocationPoint> trackedRoute;
 
-  const TripMapPanel({super.key, required this.day, this.routeGeometryGateway});
+  const TripMapPanel({
+    super.key,
+    required this.day,
+    this.routeGeometryGateway,
+    this.currentLocation,
+    this.trackedRoute = const [],
+  });
 
   @override
   State<TripMapPanel> createState() => _TripMapPanelState();
@@ -61,6 +70,21 @@ class _TripMapPanelState extends State<TripMapPanel> {
     final routePolylines = _mapService.routePolylinesForSegments(
       _routeSegments,
     );
+    if (widget.trackedRoute.length >= 2) {
+      routePolylines.add(
+        Polyline(
+          polylineId: const PolylineId('tracked-trip-route'),
+          points: widget.trackedRoute
+              .map((point) => LatLng(point.latitude, point.longitude))
+              .toList(),
+          color: const Color(0xFF00897B),
+          width: 6,
+          startCap: Cap.roundCap,
+          endCap: Cap.roundCap,
+          jointType: JointType.round,
+        ),
+      );
+    }
     for (final index in _failedLegs.keys) {
       final leg = widget.day.travelLegs[index];
       routePolylines.add(
@@ -272,6 +296,11 @@ class _TripMapPanelState extends State<TripMapPanel> {
         icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueYellow),
       ),
     ),
+    if (widget.currentLocation case final location?)
+      _mapService.currentLocationMarker(
+        latitude: location.latitude,
+        longitude: location.longitude,
+      ),
   };
 
   Future<void> _focusRoute() async {

@@ -1,9 +1,11 @@
 {
 
+
   "deno.enablePaths": [
     "supabase/functions"
   ],
   "deno.importMap": "./supabase/functions/parse-travel-preference/deno.json",
+
   "deno.lint": true,
   "deno.unstable": [
     "bare-node-builtins",

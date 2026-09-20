@@ -95,7 +95,7 @@ class _TripPageState extends State<TripPage> {
         title: _tripNameController.text.trim(),
         startDate: _startDate!,
         endDate: _endDate!,
-        location: '全台',
+        location: _location,
         people: _people,
         budget_level: _budgetLevel!,
         preferences: _preferences,
