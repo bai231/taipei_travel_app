@@ -108,6 +108,14 @@ class _TravelLegCardState extends State<TravelLegCard> {
   Widget _buildAndroidCard(BuildContext context) {
     final leg = widget.leg;
     final route = leg.route;
+    final sections =
+        route?.sections.where((s) => !_isWaiting(s)).toList() ??
+        <RouteSection>[];
+    final waitingSeconds =
+        route?.sections
+            .where(_isWaiting)
+            .fold<int>(0, (sum, s) => sum + s.travelTime) ??
+        0;
     final duration =
         leg.schedule.arrivalMinutes - leg.schedule.departureMinutes;
     return Card(
@@ -170,16 +178,22 @@ class _TravelLegCardState extends State<TravelLegCard> {
               ],
             ),
             if (route != null)
-              for (final entry in route.sections.asMap().entries)
+              for (final entry in sections.asMap().entries)
                 _RouteSectionTile(
                   key: ObjectKey(entry.value),
                   index: entry.key,
                   section: entry.value,
                   collapsible: true,
+                  departureFallback: entry.key == 0 ? leg.origin.name : null,
+                  arrivalFallback: entry.key == sections.length - 1
+                      ? leg.destination.name
+                      : null,
                 ),
             if (_showDetails) ...[
               const Divider(),
               Text('資料來源：${leg.routeSourceLabel}'),
+              if (waitingSeconds > 0)
+                Text('等候時間：約 ${(waitingSeconds / 60).ceil()} 分鐘（已包含於交通總時間）'),
               if (route?.distanceMeters != null)
                 Text('距離：${route!.distanceMeters} 公尺'),
               if (route == null || route.sections.isEmpty)
@@ -236,16 +250,26 @@ class _RouteSectionTile extends StatelessWidget {
   final int index;
   final RouteSection section;
   final bool collapsible;
+  final String? departureFallback;
+  final String? arrivalFallback;
 
   const _RouteSectionTile({
     super.key,
     required this.index,
     required this.section,
     this.collapsible = false,
+    this.departureFallback,
+    this.arrivalFallback,
   });
 
   @override
   Widget build(BuildContext context) {
+    final departure = _endpointName(
+      section.departureTitle,
+      departureFallback,
+      '起點',
+    );
+    final arrival = _endpointName(section.arrivalTitle, arrivalFallback, '終點');
     final details = <String>[
       if (section.departureTime != null) '${section.departureTime} 出發',
       if (section.arrivalTime != null) '${section.arrivalTime} 抵達',
@@ -281,11 +305,7 @@ class _RouteSectionTile extends StatelessWidget {
                   if (details.isNotEmpty) Text(details.join('・')),
                   if (section.destination?.isNotEmpty ?? false)
                     Text('方向：${section.destination}'),
-                  if (section.departureTitle != null ||
-                      section.arrivalTitle != null)
-                    Text(
-                      '${section.departureTitle ?? '起點'} → ${section.arrivalTitle ?? '終點'}',
-                    ),
+                  Text('$departure → $arrival'),
                   if (section.intermediateStops.isNotEmpty)
                     Text('途經：${section.intermediateStops.join('、')}'),
                 ],
@@ -370,4 +390,19 @@ String _formatMinutes(int minutes) {
   final minute = normalized % 60;
   return '${hour.toString().padLeft(2, '0')}:'
       '${minute.toString().padLeft(2, '0')}';
+}
+
+bool _isWaiting(RouteSection section) => const {
+  'wait',
+  'waiting',
+  '等待',
+  '等候',
+}.contains(section.mode.trim().toLowerCase());
+
+String _endpointName(String? title, String? fallback, String generic) {
+  final value = title?.trim() ?? '';
+  if (value.isEmpty || value.toLowerCase() == 'place') {
+    return fallback ?? generic;
+  }
+  return value;
 }

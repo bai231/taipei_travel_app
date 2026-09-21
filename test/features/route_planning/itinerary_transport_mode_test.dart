@@ -34,8 +34,14 @@ void main() {
             travelTime: 120,
             stopCount: 0,
             intermediateStops: [],
-            departureTitle: '步行起點',
+            departureTitle: 'place',
             arrivalTitle: '車站入口',
+          ),
+          RouteSection(
+            mode: 'waiting',
+            travelTime: 180,
+            stopCount: 0,
+            intermediateStops: [],
           ),
           RouteSection(
             mode: 'train',
@@ -51,6 +57,8 @@ void main() {
             travelTime: 480,
             stopCount: 2,
             intermediateStops: ['公車中途站'],
+            departureTitle: '公車站',
+            arrivalTitle: 'place',
           ),
         ],
       ),
@@ -79,6 +87,21 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.textContaining('台北站 → 松山站'), findsNothing);
     expect(find.text('台鐵／火車'), findsOneWidget);
+    expect(find.text('waiting'), findsNothing);
+    expect(find.byType(ExpansionTile), findsNWidgets(3));
+    await tester.tap(find.text('步行'));
+    await tester.pumpAndSettle();
+    expect(find.text('${base.origin.name} → 車站入口'), findsOneWidget);
+    await tester.tap(find.text('步行'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('公車・公車123'));
+    await tester.pumpAndSettle();
+    expect(find.text('公車站 → ${base.destination.name}'), findsOneWidget);
+    await tester.tap(find.text('公車・公車123'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('展開細項'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('等候時間：約 3 分鐘'), findsOneWidget);
     expect(tester.takeException(), isNull);
   }, variant: TargetPlatformVariant.only(TargetPlatform.android));
   testWidgets('Android 交通次要資訊預設隱藏並可展開收合', (tester) async {
