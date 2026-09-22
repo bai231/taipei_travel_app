@@ -22,6 +22,7 @@ import '../models/must_visit_resolution.dart';
 import '../services/recommendation/must_visit_resolver.dart';
 import '../models/trip_auto_fill_plan.dart';
 import '../services/recommendation/trip_auto_fill_service.dart';
+import '../models/recommendation_conflict.dart';
 
 class TripPlannerPage extends StatefulWidget {
   final TripRequest request;
@@ -43,6 +44,7 @@ class TripPlannerPage extends StatefulWidget {
 
 class _TripPlannerPageState extends State<TripPlannerPage> {
   late final RecommendationCriteria _recommendationCriteria;
+  late final List<RecommendationConflict> _recommendationConflicts;
   late final List<Place> _candidatePlaces;
   late final int _allAttractionCount;
   late final List<PlaceRecommendation> _recommendations;
@@ -98,9 +100,12 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
   void initState() {
     super.initState();
 
-    _recommendationCriteria = RecommendationCriteriaFactory.fromTripRequest(
+    final criteriaBuildResult = RecommendationCriteriaFactory.build(
       widget.request,
     );
+
+    _recommendationCriteria = criteriaBuildResult.criteria;
+    _recommendationConflicts = criteriaBuildResult.conflicts;
 
     final allAttractions = widget.places
         .where((place) => place.type == PlaceType.attraction)
@@ -145,6 +150,12 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
       places: widget.places,
     );
 
+    if (_recommendationConflicts.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _showRecommendationConflictDialog();
+      });
+    }
+
     final addableConflictingPlaces = _mustVisitResolution.conflictingPlaces
         .where(PlaceService.hasUsableCoordinates)
         .toList();
@@ -178,6 +189,61 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
         );
       }
     }
+  }
+
+  Future<void> _showRecommendationConflictDialog() async {
+    if (!mounted || _recommendationConflicts.isEmpty) {
+      return;
+    }
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          icon: const Icon(Icons.warning_amber_rounded, color: Colors.orange),
+          title: const Text('旅遊需求有衝突'),
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    '部分喜好同時出現在排除條件中，'
+                    '目前會以排除條件為優先：',
+                  ),
+                  const SizedBox(height: 12),
+                  for (final conflict in _recommendationConflicts)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Padding(
+                            padding: EdgeInsets.only(top: 7),
+                            child: Icon(Icons.circle, size: 6),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(child: Text(conflict.message)),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+              },
+              child: const Text('我知道了'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   @override
