@@ -1,10 +1,11 @@
 {
-<<<<<<< HEAD
+
 
   "deno.enablePaths": [
     "supabase/functions"
   ],
-  "deno.importMap": "./supabase/functions/deno.json",
+  "deno.importMap": "./supabase/functions/parse-travel-preference/deno.json",
+
   "deno.lint": true,
   "deno.unstable": [
     "bare-node-builtins",
@@ -27,10 +28,6 @@
   },
 
 
-  "cmake.sourceDirectory": "C:/Users/cianj/Desktop/project/taipei_travel_app/linux"
+  "cmake.sourceDirectory": "${workspaceFolder}/linux"
 
   }
-=======
-    "cmake.sourceDirectory": "C:/Users/cianj/Desktop/project/taipei_travel_app/linux"
-}
->>>>>>> aeb07361075c78da1516076383329a59ba1bfe3c

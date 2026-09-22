@@ -1,11 +1,20 @@
 import 'dart:math';
+import 'dart:async';
+import '../models/compact_day_axis.dart';
 
 import 'package:flutter/material.dart';
+import '../../../widgets/trip/android_layout.dart';
+import '../widgets/android_day_itinerary.dart';
 
 import '../../../models/place.dart';
 import '../../../models/trip_place_constraint.dart';
 import '../../../models/visit_preferences.dart';
+import '../../../services/live_itinerary_tracking_service.dart';
+import '../../../services/location_service.dart';
+import '../../../services/trip_notification_service.dart';
+import '../../../services/weather_advisory_service.dart';
 import '../../../widgets/trip/visit_preferences_dialog.dart';
+import '../../../widgets/trip/save_itinerary_button.dart';
 import '../models/route_day.dart';
 import '../models/route_itinerary.dart';
 import '../models/route_travel_mode.dart';
@@ -47,22 +56,46 @@ class ItineraryResultPage extends StatefulWidget {
 }
 
 class _ItineraryResultPageState extends State<ItineraryResultPage> {
-  static const _dayWidth = 280.0;
+  double _timetableZoom = 1;
+  double get _dayWidth => usesAndroidTripLayout && !_androidOverview
+      ? max(160, MediaQuery.sizeOf(context).width - _timeWidth)
+      : 280 * _timetableZoom;
   static const _timeWidth = 64.0;
-  static const _hourHeight = 92.0;
+  double get _hourHeight => 92 * _timetableZoom;
   final _horizontalController = ScrollController();
   final _verticalController = ScrollController();
   final List<Place> _pendingPlaces = [];
+  final _tripTracker = LiveItineraryTrackingService();
+  final _notificationService = TripNotificationService();
+  final _weatherAdvisoryService = WeatherAdvisoryService(
+    apiKey: String.fromEnvironment('CWA_API_KEY'),
+  );
+  final _liveDayReplanner = LiveDayItineraryReplanner();
 
   late RouteItinerary _itinerary;
   late List<TripPlaceConstraint> _constraints;
   late Map<RouteLegKey, RouteTravelMode> _travelModeOverrides;
   int _selectedDayIndex = 0;
+  int? _mapDayIndex;
   bool _isMapVisible = false;
+  bool _androidOverview = false;
+  bool _expandAllHours = false;
+  final Set<int> _expandedHours = {};
+  Timer? _gapHoverTimer;
   bool _isRecalculating = false;
+  bool _isTracking = false;
+  bool _isLiveReplanning = false;
+  LocationPoint? _currentLocation;
+  List<LocationPoint> _trackedRoute = const [];
   double _mapHeightRatio = 0.34;
 
-  RouteDay get _selectedDay => _itinerary.days[_selectedDayIndex];
+  int? get _validMapDayIndex =>
+      _mapDayIndex != null && _mapDayIndex! < _itinerary.days.length
+      ? _mapDayIndex
+      : null;
+
+  RouteDay get _mapDay =>
+      _itinerary.days[_validMapDayIndex ?? _selectedDayIndex];
 
   @override
   void initState() {
@@ -70,6 +103,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
     _itinerary = widget.itinerary;
     _constraints = _constraintsFromItinerary(_itinerary);
     _travelModeOverrides = Map.of(_itinerary.travelModeOverrides);
+    _tripTracker.updates.listen(_handleTrackingUpdate);
   }
 
   @override
@@ -77,8 +111,10 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.itinerary, widget.itinerary)) {
       _itinerary = widget.itinerary;
+      _mapDayIndex = _validMapDayIndex;
       _constraints = _constraintsFromItinerary(_itinerary);
       _travelModeOverrides = Map.of(_itinerary.travelModeOverrides);
+      _tripTracker.updateItinerary(_itinerary);
       _selectedDayIndex = min(
         _selectedDayIndex,
         max(0, _itinerary.days.length - 1),
@@ -88,6 +124,9 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
 
   @override
   void dispose() {
+    _gapHoverTimer?.cancel();
+    _tripTracker.dispose();
+    _weatherAdvisoryService.dispose();
     _horizontalController.dispose();
     _verticalController.dispose();
     super.dispose();
@@ -103,6 +142,13 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
               : _itinerary.request.title,
         ),
         actions: [
+          SaveItineraryButton(
+            itinerary: _itinerary,
+            enabled:
+                _itinerary.days.isNotEmpty &&
+                !_isRecalculating &&
+                _pendingPlaces.isEmpty,
+          ),
           TextButton.icon(
             onPressed: _itinerary.days.isEmpty
                 ? null
@@ -110,16 +156,26 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
             icon: Icon(_isMapVisible ? Icons.map_outlined : Icons.map),
             label: Text(_isMapVisible ? '隱藏地圖' : '顯示地圖'),
           ),
+          TextButton.icon(
+            onPressed: _isTracking ? _stopTracking : _startTracking,
+            icon: Icon(
+              _isTracking
+                  ? Icons.stop_circle_outlined
+                  : Icons.play_circle_outline,
+            ),
+            label: Text(_isTracking ? '停止追蹤' : '開始行程'),
+          ),
           IconButton(
             tooltip: '編輯行程',
             onPressed: widget.onEdit,
             icon: const Icon(Icons.edit_outlined),
           ),
-          IconButton(
-            tooltip: '匯出行程',
-            onPressed: widget.onExport,
-            icon: const Icon(Icons.ios_share_outlined),
-          ),
+          if (!usesAndroidTripLayout || widget.onExport != null)
+            IconButton(
+              tooltip: '匯出行程',
+              onPressed: widget.onExport,
+              icon: const Icon(Icons.ios_share_outlined),
+            ),
         ],
       ),
       body: _itinerary.days.isEmpty
@@ -131,13 +187,83 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
                   if (_pendingPlaces.isNotEmpty) _buildPendingArea(),
                   if (_itinerary.warnings.isNotEmpty) _buildWarnings(),
                   if (_isMapVisible) ...[
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.calendar_today_outlined, size: 18),
+                          const SizedBox(width: 8),
+                          const Text('地圖日期：'),
+                          Expanded(
+                            child: DropdownButton<int>(
+                              key: const ValueKey('map-day-selector'),
+                              isExpanded: true,
+                              value: _validMapDayIndex ?? -1,
+                              items: [
+                                DropdownMenuItem(
+                                  value: -1,
+                                  child: Text(
+                                    '跟隨行程（Day ${_itinerary.days[_selectedDayIndex].day}）',
+                                  ),
+                                ),
+                                for (
+                                  var index = 0;
+                                  index < _itinerary.days.length;
+                                  index++
+                                )
+                                  DropdownMenuItem(
+                                    value: index,
+                                    child: Text(
+                                      'Day ${_itinerary.days[index].day} · ${_itinerary.days[index].date.month}/${_itinerary.days[index].date.day}',
+                                    ),
+                                  ),
+                              ],
+                              onChanged: (value) => setState(() {
+                                _mapDayIndex = value == -1 ? null : value;
+                              }),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                     SizedBox(
                       height: constraints.maxHeight * _mapHeightRatio,
-                      child: TripMapPanel(day: _selectedDay),
+                      child: TripMapPanel(
+                        day: _mapDay,
+                        currentLocation: _currentLocation,
+                        trackedRoute: _trackedRoute,
+                      ),
                     ),
                     _buildResizeHandle(constraints.maxHeight),
                   ],
-                  Expanded(child: _buildTimetable()),
+                  Expanded(
+                    child: usesAndroidTripLayout && !_androidOverview
+                        ? AndroidDayItinerary(
+                            timetable: _buildCompactDay(),
+                            days: _itinerary.days,
+                            selectedDay: _selectedDayIndex,
+                            onDayChanged: (index) => setState(() {
+                              _gapHoverTimer?.cancel();
+                              _expandedHours.clear();
+                              _selectedDayIndex = index;
+                            }),
+                            onEdit: _isRecalculating
+                                ? null
+                                : _editVisitPreferences,
+                            onDelete: _isRecalculating
+                                ? null
+                                : (visit) => _deletePlace(visit.place),
+                            onTravel: (visit) {
+                              final day = _itinerary.days[_selectedDayIndex];
+                              final index = day.travelLegs.indexWhere(
+                                (leg) =>
+                                    leg.destination.id == visit.occurrenceId,
+                              );
+                              if (index >= 0) _showTravelLeg(day, index);
+                            },
+                          )
+                        : _buildTimetable(),
+                  ),
                 ],
               ),
             ),
@@ -145,22 +271,57 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
   }
 
   Widget _buildToolbar() {
+    final zoomControls = <Widget>[
+      IconButton(
+        tooltip: '縮小行程表',
+        onPressed: _timetableZoom <= 0.6 ? null : () => _setZoom(-0.2),
+        icon: const Icon(Icons.zoom_out),
+      ),
+      Text('${(_timetableZoom * 100).round()}%'),
+      IconButton(
+        tooltip: '放大行程表',
+        onPressed: _timetableZoom >= 1.8 ? null : () => _setZoom(0.2),
+        icon: const Icon(Icons.zoom_in),
+      ),
+    ];
     return Padding(
       padding: const EdgeInsets.all(12),
-      child: Row(
+      child: Wrap(
+        spacing: 4,
+        crossAxisAlignment: WrapCrossAlignment.center,
         children: [
           FilledButton.icon(
             onPressed: _isRecalculating ? null : _addPlace,
             icon: const Icon(Icons.add_location_alt_outlined),
             label: const Text('新增景點'),
           ),
-          const SizedBox(width: 12),
-          const Expanded(
-            child: Text(
-              '長按景點後拖到新的 Day 與時間；鎖定時段不接受放置。',
-              overflow: TextOverflow.ellipsis,
+          if (usesAndroidTripLayout)
+            TextButton(
+              onPressed: () =>
+                  setState(() => _androidOverview = !_androidOverview),
+              child: Text(_androidOverview ? '單日課表' : '多日總覽'),
             ),
-          ),
+          const SizedBox(width: 12),
+          if (_isTracking) ...[
+            const Icon(Icons.gps_fixed, size: 18),
+            const SizedBox(width: 6),
+            const Text('GPS 追蹤中'),
+            const SizedBox(width: 12),
+          ],
+          if (!usesAndroidTripLayout)
+            const Text('長按景點後拖到新的 Day 與時間；鎖定時段不接受放置。'),
+          if (usesAndroidTripLayout && _androidOverview)
+            SizedBox(
+              width: double.infinity,
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: zoomControls,
+                ),
+              ),
+            ),
+          if (!usesAndroidTripLayout) ...zoomControls,
           if (_isRecalculating) ...[
             const SizedBox(
               width: 20,
@@ -173,6 +334,23 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
         ],
       ),
     );
+  }
+
+  void _setZoom(double delta) {
+    final oldZoom = _timetableZoom;
+    final oldOffset = _verticalController.hasClients
+        ? _verticalController.offset
+        : 0.0;
+    setState(() => _timetableZoom = (_timetableZoom + delta).clamp(0.6, 1.8));
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_verticalController.hasClients) return;
+      _verticalController.jumpTo(
+        (oldOffset * _timetableZoom / oldZoom).clamp(
+          0.0,
+          _verticalController.position.maxScrollExtent,
+        ),
+      );
+    });
   }
 
   Widget _buildPendingArea() {
@@ -226,11 +404,12 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
     );
   }
 
-  Widget _buildTimetable() {
+  Widget _buildTimetable({bool singleDay = false}) {
     final startHour = _startHour;
     final endHour = _endHour;
     final height = (endHour - startHour) * _hourHeight;
-    final width = _timeWidth + _itinerary.days.length * _dayWidth;
+    final width =
+        _timeWidth + (singleDay ? 1 : _itinerary.days.length) * _dayWidth;
     return Scrollbar(
       controller: _verticalController,
       thumbVisibility: true,
@@ -247,15 +426,18 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
               width: width,
               child: Column(
                 children: [
-                  _buildHeader(),
+                  if (!singleDay) _buildHeader(),
                   SizedBox(
                     height: height,
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         _buildTimeAxis(startHour, endHour),
-                        for (var i = 0; i < _itinerary.days.length; i++)
-                          _buildDayColumn(i, startHour, endHour),
+                        if (singleDay)
+                          _buildDayColumn(_selectedDayIndex, startHour, endHour)
+                        else
+                          for (var i = 0; i < _itinerary.days.length; i++)
+                            _buildDayColumn(i, startHour, endHour),
                       ],
                     ),
                   ),
@@ -268,9 +450,124 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
     );
   }
 
+  Widget _buildCompactDay() {
+    final day = _itinerary.days[_selectedDayIndex];
+    final bands = compactDayBands(
+      endHour: _endHour,
+      visits: [
+        for (final visit in day.visits)
+          (start: visit.startMinutes, end: visit.endMinutes),
+      ],
+      hourHeight: _hourHeight,
+      gapHeight: max(48, MediaQuery.textScalerOf(context).scale(28) + 16),
+      expandedHours: _expandedHours,
+      expandAll: _expandAllHours,
+    );
+    void expand(CompactDayBand band) {
+      if (!mounted) return;
+      setState(() {
+        for (var h = band.startHour; h < band.endHour; h++) {
+          _expandedHours.add(h);
+        }
+      });
+    }
+
+    return Column(
+      children: [
+        TextButton(
+          onPressed: () => setState(() {
+            _gapHoverTimer?.cancel();
+            _expandedHours.clear();
+            _expandAllHours = !_expandAllHours;
+          }),
+          child: Text(_expandAllHours ? '壓縮空白時段' : '展開全部時段'),
+        ),
+        Expanded(
+          child: SingleChildScrollView(
+            controller: _verticalController,
+            child: SizedBox(
+              height: bands.last.top + bands.last.height,
+              child: Stack(
+                children: [
+                  for (final band in bands)
+                    Positioned(
+                      top: band.top,
+                      height: band.height,
+                      left: 0,
+                      right: 0,
+                      child: band.collapsed
+                          ? DragTarget<_DragData>(
+                              onWillAcceptWithDetails: (_) {
+                                _gapHoverTimer?.cancel();
+                                _gapHoverTimer = Timer(
+                                  const Duration(milliseconds: 500),
+                                  () => expand(band),
+                                );
+                                // Never drop on a compressed interval: choose an actual hour after expansion.
+                                return false;
+                              },
+                              onLeave: (_) => _gapHoverTimer?.cancel(),
+                              builder: (context, candidate, rejected) => InkWell(
+                                onTap: () => expand(band),
+                                child: Container(
+                                  alignment: Alignment.center,
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.surfaceContainerLow,
+                                  child: Text(
+                                    '${band.startHour.toString().padLeft(2, '0')}:00–${band.endHour.toString().padLeft(2, '0')}:00 空白 · 點開／拖曳停留',
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ),
+                            )
+                          : Row(
+                              children: [
+                                SizedBox(
+                                  width: _timeWidth,
+                                  child: Align(
+                                    alignment: Alignment.topCenter,
+                                    child: Text(
+                                      '${band.startHour.toString().padLeft(2, '0')}:00',
+                                    ),
+                                  ),
+                                ),
+                                Expanded(
+                                  child: _buildDropCell(day, band.startHour),
+                                ),
+                              ],
+                            ),
+                    ),
+                  for (final visit in day.visits)
+                    _buildVisit(
+                      day,
+                      visit,
+                      0,
+                      displayTop: compactMinuteOffset(
+                        bands,
+                        visit.startMinutes,
+                      ),
+                      displayHeight: max(
+                        28,
+                        compactMinuteOffset(bands, visit.endMinutes) -
+                            compactMinuteOffset(bands, visit.startMinutes) -
+                            4,
+                      ),
+                      displayLeft: _timeWidth + 6,
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildHeader() {
     return SizedBox(
-      height: 64,
+      height: max(64, MediaQuery.textScalerOf(context).scale(40) + 16),
       child: Row(
         children: [
           const SizedBox(
@@ -423,12 +720,21 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
     return dropDateTime.isBefore(minimumDateTime);
   }
 
-  Widget _buildVisit(RouteDay day, RouteVisit visit, int startHour) {
+  Widget _buildVisit(
+    RouteDay day,
+    RouteVisit visit,
+    int startHour, {
+    double? displayTop,
+    double? displayHeight,
+    double displayLeft = 6,
+  }) {
     final travelLegIndex = day.travelLegs.indexWhere(
       (leg) => leg.destination.id == visit.occurrenceId,
     );
-    final top = (visit.startMinutes - startHour * 60) / 60 * _hourHeight;
-    final height = max(28.0, visit.stayMinutes / 60 * _hourHeight - 4);
+    final top =
+        displayTop ?? (visit.startMinutes - startHour * 60) / 60 * _hourHeight;
+    final height =
+        displayHeight ?? max(28.0, visit.stayMinutes / 60 * _hourHeight - 4);
     final card = _VisitCard(
       visit: visit,
       onTap: _isRecalculating ? null : () => _editVisitPreferences(visit),
@@ -438,7 +744,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
       onDelete: _isRecalculating ? null : () => _deletePlace(visit.place),
     );
     return Positioned(
-      left: 6,
+      left: displayLeft,
       right: 6,
       top: max(0.0, top),
       height: height,
@@ -449,30 +755,74 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
           ? card
           : MouseRegion(
               cursor: SystemMouseCursors.grab,
-              child: Draggable<_DragData>(
-                data: _DragData(visit.place),
-                dragAnchorStrategy: pointerDragAnchorStrategy,
-                feedback: Material(
-                  color: Colors.transparent,
-                  elevation: 8,
-                  child: SizedBox(
-                    width: _dayWidth - 20,
-                    height: min(height, 120.0),
-                    child: card,
-                  ),
-                ),
-                childWhenDragging: Opacity(opacity: 0.3, child: card),
-                child: card,
-              ),
+              child: usesAndroidTripLayout
+                  ? LongPressDraggable<_DragData>(
+                      onDraggableCanceled: (_, _) {
+                        _gapHoverTimer?.cancel();
+                        if (mounted) setState(() => _expandedHours.clear());
+                      },
+                      onDragEnd: (_) {
+                        _gapHoverTimer?.cancel();
+                        if (mounted) setState(() => _expandedHours.clear());
+                      },
+                      data: _DragData(visit.place),
+                      dragAnchorStrategy: pointerDragAnchorStrategy,
+                      feedback: Material(
+                        color: Colors.transparent,
+                        elevation: 8,
+                        child: SizedBox(
+                          width: _dayWidth - 20,
+                          height: min(height, 120.0),
+                          child: card,
+                        ),
+                      ),
+                      childWhenDragging: Opacity(opacity: 0.3, child: card),
+                      child: card,
+                    )
+                  : Draggable<_DragData>(
+                      data: _DragData(visit.place),
+                      dragAnchorStrategy: pointerDragAnchorStrategy,
+                      feedback: Material(
+                        color: Colors.transparent,
+                        elevation: 8,
+                        child: SizedBox(
+                          width: _dayWidth - 20,
+                          height: min(height, 120.0),
+                          child: card,
+                        ),
+                      ),
+                      childWhenDragging: Opacity(opacity: 0.3, child: card),
+                      child: card,
+                    ),
             ),
     );
   }
 
   Widget _buildWarnings() {
-    return MaterialBanner(
-      content: Text(_itinerary.warnings.join('\n')),
-      leading: const Icon(Icons.info_outline),
-      actions: const [SizedBox.shrink()],
+    final warnings = _itinerary.warnings
+        .toSet()
+        .where((message) => !message.contains('重複出現，已只保留一次'))
+        .toList();
+    if (warnings.isEmpty) return const SizedBox.shrink();
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: TextButton.icon(
+        icon: const Icon(Icons.info_outline, size: 18),
+        label: Text('${warnings.length} 項行程提醒 · 查看'),
+        onPressed: () => showDialog<void>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('行程提醒'),
+            content: SingleChildScrollView(child: Text(warnings.join('\n\n'))),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('關閉'),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -500,6 +850,82 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
     );
   }
 
+  Future<void> _startTracking() async {
+    final started = await _tripTracker.start(_itinerary);
+    if (!mounted) return;
+    if (!started) {
+      _showMessage('無法取得 GPS 位置，請確認已開啟定位服務並允許位置權限。');
+      return;
+    }
+    setState(() {
+      _isTracking = true;
+      _isMapVisible = true;
+    });
+    _showMessage('已開始 GPS 行程追蹤；若明顯延誤，系統會更新今天剩餘行程。');
+  }
+
+  Future<void> _stopTracking() async {
+    await _tripTracker.stop();
+    if (mounted) setState(() => _isTracking = false);
+  }
+
+  Future<void> _handleTrackingUpdate(TripTrackingUpdate update) async {
+    if (!mounted) return;
+    setState(() {
+      _currentLocation = update.location;
+      _trackedRoute = update.route;
+    });
+    await _weatherAdvisoryService.check(update.location);
+    final alert = update.delayAlert;
+    if (alert == null || _isLiveReplanning) return;
+
+    final now = DateTime.now();
+    final dayIndex = _itinerary.days.indexWhere(
+      (day) =>
+          day.date.year == now.year &&
+          day.date.month == now.month &&
+          day.date.day == now.day,
+    );
+    if (dayIndex < 0) return;
+
+    _isLiveReplanning = true;
+    try {
+      final revisedDay = _liveDayReplanner.replan(
+        day: _itinerary.days[dayIndex],
+        currentLocation: update.location,
+        now: now,
+      );
+      final revisedDays = List.of(_itinerary.days)..[dayIndex] = revisedDay;
+      final revised = RouteItinerary(
+        request: _itinerary.request,
+        origin: _itinerary.origin,
+        days: revisedDays,
+        generatedAt: DateTime.now(),
+        warnings: _itinerary.warnings,
+        inputs: _itinerary.inputs,
+        travelModeOverrides: _itinerary.travelModeOverrides,
+      );
+      _tripTracker.updateItinerary(revised);
+      if (!mounted) return;
+      setState(() {
+        _itinerary = revised;
+        _selectedDayIndex = dayIndex;
+        _mapDayIndex = dayIndex;
+      });
+      await _notificationService.showScheduleAdjusted(
+        lateMinutes: alert.lateMinutes,
+        nextStopName: alert.nextStopName,
+      );
+      if (mounted) {
+        _showMessage('已依目前位置更新 Day ${revisedDay.day} 的後續行程。');
+      }
+    } catch (_) {
+      if (mounted) _showMessage('偵測到延誤，但暫時無法重新安排今日行程。');
+    } finally {
+      _isLiveReplanning = false;
+    }
+  }
+
   Future<void> _addPlace() async {
     if (widget.onAddPlace == null) {
       _showMessage('請先在上一層頁面接上 onAddPlace。');
@@ -522,7 +948,10 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
       _showMessage('選擇的景點已經在行程或暫定區中。');
       return;
     }
-    setState(() => _pendingPlaces.addAll(newPlaces));
+    setState(() {
+      _pendingPlaces.addAll(newPlaces);
+      if (usesAndroidTripLayout) _androidOverview = true;
+    });
   }
 
   Future<void> _dropPlace({
@@ -613,6 +1042,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
       if (!mounted) return false;
       setState(() {
         _itinerary = result;
+        _mapDayIndex = _validMapDayIndex;
         _constraints = _constraintsFromItinerary(result);
         _travelModeOverrides = Map.of(result.travelModeOverrides);
         _selectedDayIndex = min(
@@ -620,6 +1050,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
           max(0, result.days.length - 1),
         );
       });
+      _tripTracker.updateItinerary(result);
       return true;
     } catch (error) {
       if (mounted) _showMessage('重新安排行程失敗：$error');
@@ -698,11 +1129,6 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
       if (startMinutes < lockedEnd && endMinutes > lockedStart) return true;
     }
     return false;
-  }
-
-  bool _containsPlace(String id) {
-    return _constraints.any((item) => item.place.id == id) ||
-        _pendingPlaces.any((item) => item.id == id);
   }
 
   List<TripPlaceConstraint> _constraintsFromItinerary(
@@ -894,7 +1320,66 @@ class _VisitCard extends StatelessWidget {
     );
     return LayoutBuilder(
       builder: (context, constraints) {
-        if (constraints.maxHeight >= 110) return expandedCard;
+        if (usesAndroidTripLayout) {
+          return Card(
+            margin: EdgeInsets.zero,
+            color: visit.locked
+                ? colors.primaryContainer
+                : colors.secondaryContainer,
+            child: InkWell(
+              onTap: onTap,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        visit.label,
+                        maxLines: constraints.maxHeight > 70 ? 2 : 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    SizedBox(
+                      width: 28,
+                      child: PopupMenuButton<String>(
+                        padding: EdgeInsets.zero,
+                        tooltip: '項目操作',
+                        onSelected: (value) {
+                          if (value == 'edit') onTap?.call();
+                          if (value == 'travel') onShowTravel?.call();
+                          if (value == 'delete') onDelete?.call();
+                        },
+                        itemBuilder: (_) => [
+                          PopupMenuItem(
+                            value: 'edit',
+                            enabled: onTap != null,
+                            child: const Text('設定／資訊'),
+                          ),
+                          if (onShowTravel != null)
+                            const PopupMenuItem(
+                              value: 'travel',
+                              child: Text('交通方式'),
+                            ),
+                          PopupMenuItem(
+                            value: 'delete',
+                            enabled: onDelete != null,
+                            child: const Text('移除'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }
+        final textScale = MediaQuery.textScalerOf(context).scale(16) / 16;
+        // Expanded cards require room for two title lines, time and action.
+        if (constraints.maxHeight >= 60 + 90 * textScale &&
+            constraints.maxWidth >= 240 * textScale) {
+          return expandedCard;
+        }
         return Tooltip(
           message:
               '${visit.label}\n${_formatMinutes(visit.startMinutes)}–${_formatMinutes(visit.endMinutes)}\n點擊設定／資訊',

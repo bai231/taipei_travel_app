@@ -34,7 +34,10 @@ class PlaceService {
     '連江縣',
   ];
 
-  final _supabase = Supabase.instance.client;
+  PlaceService({SupabaseClient? client})
+    : _supabase = client ?? Supabase.instance.client;
+
+  final SupabaseClient _supabase;
   Future<List<Place>>? _placesRequest;
   TaiwanCountyResolver? _countyResolver;
 
@@ -55,7 +58,10 @@ class PlaceService {
     }
 
     _countyResolver ??= await TaiwanCountyResolver.load();
-    return rows.map(Place.fromJson).map(_withResolvedCounty).toList();
+    return rows
+        .map((row) => Place.fromJson(row, forcedType: PlaceType.attraction))
+        .map(_withResolvedCounty)
+        .toList();
   }
 
   Place _withResolvedCounty(Place place) {
@@ -92,22 +98,17 @@ class PlaceService {
     bool forceType = true,
   }) async {
     final rows = <Map<String, dynamic>>[];
-    try {
-      for (var from = 0; ; from += _pageSize) {
-        final data = await _supabase
-            .from(table)
-            .select()
-            .range(from, from + _pageSize - 1);
-        rows.addAll(data.map((row) => Map<String, dynamic>.from(row)));
-        if (data.length < _pageSize) break;
-      }
-    } catch (e) {
-      // 網路或連線錯誤時回傳空陣列，避免 App 直接崩潰
-      return [];
+    for (var from = 0; ; from += _pageSize) {
+      final data = await _supabase
+          .from(table)
+          .select()
+          .range(from, from + _pageSize - 1);
+      rows.addAll(data.map((row) => Map<String, dynamic>.from(row)));
+      if (data.length < _pageSize) break;
     }
 
     _countyResolver ??= await TaiwanCountyResolver.load();
-    
+
     final parsedPlaces = <Place>[];
     for (final json in rows) {
       try {
@@ -126,13 +127,6 @@ class PlaceService {
     return parsedPlaces.where((place) => place.type == expectedType).toList();
   }
 
-  static List<String> availableCounties(Iterable<Place> places) {
-    final available = places
-        .map(countyFor)
-        .where((county) => county.isNotEmpty)
-        .toSet();
-    return taiwanCounties.where(available.contains).toList();
-  }
 
   static List<Place> filterCatalog({
     required Iterable<Place> places,
@@ -153,6 +147,14 @@ class PlaceService {
       ).toLowerCase();
       return searchable.contains(normalizedKeyword);
     }).toList();
+  }
+
+  static List<String> availableCounties(Iterable<Place> places) {
+    final available = places
+        .map(countyFor)
+        .where((county) => county.isNotEmpty)
+        .toSet();
+    return taiwanCounties.where(available.contains).toList();
   }
 
   static String countyFor(

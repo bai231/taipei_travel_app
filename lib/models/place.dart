@@ -98,10 +98,10 @@ class Place {
   final List<String> tags;
 
   // 價格等級
-  //final int priceLevel;
+  final int price_level;
 
   // 預估花費（每人每次）
-  final double estimatedCost;
+  //final double estimatedCost;
 
   // 營業時間（分鐘）
   final int openMinutes;
@@ -123,8 +123,8 @@ class Place {
     required this.stayTime,
     required this.rating,
     required this.tags,
-    //required this.priceLevel,
-    required this.estimatedCost,
+    required this.price_level,
+    //required this.estimatedCost,
     required this.openMinutes,
     required this.closeMinutes,
   });
@@ -267,9 +267,9 @@ class Place {
               '24/7',
       rating: numberValue(['rating', 'Rating'])?.toDouble() ?? 0.0,
       tags: tags,
-      //priceLevel: (json['priceLevel'] as num?)?.toInt() ?? 0,
-      estimatedCost:
-          numberValue(['estimatedCost', 'estimated_cost'])?.toDouble() ?? 0.0,
+      price_level: (json['price_level'] as num?)?.toInt() ?? 0,
+      //estimatedCost:
+      //    numberValue(['estimatedCost', 'estimated_cost'])?.toDouble() ?? 0.0,
       openMinutes: numberValue(['openMinutes', 'open_minutes'])?.toInt() ?? 0,
       closeMinutes:
           numberValue(['closeMinutes', 'close_minutes'])?.toInt() ?? 1440,
@@ -293,7 +293,8 @@ class Place {
       stayTime: stayTime,
       rating: rating,
       tags: tags,
-      estimatedCost: estimatedCost,
+      price_level: price_level,
+      //estimatedCost: estimatedCost,
       openMinutes: openMinutes,
       closeMinutes: closeMinutes,
     );

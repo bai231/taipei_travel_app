@@ -5,10 +5,7 @@ import '../models/place.dart';
 class ItineraryResultPage extends StatefulWidget {
   final String tripTitle;
 
-  const ItineraryResultPage({
-    super.key,
-    this.tripTitle = "台北文藝慢活之旅",
-  });
+  const ItineraryResultPage({super.key, this.tripTitle = "台北文藝慢活之旅"});
 
   @override
   State<ItineraryResultPage> createState() => _ItineraryResultPageState();
@@ -16,11 +13,13 @@ class ItineraryResultPage extends StatefulWidget {
 
 class _ItineraryResultPageState extends State<ItineraryResultPage> {
   // 色彩配置：高透白手帳卡片底色與水彩綠
-  static const Color pageBgColor = Color(0xFFC7DEC8);       // 淺水彩綠底色[cite: 1]
-  static final Color dayColumnBg = Colors.white.withValues(alpha: 0.88); // 高透白天數底色
-  static const Color cardBg = Color(0xFF70B19B);           // 景點卡片青綠色[cite: 1]
-  static const Color dividerColor = Color(0xFF5A9B85);     // 卡片內部分隔線
-  static const Color textDark = Color(0xFF1E3A2F);         // 墨綠主文字[cite: 1]
+  static const Color pageBgColor = Color(0xFFC7DEC8); // 淺水彩綠底色[cite: 1]
+  static final Color dayColumnBg = Colors.white.withValues(
+    alpha: 0.88,
+  ); // 高透白天數底色
+  static const Color cardBg = Color(0xFF70B19B); // 景點卡片青綠色[cite: 1]
+  static const Color dividerColor = Color(0xFF5A9B85); // 卡片內部分隔線
+  static const Color textDark = Color(0xFF1E3A2F); // 墨綠主文字[cite: 1]
 
   final TextEditingController _promptController = TextEditingController();
 
@@ -39,7 +38,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
           "time": "09:00",
           "stayTime": 120,
           "transit": "搭乘紅30公車約 15 分鐘",
-          "reason": "館藏豐富，早晨人潮相對少，非常適合安排為第一站靜心品味歷史底蘊。"
+          "reason": "館藏豐富，早晨人潮相對少，非常適合安排為第一站靜心品味歷史底蘊。",
         },
         {
           "id": "s1_2",
@@ -48,7 +47,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
           "time": "11:30",
           "stayTime": 60,
           "transit": "搭乘捷運淡水信義線約 25 分鐘",
-          "reason": "中西合璧的花園造景，平緩步道非常適合放慢腳步散步拍照。"
+          "reason": "中西合璧的花園造景，平緩步道非常適合放慢腳步散步拍照。",
         },
         {
           "id": "s1_3",
@@ -57,7 +56,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
           "time": "14:30",
           "stayTime": 90,
           "transit": "步行約 15 分鐘",
-          "reason": "俯瞰整個台北盆地的絕佳制高點，午後光線透亮很適合眺望市景。"
+          "reason": "俯瞰整個台北盆地的絕佳制高點，午後光線透亮很適合眺望市景。",
         },
         {
           "id": "s1_4",
@@ -66,9 +65,9 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
           "time": "17:00",
           "stayTime": 75,
           "transit": "",
-          "reason": "傍晚登頂正好能捕捉夕陽餘暉灑落 101 大樓的經典光影。"
+          "reason": "傍晚登頂正好能捕捉夕陽餘暉灑落 101 大樓的經典光影。",
         },
-      ]
+      ],
     },
     {
       "dayTitle": "day2",
@@ -80,7 +79,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
           "time": "10:00",
           "stayTime": 90,
           "transit": "步行約 12 分鐘",
-          "reason": "老倉庫改建的藝文展區，充滿特色選品店與香醇咖啡香。"
+          "reason": "老倉庫改建的藝文展區，充滿特色選品店與香醇咖啡香。",
         },
         {
           "id": "s2_2",
@@ -89,7 +88,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
           "time": "12:00",
           "stayTime": 75,
           "transit": "捷運轉乘約 20 分鐘",
-          "reason": "品嚐經典小籠包與芒果冰，享受愜意又具質感的午間漫遊。"
+          "reason": "品嚐經典小籠包與芒果冰，享受愜意又具質感的午間漫遊。",
         },
         {
           "id": "s2_3",
@@ -98,7 +97,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
           "time": "14:30",
           "stayTime": 60,
           "transit": "搭乘捷運約 15 分鐘",
-          "reason": "壯闊的白牆藍瓦與整點衛兵交接，感受宏偉的都市建築景觀。"
+          "reason": "壯闊的白牆藍瓦與整點衛兵交接，感受宏偉的都市建築景觀。",
         },
         {
           "id": "s2_4",
@@ -107,9 +106,9 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
           "time": "18:00",
           "stayTime": 90,
           "transit": "",
-          "reason": "巷弄中的異國美食與平價服飾店，輕鬆體驗台北青春夜生活。"
+          "reason": "巷弄中的異國美食與平價服飾店，輕鬆體驗台北青春夜生活。",
         },
-      ]
+      ],
     },
     {
       "dayTitle": "day3",
@@ -121,7 +120,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
           "time": "10:30",
           "stayTime": 90,
           "transit": "步行約 10 分鐘",
-          "reason": "漫步在淡水河畔，邊吹海風邊品嚐阿給與魚酥。"
+          "reason": "漫步在淡水河畔，邊吹海風邊品嚐阿給與魚酥。",
         },
         {
           "id": "s3_2",
@@ -130,7 +129,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
           "time": "13:00",
           "stayTime": 60,
           "transit": "公車約 15 分鐘",
-          "reason": "磚紅色荷蘭城堡外觀，沉浸在淡水的百年歷史回憶中。"
+          "reason": "磚紅色荷蘭城堡外觀，沉浸在淡水的百年歷史回憶中。",
         },
         {
           "id": "s3_3",
@@ -139,10 +138,10 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
           "time": "16:30",
           "stayTime": 90,
           "transit": "",
-          "reason": "著名的落日勝地，橋上眺望出海口晚霞格外浪漫動人。"
+          "reason": "著名的落日勝地，橋上眺望出海口晚霞格外浪漫動人。",
         },
-      ]
-    }
+      ],
+    },
   ];
 
   @override
@@ -232,7 +231,10 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
                           Expanded(
                             child: TextField(
                               controller: _promptController,
-                              style: const TextStyle(color: textDark, fontSize: 13),
+                              style: const TextStyle(
+                                color: textDark,
+                                fontSize: 13,
+                              ),
                               decoration: const InputDecoration(
                                 hintText: "想怎麼調整？加入景點？(輸入prompt)",
                                 hintStyle: TextStyle(
@@ -248,11 +250,19 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
                           IconButton(
                             padding: EdgeInsets.zero,
                             constraints: const BoxConstraints(),
-                            icon: const Icon(Icons.send_rounded, color: textDark, size: 18),
+                            icon: const Icon(
+                              Icons.send_rounded,
+                              color: textDark,
+                              size: 18,
+                            ),
                             onPressed: () {
                               if (_promptController.text.trim().isNotEmpty) {
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text('已收到調整指令：「${_promptController.text}」')),
+                                  SnackBar(
+                                    content: Text(
+                                      '已收到調整指令：「${_promptController.text}」',
+                                    ),
+                                  ),
                                 );
                                 _promptController.clear();
                               }
@@ -293,7 +303,10 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
                       );
                     },
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 5,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.white.withValues(alpha: 0.75),
                         borderRadius: BorderRadius.circular(12),
@@ -315,17 +328,24 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  _buildActionCapsule("匯出", onTap: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('行程已匯出分享 📤')),
-                    );
-                  }),
+                  _buildActionCapsule(
+                    "匯出",
+                    onTap: () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('行程已匯出分享 📤')),
+                      );
+                    },
+                  ),
                   const SizedBox(width: 6),
-                  _buildActionCapsule("編輯\n紀錄", isMultiline: true, onTap: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('開啟編輯紀錄 📝')),
-                    );
-                  }),
+                  _buildActionCapsule(
+                    "編輯\n紀錄",
+                    isMultiline: true,
+                    onTap: () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('開啟編輯紀錄 📝')),
+                      );
+                    },
+                  ),
                 ],
               ),
             ),
@@ -336,7 +356,10 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
             Expanded(
               child: ListView.builder(
                 scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 4,
+                ),
                 itemCount: _daysData.length,
                 itemBuilder: (context, dayIndex) {
                   final day = _daysData[dayIndex];
@@ -345,8 +368,14 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
 
                   return Container(
                     width: 230, // 給予拖曳足夠舒適的操作寬度
-                    margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                    margin: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 4,
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 12,
+                    ),
                     decoration: BoxDecoration(
                       color: dayColumnBg,
                       borderRadius: BorderRadius.circular(24),
@@ -369,7 +398,10 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 4,
+                              ),
                               decoration: BoxDecoration(
                                 color: cardBg.withValues(alpha: 0.25),
                                 borderRadius: BorderRadius.circular(12),
@@ -391,7 +423,8 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
                         // 🌟🌟 關鍵更換：ReorderableListView.builder 自由拖曳調換順序 🌟🌟
                         Expanded(
                           child: ReorderableListView.builder(
-                            buildDefaultDragHandles: false, // 自訂手柄，長按整張卡片或手柄皆可拖曳
+                            buildDefaultDragHandles:
+                                false, // 自訂手柄，長按整張卡片或手柄皆可拖曳
                             itemCount: spots.length,
                             onReorder: (oldIndex, newIndex) =>
                                 _onReorderSpots(dayIndex, oldIndex, newIndex),
@@ -399,7 +432,9 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
                               final spot = spots[spotIndex];
                               final String spotId = spot["id"];
                               final bool isLast = spotIndex == spots.length - 1;
-                              final bool isExpanded = _expandedSpotIds.contains(spotId);
+                              final bool isExpanded = _expandedSpotIds.contains(
+                                spotId,
+                              );
 
                               return Container(
                                 key: ValueKey(spotId), // 👈 必須提供唯一 Key 供拖曳追蹤
@@ -434,8 +469,8 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
                                             stayTime: spot['stayTime'] ?? 60,
                                             rating: 4.8,
                                             tags: ['熱門', '推薦'],
-                                            //priceLevel: 1,
-                                            estimatedCost: 100,
+                                            price_level: 1,
+                                            //estimatedCost: 100,
                                             openMinutes: 540,
                                             closeMinutes: 1080,
                                           );
@@ -443,7 +478,9 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
                                           Navigator.push(
                                             context,
                                             MaterialPageRoute(
-                                              builder: (_) => PlaceDetailPage(place: placeObj),
+                                              builder: (_) => PlaceDetailPage(
+                                                place: placeObj,
+                                              ),
                                             ),
                                           );
                                         },
@@ -454,12 +491,15 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
                                     if (!isLast) ...[
                                       const SizedBox(height: 6),
                                       Row(
-                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
                                         children: [
                                           Container(
                                             width: 1.5,
                                             height: 10,
-                                            color: textDark.withValues(alpha: 0.25),
+                                            color: textDark.withValues(
+                                              alpha: 0.25,
+                                            ),
                                           ),
                                           const SizedBox(width: 6),
                                           Text(
@@ -467,7 +507,9 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
                                                 ? spot['transit']
                                                 : "搭乘交通工具前往",
                                             style: TextStyle(
-                                              color: textDark.withValues(alpha: 0.6),
+                                              color: textDark.withValues(
+                                                alpha: 0.6,
+                                              ),
                                               fontSize: 10,
                                               fontWeight: FontWeight.w600,
                                             ),
@@ -496,11 +538,18 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
   }
 
   // 頂部小膠囊按鈕
-  Widget _buildActionCapsule(String text, {required VoidCallback onTap, bool isMultiline = false}) {
+  Widget _buildActionCapsule(
+    String text, {
+    required VoidCallback onTap,
+    bool isMultiline = false,
+  }) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: EdgeInsets.symmetric(horizontal: 10, vertical: isMultiline ? 2 : 5),
+        padding: EdgeInsets.symmetric(
+          horizontal: 10,
+          vertical: isMultiline ? 2 : 5,
+        ),
         decoration: BoxDecoration(
           color: cardBg,
           borderRadius: BorderRadius.circular(14),
@@ -585,7 +634,9 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
                 // 上半部：景點名稱 + 右上角拖曳抓手提示 (drag handle)
                 InkWell(
                   onTap: onTapCard,
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(16),
+                  ),
                   child: Container(
                     height: 52,
                     padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -621,9 +672,14 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
                 // 下半部：推薦理由按鈕
                 InkWell(
                   onTap: onToggleExpand,
-                  borderRadius: const BorderRadius.vertical(bottom: Radius.circular(16)),
+                  borderRadius: const BorderRadius.vertical(
+                    bottom: Radius.circular(16),
+                  ),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 6),
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 6,
+                      horizontal: 6,
+                    ),
                     alignment: Alignment.center,
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -658,7 +714,9 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
                       color: Colors.white.withValues(alpha: 0.35),
-                      borderRadius: const BorderRadius.vertical(bottom: Radius.circular(16)),
+                      borderRadius: const BorderRadius.vertical(
+                        bottom: Radius.circular(16),
+                      ),
                     ),
                     child: Text(
                       spot['reason'] ?? "暫無推薦說明",

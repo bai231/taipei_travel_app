@@ -6,9 +6,12 @@ import '../widgets/trip/budget_field.dart';
 import '../widgets/trip/preference_chip_group.dart';
 import '../widgets/trip/ai_prompt_field.dart';
 import '../widgets/trip/next_step_button.dart';
+import '../widgets/trip/trip_location_field.dart';
 import '../models/trip_request.dart';
 import '../services/place_service.dart';
 import 'trip_planner_page.dart';
+import '../services/ai_preference_service.dart';
+import '../models/travel_preference.dart';
 
 class TripPage extends StatefulWidget {
   const TripPage({super.key});
@@ -20,6 +23,9 @@ class TripPage extends StatefulWidget {
 class _TripPageState extends State<TripPage> {
   final PlaceService _placeService = PlaceService();
 
+  final AiPreferenceService _aiPreferenceService = AiPreferenceService();
+
+  bool _isSubmitting = false;
   final TextEditingController _tripNameController = TextEditingController();
 
   DateTime? _startDate;
@@ -27,7 +33,9 @@ class _TripPageState extends State<TripPage> {
 
   int _people = 1;
 
-  final TextEditingController _budgetController = TextEditingController();
+  int? _budgetLevel;
+
+  String _location = '台北市';
 
   List<String> _preferences = [];
 
@@ -62,38 +70,44 @@ class _TripPageState extends State<TripPage> {
       return;
     }
 
-    if (_budgetController.text.isEmpty) {
+    if (_budgetLevel == null) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text("請輸入預算")));
-
+      ).showSnackBar(const SnackBar(content: Text("請選擇預算等級")));
       return;
     }
 
-    final budget = double.tryParse(_budgetController.text);
-
-    if (budget == null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("請輸入有效的預算")));
-      return;
-    }
-
-    final request = TripRequest(
-      title: _tripNameController.text,
-      startDate: _startDate!,
-      endDate: _endDate!,
-      location: '全台',
-      people: _people,
-      budget: budget,
-      preferences: _preferences,
-      aiPrompt: _aiPromptController.text,
-    );
+    setState(() {
+      _isSubmitting = true;
+    });
 
     try {
+      final aiPrompt = _aiPromptController.text.trim();
+
+      TravelPreference? parsedPreference;
+
+      // 使用者有輸入其他需求時，才呼叫 Gemini。
+      if (aiPrompt.isNotEmpty) {
+        parsedPreference = await _aiPreferenceService.parsePreference(aiPrompt);
+      }
+
+      final request = TripRequest(
+        title: _tripNameController.text.trim(),
+        startDate: _startDate!,
+        endDate: _endDate!,
+        location: _location,
+        people: _people,
+        budget_level: _budgetLevel!,
+        preferences: _preferences,
+        aiPrompt: aiPrompt,
+        parsedPreference: parsedPreference,
+      );
+
       final places = await _placeService.getTripCatalog();
 
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
 
       if (places.isEmpty) {
         ScaffoldMessenger.of(
@@ -109,12 +123,28 @@ class _TripPageState extends State<TripPage> {
               TripPlannerPage(request: request, places: places),
         ),
       );
-    } catch (e) {
-      if (!mounted) return;
+    } on AiPreferenceException catch (error) {
+      if (!mounted) {
+        return;
+      }
 
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text("讀取景點失敗：$e")));
+      ).showSnackBar(SnackBar(content: Text('AI 偏好解析失敗：${error.message}')));
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('建立行程失敗：$error')));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSubmitting = false;
+        });
+      }
     }
   }
 
@@ -147,6 +177,20 @@ class _TripPageState extends State<TripPage> {
             ),
 
             const SizedBox(height: 16),
+            TripLocationField(
+              location: _location,
+              onChanged: (value) {
+                if (value == null) {
+                  return;
+                }
+
+                setState(() {
+                  _location = value;
+                });
+              },
+            ),
+
+            const SizedBox(height: 16),
             PeopleCounter(
               people: _people,
               onChanged: (value) {
@@ -157,7 +201,14 @@ class _TripPageState extends State<TripPage> {
             ),
 
             const SizedBox(height: 16),
-            BudgetField(controller: _budgetController),
+            BudgetField(
+              value: _budgetLevel,
+              onChanged: (value) {
+                setState(() {
+                  _budgetLevel = value;
+                });
+              },
+            ),
 
             const SizedBox(height: 24),
             PreferenceChipGroup(
@@ -173,14 +224,17 @@ class _TripPageState extends State<TripPage> {
             AIPromptField(controller: _aiPromptController),
 
             const SizedBox(height: 30),
-            NextStepButton(
-              onPressed: () {
-                _generateTrip();
-              },
-            ),
+            NextStepButton(isLoading: _isSubmitting, onPressed: _generateTrip),
           ],
         ),
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    _tripNameController.dispose();
+    _aiPromptController.dispose();
+    super.dispose();
   }
 }

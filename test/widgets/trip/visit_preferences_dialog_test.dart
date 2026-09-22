@@ -245,7 +245,7 @@ TripRequest _request() => TripRequest(
   endDate: DateTime(2030, 1, 3),
   location: '',
   people: 2,
-  budget: 5000,
+  budget_level: 5000,
   preferences: const [],
   aiPrompt: '',
 );
@@ -262,7 +262,7 @@ Place _place(PlaceType type) => Place(
   stayTime: 60,
   rating: 0,
   tags: const [],
-  estimatedCost: 0,
+  price_level: 0,
   openMinutes: 0,
   closeMinutes: 1440,
 );

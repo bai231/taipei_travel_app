@@ -11,7 +11,13 @@ abstract interface class CurrentLocationGateway {
   Future<LocationPoint?> getCurrentLocation();
 }
 
-class LocationService implements CurrentLocationGateway {
+/// A location gateway that can keep reporting positions while a trip is active.
+abstract interface class LocationTrackingGateway
+    implements CurrentLocationGateway {
+  Stream<LocationPoint> watchLocation();
+}
+
+class LocationService implements LocationTrackingGateway {
   final Duration timeout;
 
   const LocationService({this.timeout = const Duration(seconds: 8)});
@@ -43,5 +49,31 @@ class LocationService implements CurrentLocationGateway {
     } catch (_) {
       return null;
     }
+  }
+
+  @override
+  Stream<LocationPoint> watchLocation() async* {
+    if (!await Geolocator.isLocationServiceEnabled()) return;
+
+    var permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+    if (permission == LocationPermission.denied ||
+        permission == LocationPermission.deniedForever) {
+      return;
+    }
+
+    yield* Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 20,
+      ),
+    ).map(
+      (position) => LocationPoint(
+        latitude: position.latitude,
+        longitude: position.longitude,
+      ),
+    );
   }
 }
