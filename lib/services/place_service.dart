@@ -34,7 +34,10 @@ class PlaceService {
     '連江縣',
   ];
 
-  final _supabase = Supabase.instance.client;
+  PlaceService({SupabaseClient? client})
+    : _supabase = client ?? Supabase.instance.client;
+
+  final SupabaseClient _supabase;
   Future<List<Place>>? _placesRequest;
   TaiwanCountyResolver? _countyResolver;
 
@@ -55,7 +58,10 @@ class PlaceService {
     }
 
     _countyResolver ??= await TaiwanCountyResolver.load();
-    return rows.map(Place.fromJson).map(_withResolvedCounty).toList();
+    return rows
+        .map((row) => Place.fromJson(row, forcedType: PlaceType.attraction))
+        .map(_withResolvedCounty)
+        .toList();
   }
 
   Place _withResolvedCounty(Place place) {
@@ -102,17 +108,23 @@ class PlaceService {
     }
 
     _countyResolver ??= await TaiwanCountyResolver.load();
-    return rows
-        .map<Place>(
-          (json) => Place.fromJson(
-            json,
-            forcedType: forceType ? expectedType : null,
-            idPrefix: table,
-          ),
-        )
-        .map(_withResolvedCounty)
-        .where((place) => place.type == expectedType)
-        .toList();
+
+    final parsedPlaces = <Place>[];
+    for (final json in rows) {
+      try {
+        final place = Place.fromJson(
+          json,
+          forcedType: forceType ? expectedType : null,
+          idPrefix: table,
+        );
+        parsedPlaces.add(_withResolvedCounty(place));
+      } catch (_) {
+        // 單筆資料格式不符時直接跳過，不中斷整批載入
+        continue;
+      }
+    }
+
+    return parsedPlaces.where((place) => place.type == expectedType).toList();
   }
 
   static List<Place> filterCatalog({

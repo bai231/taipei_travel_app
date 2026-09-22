@@ -1,10 +1,47 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:taipei_travel_app/models/place.dart';
 import 'package:taipei_travel_app/services/place_service.dart';
 import 'package:taipei_travel_app/services/taiwan_county_resolver.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  for (final table in [
+    PlaceService.taiwanRestaurantsTable,
+    PlaceService.osmRestaurantsTable,
+    PlaceService.taiwanAccommodationsTable,
+  ]) {
+    test('$table 查詢失敗必須傳遞錯誤而非回傳空清單', () async {
+      final client = SupabaseClient(
+        'https://example.supabase.co',
+        'test-key',
+        httpClient: MockClient((request) async {
+          if (request.url.pathSegments.last == table) {
+            return http.Response(
+              '{"message":"permission denied","code":"42501"}',
+              403,
+              request: request,
+              headers: {'content-type': 'application/json'},
+            );
+          }
+          return http.Response(
+            '[]',
+            200,
+            request: request,
+            headers: {'content-type': 'application/json'},
+          );
+        }),
+      );
+      addTearDown(client.dispose);
+      await expectLater(
+        PlaceService(client: client).getTripCatalog(),
+        throwsA(isA<PostgrestException>()),
+      );
+    });
+  }
 
   for (final type in [PlaceType.restaurant, PlaceType.accommodation]) {
     test('缺座標的 $type 可直接用中文縣市欄位篩選', () {
@@ -184,8 +221,8 @@ Place _place(
     stayTime: 60,
     rating: 4,
     tags: const [],
-    //priceLevel: 0,
-    estimatedCost: 0,
+    price_level: 1,
+    //estimatedCost: 0,
     openMinutes: 0,
     closeMinutes: 1440,
   );

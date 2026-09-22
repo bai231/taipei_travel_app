@@ -490,13 +490,13 @@ class _ProfilePageState extends State<ProfilePage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // 標題：我的收藏
+              // 個人空間：自己的行程與收藏分開呈現。
               const Row(
                 children: [
-                  Icon(Icons.star_border_rounded, size: 28, color: AppColors.textPrimary),
+                  Icon(Icons.person_outline_rounded, size: 28, color: AppColors.textPrimary),
                   SizedBox(width: 8),
                   Text(
-                    "我的收藏",
+                    "個人空間",
                     style: TextStyle(
                       fontSize: 22,
                       fontWeight: FontWeight.bold,
@@ -511,7 +511,25 @@ class _ProfilePageState extends State<ProfilePage> {
 
               // 景點區塊
               const Text(
-                "景點",
+                "我的行程",
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                "你親自規劃並儲存的旅程",
+                style: TextStyle(color: AppColors.textPrimary),
+              ),
+              const SizedBox(height: 12),
+              // 不共用收藏行程的模擬清單；待資料庫方案確認後接入。
+              SizedBox(
+                height: 100,
+                child: _buildEmptyState("行程清單尚待接入，暫時無法在此顯示已儲存行程"),
+              ),
+              const SizedBox(height: 28),
+
+              // 收藏景點區塊
+              const Text(
+                "收藏景點",
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
               ),
               const SizedBox(height: 12),
@@ -534,7 +552,7 @@ class _ProfilePageState extends State<ProfilePage> {
 
               // 行程區塊
               const Text(
-                "行程",
+                "收藏行程",
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
               ),
               const SizedBox(height: 12),
@@ -554,7 +572,7 @@ class _ProfilePageState extends State<ProfilePage> {
 
               // 我的資料夾區塊
               const Text(
-                "分類資料夾",
+                "收藏資料夾",
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
               ),
               const SizedBox(height: 12),

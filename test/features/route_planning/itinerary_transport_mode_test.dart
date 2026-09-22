@@ -60,7 +60,8 @@ RouteItinerary _itinerary(RouteTravelMode travelMode) {
     stayTime: 60,
     rating: 0,
     tags: const [],
-    estimatedCost: 0,
+    //estimatedCost: 0,
+    price_level: 1,
     openMinutes: 0,
     closeMinutes: 1440,
   );
@@ -98,7 +99,7 @@ RouteItinerary _itinerary(RouteTravelMode travelMode) {
       endDate: DateTime(2030, 1, 1),
       location: '台北市',
       people: 1,
-      budget: 1000,
+      budget_level: 1000,
       preferences: const [],
       aiPrompt: '',
     ),

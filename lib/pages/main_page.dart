@@ -84,7 +84,7 @@ class _MainPageState extends State<MainPage> {
     if (navRect != null) {
       steps.add(GuideStep(
         title: '底部切換導航',
-        desc: '隨時在「首頁」、「行程安排」、「我的收藏」與「靈感搜尋」之間切換。',
+        desc: '隨時在「首頁」、「行程安排」、「個人空間」與「靈感搜尋」之間切換。',
         targetRect: navRect,
         isUpwards: true,
       ));

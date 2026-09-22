@@ -6,14 +6,24 @@ import '../../../services/google_route_geometry_service.dart';
 import '../../../services/map_service.dart';
 import '../../../services/route_geometry_gateway.dart';
 import '../../../services/route_geometry_normalizer.dart';
+import '../../../services/location_service.dart';
 import '../models/route_day.dart';
 import '../models/route_visit.dart';
+import '../models/route_travel_mode.dart';
 
 class TripMapPanel extends StatefulWidget {
   final RouteDay day;
   final RouteGeometryGateway? routeGeometryGateway;
+  final LocationPoint? currentLocation;
+  final List<LocationPoint> trackedRoute;
 
-  const TripMapPanel({super.key, required this.day, this.routeGeometryGateway});
+  const TripMapPanel({
+    super.key,
+    required this.day,
+    this.routeGeometryGateway,
+    this.currentLocation,
+    this.trackedRoute = const [],
+  });
 
   @override
   State<TripMapPanel> createState() => _TripMapPanelState();
@@ -28,7 +38,8 @@ class _TripMapPanelState extends State<TripMapPanel> {
   List<RouteGeometrySegment> _routeSegments = const [];
   List<RouteGeometryTransfer> _routeTransfers = const [];
   bool _isLoadingRoute = true;
-  String? _routeError;
+  final Map<int, String> _failedLegs = {};
+  final Set<int> _loadedLegs = {};
   int _requestVersion = 0;
 
   @override
@@ -56,11 +67,39 @@ class _TripMapPanelState extends State<TripMapPanel> {
   @override
   Widget build(BuildContext context) {
     final coordinates = _coordinates;
-    final routePolylines = _routeSegments.isEmpty
-        ? coordinates.length < 2
-              ? <Polyline>{}
-              : {_mapService.routePolylineForCoordinates(coordinates)}
-        : _mapService.routePolylinesForSegments(_routeSegments);
+    final routePolylines = _mapService.routePolylinesForSegments(
+      _routeSegments,
+    );
+    if (widget.trackedRoute.length >= 2) {
+      routePolylines.add(
+        Polyline(
+          polylineId: const PolylineId('tracked-trip-route'),
+          points: widget.trackedRoute
+              .map((point) => LatLng(point.latitude, point.longitude))
+              .toList(),
+          color: const Color(0xFF00897B),
+          width: 6,
+          startCap: Cap.roundCap,
+          endCap: Cap.roundCap,
+          jointType: JointType.round,
+        ),
+      );
+    }
+    for (final index in _failedLegs.keys) {
+      final leg = widget.day.travelLegs[index];
+      routePolylines.add(
+        Polyline(
+          polylineId: PolylineId('unavailable-$index'),
+          points: [
+            LatLng(leg.origin.latitude, leg.origin.longitude),
+            LatLng(leg.destination.latitude, leg.destination.longitude),
+          ],
+          color: const Color(0xFFD32F2F),
+          width: 3,
+          patterns: [PatternItem.dash(4), PatternItem.gap(12)],
+        ),
+      );
+    }
     return Stack(
       children: [
         GoogleMap(
@@ -74,46 +113,94 @@ class _TripMapPanelState extends State<TripMapPanel> {
             _focusRoute();
           },
         ),
-        if (_isLoadingRoute)
-          const Positioned(
-            top: 12,
-            left: 12,
-            right: 12,
-            child: _MapMessage(
-              icon: Icons.alt_route,
-              label: '正在載入實際交通路線…',
-              showProgress: true,
-            ),
-          )
-        else if (_routeError != null)
-          const Positioned(
-            top: 12,
-            left: 12,
-            right: 12,
-            child: _MapMessage(
-              icon: Icons.warning_amber,
-              label: '實際路線載入失敗，暫以景點直線顯示。',
-            ),
-          )
-        else
-          const Positioned(left: 12, bottom: 12, child: _RouteLegend()),
+        Positioned(
+          top: 8,
+          left: 8,
+          right: 8,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _MapMessage(
+                icon: Icons.info_outline,
+                showProgress: _isLoadingRoute,
+                label: [
+                  '${_loadedLegs.length} 段已載入，${_failedLegs.length} 段無法取得路徑${_isLoadingRoute ? '（載入中）' : ''}',
+                  if (widget.day.travelLegs.any(
+                    (leg) => leg.travelMode == RouteTravelMode.transit,
+                  ))
+                    'Google 參考路線，可能與 TDX 班次不同。',
+                  if (_failedLegs.isNotEmpty) '紅色虛線為示意連線，不代表可行走道路。',
+                ].join('\n'),
+              ),
+              if (_failedLegs.isNotEmpty)
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: _showFailures,
+                      child: const Text('查看原因'),
+                    ),
+                    FilledButton(
+                      onPressed: _isLoadingRoute
+                          ? null
+                          : () => _loadRouteGeometry(retryOnly: true),
+                      child: const Text('重試失敗路段'),
+                    ),
+                  ],
+                ),
+            ],
+          ),
+        ),
+        const Positioned(left: 12, bottom: 12, child: _RouteLegend()),
       ],
     );
   }
 
-  Future<void> _loadRouteGeometry() async {
+  void _showFailures() {
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('無法取得路徑'),
+        content: SingleChildScrollView(
+          child: Text(
+            _failedLegs.entries
+                .map((entry) {
+                  final leg = widget.day.travelLegs[entry.key];
+                  return '${leg.origin.name} → ${leg.destination.name}\n${entry.value}';
+                })
+                .join('\n\n'),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('關閉'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _loadRouteGeometry({bool retryOnly = false}) async {
     final requestVersion = ++_requestVersion;
+    final day = widget.day;
+    final indices = retryOnly
+        ? _failedLegs.keys.toList()
+        : List.generate(day.travelLegs.length, (index) => index);
     setState(() {
       _isLoadingRoute = true;
-      _routeError = null;
-      _routeSegments = const [];
-      _routeTransfers = const [];
+      if (!retryOnly) {
+        _failedLegs.clear();
+        _loadedLegs.clear();
+        _routeSegments = [];
+        _routeTransfers = [];
+      }
     });
 
-    try {
-      final segments = <RouteGeometrySegment>[];
-      final transfers = <RouteGeometryTransfer>[];
-      for (final leg in widget.day.travelLegs) {
+    for (final index in indices) {
+      if (!mounted || requestVersion != _requestVersion) return;
+      final leg = day.travelLegs[index];
+      try {
         final routeGeometry = _geometryNormalizer.normalize(
           await _routeGeometryGateway.getRoute(
             originLatitude: leg.origin.latitude,
@@ -124,38 +211,36 @@ class _TripMapPanelState extends State<TripMapPanel> {
             travelMode: leg.travelMode,
           ),
         );
-        segments.addAll(routeGeometry.segments);
-        transfers.addAll(routeGeometry.transfers);
-      }
-      if (!mounted || requestVersion != _requestVersion) return;
-      setState(() {
-        _routeSegments = segments;
-        _routeTransfers = transfers;
-        _isLoadingRoute = false;
-        if (segments.isEmpty && widget.day.travelLegs.isNotEmpty) {
-          _routeError = 'Google Routes 沒有回傳可用路徑。';
+        if (!mounted || requestVersion != _requestVersion) return;
+        if (routeGeometry.segments.isEmpty) {
+          throw StateError('指定日期與交通方式沒有可用路徑。');
         }
-      });
-      await _focusRoute();
-    } catch (error) {
-      if (!mounted || requestVersion != _requestVersion) return;
-      setState(() {
-        _isLoadingRoute = false;
-        _routeError = error.toString();
-      });
-      await _focusRoute();
+        setState(() {
+          _routeSegments.addAll(routeGeometry.segments);
+          _routeTransfers.addAll(routeGeometry.transfers);
+          _loadedLegs.add(index);
+          _failedLegs.remove(index);
+        });
+      } catch (error) {
+        if (!mounted || requestVersion != _requestVersion) return;
+        setState(() => _failedLegs[index] = error.toString());
+      }
     }
+    if (!mounted || requestVersion != _requestVersion) return;
+    setState(() => _isLoadingRoute = false);
+    await _focusRoute();
   }
 
   List<LatLng> get _displayCoordinates {
     if (_routeSegments.isEmpty) return _coordinates;
-    return _routeSegments
-        .expand(
-          (segment) => segment.points.map(
-            (point) => LatLng(point.latitude, point.longitude),
-          ),
-        )
-        .toList();
+    return [
+      ..._coordinates,
+      ..._routeSegments.expand(
+        (segment) => segment.points.map(
+          (point) => LatLng(point.latitude, point.longitude),
+        ),
+      ),
+    ];
   }
 
   bool get _originIsFirstVisit =>
@@ -200,6 +285,11 @@ class _TripMapPanelState extends State<TripMapPanel> {
         icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueYellow),
       ),
     ),
+    if (widget.currentLocation case final location?)
+      _mapService.currentLocationMarker(
+        latitude: location.latitude,
+        longitude: location.longitude,
+      ),
   };
 
   Future<void> _focusRoute() async {
@@ -274,6 +364,7 @@ class _RouteLegend extends StatelessWidget {
             _LegendItem(color: Color(0xFF7B1FA2), label: '台鐵'),
             _LegendItem(color: Color(0xFFC2185B), label: '高鐵'),
             _LegendItem(color: Color(0xFF2E7D32), label: '汽車'),
+            _LegendItem(color: Color(0xFFD32F2F), label: '示意連線（虛線）'),
           ],
         ),
       ),

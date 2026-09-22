@@ -1113,10 +1113,10 @@ class ItineraryPlanningService {
       if (input.locked && input.startMinutes != null)
         '已確認的使用者安排：${_formatMinutes(input.startMinutes!)}（不代表已訂位／訂房）。',
       '${preferences.durationMinutes == null ? '預設／資料庫估算' : '使用者設定'}：${input.kind == VisitKind.activity ? '停留' : input.kind.label} ${input.stayMinutes} 分鐘。',
-      if (place.estimatedCost <= 0)
+      if (place.price_level <= 0)
         '費用未知，不代表免費。'
       else
-        '資料庫預估費用 ${place.estimatedCost} 元，非即時報價。',
+        '資料庫預估費用等級 ${place.price_level}，實際費用請依現場為主。',
     ];
     if (place.type == PlaceType.accommodation) {
       final stay = preferences.hotelStay!;

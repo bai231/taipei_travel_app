@@ -3,7 +3,7 @@ description: Scaffolding for Flutter Widget Previews
 publish_to: none
 version: 0.0.1
 environment:
-  sdk: ^3.13.0
+  sdk: ^3.13.1
 dependencies:
   dtd: ^4.0.0
   flutter:
@@ -12,9 +12,9 @@ dependencies:
   google_fonts: ^8.2.1
   json_rpc_2: ^4.1.0
   path: ^1.9.1
-  stack_trace: ^1.12.1
+  stack_trace: ^1.12.2
   taipei_travel_app:
-    path: C:\Users\cianj\Desktop\project\taipei_travel_app
+    path: C:\Users\clair\taipei_travel_app
   url_launcher: ^6.3.2
   web: ^1.1.1
   webview_flutter: ^4.14.1
@@ -23,4 +23,4 @@ flutter:
   uses-material-design: true
 dependency_overrides:
   taipei_travel_app:
-    path: C:\Users\cianj\Desktop\project\taipei_travel_app
+    path: C:\Users\clair\taipei_travel_app

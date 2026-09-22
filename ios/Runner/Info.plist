@@ -15,6 +15,10 @@
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
 	<string>Taipei Travel App</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>您的位置僅用於追蹤目前旅程、更新當日行程，以及提供所在地的天氣提醒。</string>
+	<key>NSUserNotificationUsageDescription</key>
+	<string>行程落後或所在地天氣可能影響行程時，App 會發送提醒。</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>

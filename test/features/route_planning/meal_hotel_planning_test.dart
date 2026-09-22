@@ -699,7 +699,7 @@ TripRequest _request({int days = 1}) => TripRequest(
   endDate: DateTime(2030, 1, days),
   location: '',
   people: 2,
-  budget: 5000,
+  budget_level: 5000,
   preferences: const [],
   aiPrompt: '',
 );
@@ -726,7 +726,8 @@ Place _place(
   stayTime: 60,
   rating: 0,
   tags: const [],
-  estimatedCost: 0,
+  //estimatedCost: 0,
+  price_level: 1,
   openMinutes: open,
   closeMinutes: close,
 );
