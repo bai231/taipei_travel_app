@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/place.dart';
 import '../services/favorite_service.dart';
 import '../theme/app_colors.dart';
+import '../utils/map_launcher.dart';
 
 class PlaceDetailPage extends StatefulWidget {
   final Place place;
@@ -239,6 +240,27 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
                           color: textColor,
                         ),
                       ),
+                    ),
+                    const SizedBox(width: 10),
+
+                    ElevatedButton.icon(
+                        onPressed: () => MapLauncher.openGoogleMaps(place),
+                        icon: const Icon(Icons.navigation_rounded, size: 14),
+                        label: const Text(
+                          "導航",
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
                     ),
                   ],
                 ),

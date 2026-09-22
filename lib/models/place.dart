@@ -79,6 +79,17 @@ class Place {
   final String openingHoursRaw;
   final bool? openingHoursProvided;
 
+  final double? distanceInMeters; // 與使用者位置的距離（公尺）
+
+  String get formattedDistance {
+    if (distanceInMeters == null) return '';
+    if (distanceInMeters! < 1000) {
+      return '${distanceInMeters!.round()}m';
+    } else {
+      return '${(distanceInMeters! / 1000).toStringAsFixed(1)}km';
+    }
+  }
+
   bool get hasKnownOpeningHours =>
       openingHoursProvided != false &&
       openMinutes >= 0 &&
@@ -120,6 +131,7 @@ class Place {
     this.county = '',
     this.openingHoursRaw = '',
     this.openingHoursProvided,
+    this.distanceInMeters,
     required this.stayTime,
     required this.rating,
     required this.tags,
@@ -276,7 +288,10 @@ class Place {
     );
   }
 
-  Place copyWith({String? county}) {
+  Place copyWith({
+    String? county,
+    double? distanceInMeters,
+  }) {
     return Place(
       id: id,
       name: name,
@@ -290,6 +305,7 @@ class Place {
       county: county ?? this.county,
       openingHoursRaw: openingHoursRaw,
       openingHoursProvided: openingHoursProvided,
+      distanceInMeters: distanceInMeters ?? this.distanceInMeters,
       stayTime: stayTime,
       rating: rating,
       tags: tags,

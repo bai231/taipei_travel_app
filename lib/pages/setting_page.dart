@@ -1,4 +1,5 @@
 import 'dart:ui';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'edit_profile_screen.dart'; // 引入編輯個人資料頁面
@@ -6,6 +7,7 @@ import 'edit_profile_screen.dart'; // 引入編輯個人資料頁面
 import 'guide_overlay_screen.dart'; // 引入使用指南
 import 'login_screen.dart';         // 引入登入頁面
 import '../theme/app_colors.dart';
+import '../services/language_service.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -15,6 +17,26 @@ class SettingsPage extends StatefulWidget {
 }
 
 class _SettingsPageState extends State<SettingsPage> {
+  // 🌟 1. 宣告 Supabase 驗證狀態監聽訂閱[cite: 1, 2]
+  StreamSubscription<AuthState>? _authSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+
+    // 🌟 2. 監聽登入狀態改變：只要一登入或登出，自動刷新名片姓名與圖示[cite: 1, 2]
+    _authSubscription = Supabase.instance.client.auth.onAuthStateChange.listen((data) {
+      if (mounted) {
+        setState(() {}); // 觸發畫面重繪，名片自動更新[cite: 1, 2]
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _authSubscription?.cancel(); // 🌟 3. 釋放資源，防止 memory leak[cite: 1, 2]
+    super.dispose();
+  }
   // 色彩配置（延續草圖風格色調）
   static const Color bgColor = Color(0xFFC7DEC8);         // 水彩淺綠底色
   static const Color cardColor = Color(0xFF70B19B);       // 卡片綠色
@@ -32,8 +54,11 @@ class _SettingsPageState extends State<SettingsPage> {
     showDialog(
       context: context,
       barrierColor: Colors.black.withValues(alpha: 0.2),
-      builder: (context) {
+      builder: (dialogCtx) {
+        final currentLang = LanguageService().currentLanguageName;
         return Center(
+          child: Material(
+          type: MaterialType.transparency,
           child: ClipRRect(
             borderRadius: BorderRadius.circular(20),
             child: BackdropFilter(
@@ -61,25 +86,26 @@ class _SettingsPageState extends State<SettingsPage> {
                       ),
                     ),
                     const SizedBox(height: 12),
-                    _buildLanguageOption('繁體中文'),
-                    _buildLanguageOption('English'),
-                    _buildLanguageOption('日本語'),
+                    _buildLanguageOption('繁體中文', currentLang, dialogCtx),
+                    _buildLanguageOption('English', currentLang, dialogCtx),
                   ],
                 ),
               ),
             ),
+          ),
           ),
         );
       },
     );
   }
 
-  Widget _buildLanguageOption(String lang) {
+  Widget _buildLanguageOption(String lang, String currentSelected, BuildContext dialogCtx) {
     final bool isSelected = _currentLanguage == lang;
     return InkWell(
       onTap: () {
-        setState(() => _currentLanguage = lang);
-        Navigator.pop(context);
+        LanguageService().changeLanguage(lang);
+        Navigator.pop(dialogCtx);
+        setState(() {});
       },
       borderRadius: BorderRadius.circular(12),
       child: Container(
@@ -175,8 +201,8 @@ class _SettingsPageState extends State<SettingsPage> {
               const SizedBox(height: 24),
 
               // 4. 區塊一：個人帳號設置
-              const Text(
-                "個人帳號設置",
+              Text(
+                LanguageService.tr(context, 'account_settings'),
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textDark),
               ),
               const SizedBox(height: 12),
@@ -196,14 +222,14 @@ class _SettingsPageState extends State<SettingsPage> {
                     }
                   },
                 ),
-                _buildSettingTile(
+                /*_buildSettingTile(
                   icon: Icons.explore_outlined,
                   title: "旅遊偏好設定",
                   subtitle: "海島放鬆、戶外探險、人文美食",
                   onTap: () {
                     // TODO: 跳轉旅遊偏好選擇頁面
                   },
-                ),
+                ),*/
                 _buildSwitchTile(
                   icon: Icons.notifications_none_rounded,
                   title: "行程與推播通知",
@@ -222,17 +248,17 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
               const SizedBox(height: 12),
               _buildSettingsGroup([
-                _buildSwitchTile(
+                /*_buildSwitchTile(
                   icon: Icons.dark_mode_outlined,
                   title: "深色模式",
                   subtitle: "降低低光源環境下的視覺刺眼感",
                   value: _isDarkMode,
                   onChanged: (val) => setState(() => _isDarkMode = val),
-                ),
+                ),*/
                 _buildSettingTile(
                   icon: Icons.language_rounded,
-                  title: "語言設定",
-                  trailingText: _currentLanguage,
+                  title: LanguageService.tr(context, 'language_setting'),
+                  trailingText: LanguageService().currentLanguageName,
                   onTap: _showFrostedLanguageDialog,
                 ),
                 _buildSettingTile(
@@ -349,11 +375,14 @@ class _SettingsPageState extends State<SettingsPage> {
         // 未登入時顯示「登入」按鈕，已登入時可顯示「登出」快捷按鈕
         if (!isLoggedIn)
           ElevatedButton(
-            onPressed: () {
-              Navigator.push(
+            onPressed: () async{
+              await Navigator.push(
                 context,
                 MaterialPageRoute(builder: (_) => const LoginScreen()),
               );
+              if (mounted) {
+                setState(() {}); // 登入後刷新名片資訊
+              }
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.white,
@@ -370,10 +399,14 @@ class _SettingsPageState extends State<SettingsPage> {
             tooltip: '登出帳號',
             onPressed: () async {
               await Supabase.instance.client.auth.signOut();
-              if (context.mounted) {
+              if (mounted) {
+                setState(() {});
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('已安全登出 🌿')),
-                );
+                  const SnackBar(
+                    content: Text('已安全登出 🌿'),
+                    duration: Duration(seconds: 1),
+                  ),
+                );  
               }
             },
           ),

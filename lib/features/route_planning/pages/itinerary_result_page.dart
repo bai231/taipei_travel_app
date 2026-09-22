@@ -68,7 +68,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
   final _tripTracker = LiveItineraryTrackingService();
   final _notificationService = TripNotificationService();
   final _weatherAdvisoryService = WeatherAdvisoryService(
-    apiKey: String.fromEnvironment('CWA_API_KEY'),
+    apiKey: const String.fromEnvironment('CWA_API_KEY'),
   );
   final _liveDayReplanner = LiveDayItineraryReplanner();
 
