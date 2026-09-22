@@ -3,9 +3,14 @@ import 'dart:math';
 import '../../models/place.dart';
 import '../../models/place_recommendation.dart';
 import '../../models/trip_auto_fill_plan.dart';
+import 'recommendation_diversifier.dart';
 
 class TripAutoFillService {
-  const TripAutoFillService();
+  final RecommendationDiversifier _diversifier;
+
+  const TripAutoFillService({
+    RecommendationDiversifier diversifier = const RecommendationDiversifier(),
+  }) : _diversifier = diversifier;
 
   TripAutoFillPlan createPlan({
     required int days,
@@ -17,7 +22,9 @@ class TripAutoFillService {
 
     final targetCount = normalizedDays * _placesPerDay(pace);
 
-    final selectedIds = selectedAttractions.map((place) => place.id).toSet();
+    final selectedAttractionList = selectedAttractions.toList();
+
+    final selectedIds = selectedAttractionList.map((place) => place.id).toSet();
 
     final currentCount = selectedIds.length;
 
@@ -31,28 +38,15 @@ class TripAutoFillService {
       );
     }
 
-    final placesToAdd = <Place>[];
-    final addedIds = <String>{};
+    final diversifiedRecommendations = _diversifier.select(
+      rankedRecommendations: rankedRecommendations,
+      selectedAttractions: selectedAttractionList,
+      count: missingCount,
+    );
 
-    for (final recommendation in rankedRecommendations) {
-      final place = recommendation.place;
-
-      // 不重複加入使用者已選或必去的景點。
-      if (selectedIds.contains(place.id)) {
-        continue;
-      }
-
-      // 防止推薦清單本身含有重複 ID。
-      if (!addedIds.add(place.id)) {
-        continue;
-      }
-
-      placesToAdd.add(place);
-
-      if (placesToAdd.length >= missingCount) {
-        break;
-      }
-    }
+    final placesToAdd = diversifiedRecommendations
+        .map((recommendation) => recommendation.place)
+        .toList();
 
     return TripAutoFillPlan(
       targetAttractionCount: targetCount,
