@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../models/place.dart';
+
 // 🌟 1. 最外層改為 extends ChangeNotifier，具備全域廣播能力
 class UserDataService extends ChangeNotifier {
   final _supabase = Supabase.instance.client;

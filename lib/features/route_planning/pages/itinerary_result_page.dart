@@ -77,9 +77,8 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
   final List<Place> _pendingPlaces = [];
   final _tripTracker = LiveItineraryTrackingService();
   final _notificationService = TripNotificationService();
-  final _weatherAdvisoryService = WeatherAdvisoryService(
-    apiKey: const String.fromEnvironment('CWA_API_KEY'),
-  );
+  late final WeatherAdvisoryService _weatherAdvisoryService;
+  late final Future<TaiwanCountyResolver> _countyResolver;
   final _liveDayReplanner = LiveDayItineraryReplanner();
 
   late RouteItinerary _itinerary;

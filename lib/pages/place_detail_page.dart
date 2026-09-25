@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../models/place.dart';
 import '../services/favorite_service.dart';
 import '../theme/app_colors.dart';
@@ -35,6 +36,42 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
     }
   }
 
+  Future<void> _openPhone(String phone) async {
+    await _launchExternal(Uri(scheme: 'tel', path: phone), '無法開啟電話功能');
+  }
+
+  Future<void> _openWebsite(String website) async {
+    final normalized =
+        website.startsWith('http://') || website.startsWith('https://')
+        ? website
+        : 'https://$website';
+    final uri = Uri.tryParse(normalized);
+    if (uri == null) {
+      _showLaunchError('網站網址格式不正確');
+      return;
+    }
+    await _launchExternal(uri, '無法開啟網站');
+  }
+
+  Future<void> _launchExternal(Uri uri, String errorMessage) async {
+    try {
+      final launched = await launchUrl(
+        uri,
+        mode: LaunchMode.externalApplication,
+      );
+      if (!launched) _showLaunchError(errorMessage);
+    } catch (_) {
+      _showLaunchError(errorMessage);
+    }
+  }
+
+  void _showLaunchError(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
   @override
   Widget build(BuildContext context) {
     final place = widget.place;
@@ -43,6 +80,11 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
     // 取得文字與主色（若尚未設定 textPrimary 則自動使用 primaryDark 兜底）
     final Color textColor = AppColors.primaryDark;
     final Color subTextColor = AppColors.primaryDark.withValues(alpha: 0.65);
+    final typeLabel = switch (place.type) {
+      PlaceType.attraction => '景點',
+      PlaceType.restaurant => '餐廳',
+      PlaceType.accommodation => '住宿',
+    };
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -68,10 +110,9 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
               color: isFav ? Colors.redAccent : textColor,
               size: 26,
             ),
-            onPressed: () async {
+            onPressed: () {
               try {
-                // 1. 支援非同步雲端同步 (await)
-                final added = await _favoriteService.toggleFavorite(place);
+                final added = _favoriteService.toggleFavorite(place);
 
                 if (!context.mounted) return;
 
@@ -88,9 +129,9 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
                 );
               } catch (e) {
                 if (!context.mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text(e.toString())),
-                );
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(SnackBar(content: Text(e.toString())));
               }
             },
           ),
@@ -122,7 +163,10 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
               children: [
                 // 類別膠囊標籤
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
                   decoration: BoxDecoration(
                     color: AppColors.primary.withValues(alpha: 0.18),
                     borderRadius: BorderRadius.circular(12),
@@ -159,9 +203,9 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
 
             const SizedBox(height: 24),
 
-            // 3. 景點介紹區塊（手帳便籤卡片容器，支援自動換行與舒適行距）
+            // 3. 介紹區塊（手帳便籤卡片容器，支援自動換行與舒適行距）
             Text(
-              "景點介紹",
+              "$typeLabel介紹",
               style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
@@ -199,7 +243,7 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
             // 4. 地址資訊
             if (place.address.isNotEmpty) ...[
               Text(
-                "景點地址",
+                "$typeLabel地址",
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
@@ -244,24 +288,103 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
                     const SizedBox(width: 10),
 
                     ElevatedButton.icon(
-                        onPressed: () => MapLauncher.openGoogleMaps(place),
-                        icon: const Icon(Icons.navigation_rounded, size: 14),
-                        label: const Text(
-                          "導航",
-                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                      onPressed: () => MapLauncher.openGoogleMaps(place),
+                      icon: const Icon(Icons.navigation_rounded, size: 14),
+                      label: const Text(
+                        "導航",
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
                         ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.primary,
-                          foregroundColor: Colors.white,
-                          elevation: 0,
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          minimumSize: Size.zero,
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
                         ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
                     ),
+                  ],
+                ),
+              ),
+            ],
+
+            if (place.phone.isNotEmpty ||
+                place.website.isNotEmpty ||
+                place.openingHours.isNotEmpty ||
+                place.openingHoursRaw.trim().isNotEmpty) ...[
+              const SizedBox(height: 24),
+              Text(
+                '詳細資訊',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: textColor,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: textColor.withValues(alpha: 0.04),
+                      blurRadius: 10,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  children: [
+                    if (place.website.isNotEmpty)
+                      _buildDetailRow(
+                        icon: Icons.language_rounded,
+                        child: Text(
+                          place.website,
+                          style: TextStyle(
+                            color: AppColors.primaryDark,
+                            decoration: TextDecoration.underline,
+                            decorationColor: AppColors.primaryDark,
+                          ),
+                        ),
+                        onTap: () => _openWebsite(place.website),
+                      ),
+                    if (place.website.isNotEmpty &&
+                        (place.phone.isNotEmpty ||
+                            place.openingHours.isNotEmpty ||
+                            place.openingHoursRaw.trim().isNotEmpty))
+                      const Divider(height: 1),
+                    if (place.phone.isNotEmpty)
+                      _buildDetailRow(
+                        icon: Icons.phone_outlined,
+                        child: Text(
+                          place.phone,
+                          style: TextStyle(
+                            color: AppColors.primaryDark,
+                            decoration: TextDecoration.underline,
+                            decorationColor: AppColors.primaryDark,
+                          ),
+                        ),
+                        onTap: () => _openPhone(place.phone),
+                      ),
+                    if (place.phone.isNotEmpty &&
+                        (place.openingHours.isNotEmpty ||
+                            place.openingHoursRaw.trim().isNotEmpty))
+                      const Divider(height: 1),
+                    if (place.openingHours.isNotEmpty ||
+                        place.openingHoursRaw.trim().isNotEmpty)
+                      _buildOpeningHours(place, textColor),
                   ],
                 ),
               ),
@@ -271,6 +394,88 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildDetailRow({
+    required IconData icon,
+    required Widget child,
+    VoidCallback? onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, color: AppColors.primaryDark, size: 22),
+            const SizedBox(width: 12),
+            Expanded(child: child),
+            if (onTap != null)
+              Icon(
+                Icons.open_in_new_rounded,
+                color: AppColors.textSecondary,
+                size: 17,
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOpeningHours(Place place, Color textColor) {
+    final hours = place.openingHours.isNotEmpty
+        ? place.openingHours
+        : [place.openingHoursRaw.trim()];
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 16),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.schedule_outlined, color: AppColors.primaryDark, size: 22),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              children: [
+                for (var index = 0; index < hours.length; index++) ...[
+                  _buildOpeningHourLine(hours[index], textColor),
+                  if (index != hours.length - 1) const SizedBox(height: 8),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOpeningHourLine(String value, Color textColor) {
+    final separator = value.indexOf(RegExp('[:：]'));
+    if (separator <= 0) {
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: Text(value, style: TextStyle(color: textColor, height: 1.35)),
+      );
+    }
+    final day = value.substring(0, separator).trim();
+    final hours = value.substring(separator + 1).trim();
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 72,
+          child: Text(day, style: TextStyle(color: textColor, height: 1.35)),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            hours,
+            textAlign: TextAlign.end,
+            style: TextStyle(color: textColor, height: 1.35),
+          ),
+        ),
+      ],
     );
   }
 

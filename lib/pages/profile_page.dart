@@ -5,6 +5,7 @@ import '../theme/app_theme.dart';
 import '../services/favorite_service.dart';
 import '../models/place.dart';
 import 'itinerary_result_page.dart';
+import 'place_detail_page.dart';
 import '../services/user_data_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 // import '../services/saved_itinerary_service.dart';
@@ -141,8 +142,11 @@ class _ProfilePageState extends State<ProfilePage> {
                         label: '查看資訊',
                         onTap: () {
                           Navigator.pop(dialogCtx);
-                          ScaffoldMessenger.of(parentContext).showSnackBar(
-                            SnackBar(content: Text('查看「${place.name}」詳細資訊')),
+                          Navigator.push(
+                            parentContext,
+                            MaterialPageRoute(
+                              builder: (_) => PlaceDetailPage(place: place),
+                            ),
                           );
                         },
                       ),
@@ -601,13 +605,19 @@ class _ProfilePageState extends State<ProfilePage> {
 
   // 景點卡片
   Widget _buildPlaceCard(Place place) {
-    return Container(
-      width: 110,
-      decoration: BoxDecoration(
-        color: AppColors.primary,
-        borderRadius: BorderRadius.circular(20),
+    return InkWell(
+      borderRadius: BorderRadius.circular(20),
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => PlaceDetailPage(place: place)),
       ),
-      child: Column(
+      child: Container(
+        width: 110,
+        decoration: BoxDecoration(
+          color: AppColors.primary,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Column(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           const Padding(
@@ -650,6 +660,7 @@ class _ProfilePageState extends State<ProfilePage> {
             ),
           ),
         ],
+        ),
       ),
     );
   }

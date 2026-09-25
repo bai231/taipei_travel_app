@@ -66,6 +66,36 @@ void main() {
     expect(place.closeMinutes, 1260);
   });
 
+  test('解析 Google Places 詳細資訊與營業時間', () {
+    final place = Place.fromJson({
+      'id': 2,
+      'name': '旺萊山',
+      'nationalPhoneNumber': '05 272 0696',
+      'websiteUri': 'https://www.pineapplehill.com.tw',
+      'regularOpeningHours': {
+        'weekdayDescriptions': ['星期一: 09:00–17:30', '星期二: 09:00–17:30'],
+      },
+    });
+
+    expect(place.phone, '05 272 0696');
+    expect(place.website, 'https://www.pineapplehill.com.tw');
+    expect(place.openingHours, ['星期一: 09:00–17:30', '星期二: 09:00–17:30']);
+    expect(place.openingHoursRaw, contains('星期一'));
+  });
+
+  test('解析 Supabase JSON 字串格式的 Google 營業時間', () {
+    final place = Place.fromJson({
+      'opening_hours':
+          '{"weekday_text":["Monday: 9:00 AM – 5:30 PM","Tuesday: Closed"]}',
+      'formatted_phone_number': '(02) 1234-5678',
+      'website_url': 'example.com',
+    });
+
+    expect(place.openingHours, hasLength(2));
+    expect(place.phone, '(02) 1234-5678');
+    expect(place.website, 'example.com');
+  });
+
   test('解析 TDX 餐廳巢狀座標並強制指定資料類型', () {
     final place = Place.fromJson(
       {
