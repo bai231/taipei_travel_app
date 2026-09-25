@@ -156,6 +156,7 @@ Map<String, dynamic> _place(Place place) => {
   'longitude': place.longitude,
   'image': place.image,
   'county': place.county,
+  'district': place.district,
   'openingHoursRaw': place.openingHoursRaw,
   'openingHoursProvided': place.openingHoursProvided,
   'stayTime': place.stayTime,

@@ -217,7 +217,7 @@ class _ProfilePageState extends State<ProfilePage> {
                         child: ListView.separated(
                           shrinkWrap: true,
                           itemCount: places.length,
-                          separatorBuilder: (_, __) => const Divider(height: 1, color: Colors.black12),
+                          separatorBuilder: (_, _) => const Divider(height: 1, color: Colors.black12),
                           itemBuilder: (context, index) {
                             final place = places[index];
                             return ListTile(
@@ -497,7 +497,7 @@ class _ProfilePageState extends State<ProfilePage> {
                     : ListView.separated(
                         scrollDirection: Axis.horizontal,
                         itemCount: favorites.length,
-                        separatorBuilder: (_, __) => const SizedBox(width: 14),
+                        separatorBuilder: (_, _) => const SizedBox(width: 14),
                         itemBuilder: (context, index) {
                           final place = favorites[index];
                           return _buildPlaceCard(place);
@@ -518,7 +518,7 @@ class _ProfilePageState extends State<ProfilePage> {
                 child: ListView.separated(
                   scrollDirection: Axis.horizontal,
                   itemCount: _itineraries.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 14),
+                  separatorBuilder: (_, _) => const SizedBox(width: 14),
                   itemBuilder: (context, index) {
                     return _buildTripCard(_itineraries[index]);
                   },
@@ -540,7 +540,7 @@ class _ProfilePageState extends State<ProfilePage> {
                     : ListView.separated(
                         scrollDirection: Axis.horizontal,
                         itemCount: _folders.length,
-                        separatorBuilder: (_, __) => const SizedBox(width: 14),
+                        separatorBuilder: (_, _) => const SizedBox(width: 14),
                         itemBuilder: (context, index) {
                           final folder = _folders[index];
                           return _buildFolderCard(folder);

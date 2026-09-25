@@ -39,6 +39,7 @@ void main() {
       'category': '餐廳',
       'placeType': 'restaurant',
       'county': '台北市',
+      'district': '信義區',
       'description': '台北餐廳',
       'address': '台北市信義區市府路45號',
       'latitude': 25.033964,
@@ -56,6 +57,7 @@ void main() {
     expect(place.id, '1');
     expect(place.type, PlaceType.restaurant);
     expect(place.county, '台北市');
+    expect(place.district, '信義區');
     expect(place.longitude, 121.564468);
     expect(place.stayTime, 120);
     expect(place.price_level, 2);
@@ -108,6 +110,7 @@ void main() {
     expect(place.description, '住宿說明');
     expect(place.address, '臺中市和平區中坑路1號');
     expect(place.county, '臺中市');
+    expect(place.district, '和平區');
     expect(place.latitude, 0);
     expect(place.longitude, 0);
   });
@@ -124,7 +127,12 @@ void main() {
         'address': '',
         'latitude': 25.046,
         'longitude': 121.514,
-        'tags': {'amenity': 'restaurant', 'takeaway': 'yes'},
+        'tags': {
+          'amenity': 'restaurant',
+          'takeaway': 'yes',
+          'addr:city': '臺北市',
+          'addr:district': '中正區',
+        },
       },
       forcedType: PlaceType.restaurant,
       idPrefix: 'osm_restaurants',
@@ -134,6 +142,8 @@ void main() {
     expect(place.name, '福州世祖胡椒餅');
     expect(place.latitude, 25.046);
     expect(place.longitude, 121.514);
+    expect(place.county, '臺北市');
+    expect(place.district, '中正區');
     expect(place.tags, contains('amenity:restaurant'));
   });
 

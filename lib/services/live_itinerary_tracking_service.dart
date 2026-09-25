@@ -21,13 +21,17 @@ class TripTrackingUpdate {
   final LocationPoint location;
   final List<LocationPoint> route;
   final TripDelayAlert? delayAlert;
+  final DateTime observedAt;
 
   const TripTrackingUpdate({
     required this.location,
     required this.route,
+    required this.observedAt,
     this.delayAlert,
   });
 }
+
+enum DebugDelayScenario { stayTooLong, farFromNextStop }
 
 /// Tracks an active itinerary while the app is running and raises one alert per
 /// 15-minute window when the traveller is materially behind the current plan.
@@ -65,17 +69,83 @@ class LiveItineraryTrackingService {
   void updateItinerary(RouteItinerary itinerary) => _itinerary = itinerary;
 
   void _record(LocationPoint location) {
+    _recordAt(location, _now());
+  }
+
+  void _recordAt(LocationPoint location, DateTime observedAt) {
     _route.add(location);
     if (_route.length > 500) _route.removeAt(0);
-    final alert = _delayFor(location, _now());
-    if (alert != null) _lastAlertAt = _now();
+    final alert = _delayFor(location, observedAt);
+    if (alert != null) _lastAlertAt = observedAt;
     _updates.add(
       TripTrackingUpdate(
         location: location,
         route: List.unmodifiable(_route),
+        observedAt: observedAt,
         delayAlert: alert,
       ),
     );
+  }
+
+  /// Sends a synthetic GPS/time update through the same delay detector used by
+  /// live tracking. This is intentionally available only to debug callers.
+  void simulateDelay({
+    required RouteItinerary itinerary,
+    required DebugDelayScenario scenario,
+    required int delayMinutes,
+  }) {
+    assert(() {
+      if (delayMinutes < 15) {
+        throw ArgumentError.value(delayMinutes, 'delayMinutes', 'must be >= 15');
+      }
+      return true;
+    }());
+
+    _itinerary = itinerary;
+    final today = DateTime.now();
+    final day = itinerary.days
+        .where((item) => _sameDate(item.date, today))
+        .firstOrNull;
+    if (day == null || day.visits.isEmpty) return;
+
+    switch (scenario) {
+      case DebugDelayScenario.stayTooLong:
+        // Prefer a stop with a remaining visit, so the simulation can show the
+        // timetable being rearranged as well as the delay notification.
+        final visit = day.visits
+            .where((item) => item.endMinutes + delayMinutes < 24 * 60)
+            .firstOrNull;
+        if (visit == null) return;
+        final observedAt = _atMinute(day.date, visit.endMinutes + delayMinutes);
+        _recordAt(
+          LocationPoint(
+            latitude: visit.place.latitude,
+            longitude: visit.place.longitude,
+          ),
+          observedAt,
+        );
+        break;
+      case DebugDelayScenario.farFromNextStop:
+        final next = day.visits
+            .where((item) => item.startMinutes > 0)
+            .firstOrNull;
+        if (next == null) return;
+        // The live detector defines the next stop as one whose start is still
+        // ahead of the clock, so set the fake clock one minute before it.
+        final observedAt = _atMinute(day.date, next.startMinutes - 1);
+        // At the tracker estimate (18 km/h plus 8 minutes), this is at least
+        // the selected delay beyond the next stop's planned start.
+        final distanceKm = max(0.1, (delayMinutes + 1 - 8) * 18 / 60 + 0.1);
+        final latitudeOffset = distanceKm / 111.0;
+        _recordAt(
+          LocationPoint(
+            latitude: next.place.latitude + latitudeOffset,
+            longitude: next.place.longitude,
+          ),
+          observedAt,
+        );
+        break;
+    }
   }
 
   TripDelayAlert? _delayFor(LocationPoint location, DateTime now) {
@@ -345,3 +415,9 @@ double _distanceKm(double aLat, double aLng, double bLat, double bLng) {
 
 bool _sameDate(DateTime a, DateTime b) =>
     a.year == b.year && a.month == b.month && a.day == b.day;
+
+DateTime _atMinute(DateTime date, int minute) => DateTime(
+  date.year,
+  date.month,
+  date.day,
+).add(Duration(minutes: minute));

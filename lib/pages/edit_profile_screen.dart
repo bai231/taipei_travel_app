@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/auth_service.dart';
-import '../theme/app_theme.dart'; // 引入你的 AppColors
+// 引入你的 AppColors
 
 class EditProfileScreen extends StatefulWidget {
   const EditProfileScreen({super.key});

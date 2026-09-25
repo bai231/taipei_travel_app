@@ -69,11 +69,11 @@ class _PlaceCardState extends State<PlaceCard> {
                     height: 100,
                     width: double.infinity,
                     color: AppColors.primaryLight.withValues(alpha: 0.35),
-                    child: widget.place.image != null && widget.place.image!.isNotEmpty
+                    child: widget.place.image.isNotEmpty
                         ? Image.network(
-                            widget.place.image!,
+                            widget.place.image,
                             fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => _buildPlaceholder(),
+                            errorBuilder: (_, _, _) => _buildPlaceholder(),
                           )
                         : _buildPlaceholder(),
                   ),

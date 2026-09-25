@@ -76,6 +76,7 @@ class Place {
   final String image;
   final PlaceType type;
   final String county;
+  final String district;
   final String openingHoursRaw;
   final bool? openingHoursProvided;
 
@@ -118,6 +119,7 @@ class Place {
     required this.image,
     this.type = PlaceType.attraction,
     this.county = '',
+    this.district = '',
     this.openingHoursRaw = '',
     this.openingHoursProvided,
     required this.stayTime,
@@ -178,6 +180,8 @@ class Place {
         ? Map<String, dynamic>.from(json['Picture'] as Map)
         : const <String, dynamic>{};
     final rawTags = json['tags'];
+    String tagValue(String key) =>
+        rawTags is Map ? rawTags[key]?.toString().trim() ?? '' : '';
     final tags = rawTags is Iterable
         ? rawTags.map((tag) => tag.toString()).toList()
         : rawTags is Map
@@ -256,7 +260,10 @@ class Place {
             'location',
             '縣市名稱',
           ])?.toString() ??
-          '',
+          tagValue('addr:city'),
+      district:
+          firstValue(['district', 'town', 'Town', '行政區(鄉鎮區)名稱'])?.toString() ??
+          tagValue('addr:district'),
       stayTime: numberValue(['stayTime', 'stay_time'])?.toInt() ?? 60,
       openingHoursRaw:
           firstValue(['opening_hours', 'OpenTime'])?.toString() ?? '',
@@ -276,7 +283,7 @@ class Place {
     );
   }
 
-  Place copyWith({String? county}) {
+  Place copyWith({String? county, String? district}) {
     return Place(
       id: id,
       name: name,
@@ -288,6 +295,7 @@ class Place {
       image: image,
       type: type,
       county: county ?? this.county,
+      district: district ?? this.district,
       openingHoursRaw: openingHoursRaw,
       openingHoursProvided: openingHoursProvided,
       stayTime: stayTime,

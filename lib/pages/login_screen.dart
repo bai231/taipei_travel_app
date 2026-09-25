@@ -3,7 +3,6 @@ import 'package:supabase_flutter/supabase_flutter.dart'; // 引入 Supabase 錯�
 import '../services/auth_service.dart';                  // 引入會員驗證服務
 import '../services/favorite_service.dart';              // 引入收藏雲端同步服務
 import 'register_screen.dart';
-import '../theme/app_theme.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});

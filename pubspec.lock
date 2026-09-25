@@ -191,7 +191,7 @@ packages:
     source: hosted
     version: "19.5.0"
   flutter_local_notifications_linux:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: flutter_local_notifications_linux
       sha256: e3c277b2daab8e36ac5a6820536668d07e83851aeeb79c446e525a70710770a5
@@ -273,7 +273,7 @@ packages:
     source: hosted
     version: "2.3.14"
   geolocator_linux:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: geolocator_linux
       sha256: "3da7420f11c3496511a5bd3c18fd67b88e5659f12e46b7ce00a788f6996e850a"
@@ -337,7 +337,7 @@ packages:
     source: hosted
     version: "2.18.4"
   google_maps_flutter_platform_interface:
-    dependency: transitive
+    dependency: "direct dev"
     description:
       name: google_maps_flutter_platform_interface
       sha256: "362b8fa784dc032c08b767b88201aae1bff60f32629ecf64c88857d4c796c630"

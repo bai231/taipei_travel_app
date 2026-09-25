@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import '../models/place.dart';
 import '../services/place_service.dart';
 import '../widgets/place_card.dart';
-import '../pages/place_detail_page.dart';
 import '../pages/itinerary_result_page.dart';
 
 class HomePage extends StatefulWidget {
@@ -288,13 +287,13 @@ class _HomePageState extends State<HomePage> {
       return Image.network(
         path,
         fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => _buildPlaceholder(),
+        errorBuilder: (_, _, _) => _buildPlaceholder(),
       );
     } else {
       return Image.asset(
         path,
         fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => _buildPlaceholder(),
+        errorBuilder: (_, _, _) => _buildPlaceholder(),
       );
     }
   }

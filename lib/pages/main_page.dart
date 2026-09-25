@@ -96,7 +96,7 @@ class _MainPageState extends State<MainPage> {
       PageRouteBuilder(
         opaque: false,
         barrierDismissible: false,
-        pageBuilder: (context, _, __) => GuideOverlayScreen(steps: steps),
+        pageBuilder: (context, _, _) => GuideOverlayScreen(steps: steps),
       ),
     );
   }

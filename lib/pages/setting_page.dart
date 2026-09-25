@@ -389,7 +389,14 @@ class _SettingsPageState extends State<SettingsPage> {
         color: Colors.white.withValues(alpha: 0.5),
         borderRadius: BorderRadius.circular(20),
       ),
-      child: Column(children: children),
+      // ListTile paints its ink response on Material.  Keep that Material
+      // above this translucent decoration so taps work in debug and release.
+      child: Material(
+        type: MaterialType.transparency,
+        borderRadius: BorderRadius.circular(20),
+        clipBehavior: Clip.antiAlias,
+        child: Column(children: children),
+      ),
     );
   }
 

@@ -103,13 +103,13 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
             // 1. 景點圖片展示（220px 圓角滿版圖）
             ClipRRect(
               borderRadius: BorderRadius.circular(20),
-              child: place.image != null && place.image!.isNotEmpty
+              child: place.image.isNotEmpty
                   ? Image.network(
-                      place.image!,
+                      place.image,
                       height: 220,
                       width: double.infinity,
                       fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => _buildImagePlaceholder(),
+                      errorBuilder: (_, _, _) => _buildImagePlaceholder(),
                     )
                   : _buildImagePlaceholder(),
             ),

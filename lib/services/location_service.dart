@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 
 class LocationPoint {
@@ -46,14 +47,19 @@ class LocationService implements LocationTrackingGateway {
         latitude: position.latitude,
         longitude: position.longitude,
       );
-    } catch (_) {
+    } catch (error, stackTrace) {
+      debugPrint('Unable to obtain the current location: $error');
+      debugPrintStack(stackTrace: stackTrace);
       return null;
     }
   }
 
   @override
   Stream<LocationPoint> watchLocation() async* {
-    if (!await Geolocator.isLocationServiceEnabled()) return;
+    if (!await Geolocator.isLocationServiceEnabled()) {
+      debugPrint('Location services are disabled.');
+      return;
+    }
 
     var permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
@@ -64,16 +70,21 @@ class LocationService implements LocationTrackingGateway {
       return;
     }
 
-    yield* Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.high,
-        distanceFilter: 20,
-      ),
-    ).map(
-      (position) => LocationPoint(
-        latitude: position.latitude,
-        longitude: position.longitude,
-      ),
-    );
+    try {
+      yield* Geolocator.getPositionStream(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          distanceFilter: 20,
+        ),
+      ).map(
+        (position) => LocationPoint(
+          latitude: position.latitude,
+          longitude: position.longitude,
+        ),
+      );
+    } catch (error, stackTrace) {
+      debugPrint('Location tracking ended: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    }
   }
 }

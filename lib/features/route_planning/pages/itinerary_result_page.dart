@@ -1,5 +1,6 @@
 import 'dart:math';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../../models/place.dart';
@@ -7,6 +8,7 @@ import '../../../models/trip_place_constraint.dart';
 import '../../../models/visit_preferences.dart';
 import '../../../services/live_itinerary_tracking_service.dart';
 import '../../../services/location_service.dart';
+import '../../../services/taiwan_county_resolver.dart';
 import '../../../services/trip_notification_service.dart';
 import '../../../services/weather_advisory_service.dart';
 import '../../../widgets/trip/visit_preferences_dialog.dart';
@@ -30,6 +32,8 @@ typedef RecalculateItinerary =
       Map<RouteLegKey, RouteTravelMode> travelModeOverrides,
       RouteItinerary previousItinerary,
     );
+typedef RequestIndoorItineraryAlternatives =
+    Future<void> Function(WeatherIndoorItineraryRequest request);
 
 class ItineraryResultPage extends StatefulWidget {
   final RouteItinerary itinerary;
@@ -38,6 +42,11 @@ class ItineraryResultPage extends StatefulWidget {
   final AddItineraryPlaces? onAddPlace;
   final RecalculateItinerary? onRecalculate;
 
+  /// Integration point for an AI-powered indoor itinerary recommendation.
+  /// This page asks for consent but deliberately does not change the itinerary.
+  final RequestIndoorItineraryAlternatives?
+  onRequestIndoorItineraryAlternatives;
+
   const ItineraryResultPage({
     super.key,
     required this.itinerary,
@@ -45,6 +54,7 @@ class ItineraryResultPage extends StatefulWidget {
     this.onExport,
     this.onAddPlace,
     this.onRecalculate,
+    this.onRequestIndoorItineraryAlternatives,
   });
 
   @override
@@ -60,9 +70,8 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
   final List<Place> _pendingPlaces = [];
   final _tripTracker = LiveItineraryTrackingService();
   final _notificationService = TripNotificationService();
-  final _weatherAdvisoryService = WeatherAdvisoryService(
-    apiKey: String.fromEnvironment('CWA_API_KEY'),
-  );
+  late final WeatherAdvisoryService _weatherAdvisoryService;
+  late final Future<TaiwanCountyResolver> _countyResolver;
   final _liveDayReplanner = LiveDayItineraryReplanner();
 
   late RouteItinerary _itinerary;
@@ -73,6 +82,8 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
   bool _isMapVisible = false;
   bool _isRecalculating = false;
   bool _isTracking = false;
+  bool _isStartingWeatherFlow = false;
+  bool _hasReportedWeatherError = false;
   bool _isLiveReplanning = false;
   LocationPoint? _currentLocation;
   List<LocationPoint> _trackedRoute = const [];
@@ -89,6 +100,10 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
   @override
   void initState() {
     super.initState();
+    _weatherAdvisoryService = WeatherAdvisoryService(
+      apiKey: const String.fromEnvironment('CWA_API_KEY'),
+    );
+    _countyResolver = TaiwanCountyResolver.load();
     _itinerary = widget.itinerary;
     _constraints = _constraintsFromItinerary(_itinerary);
     _travelModeOverrides = Map.of(_itinerary.travelModeOverrides);
@@ -233,35 +248,52 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
   Widget _buildToolbar() {
     return Padding(
       padding: const EdgeInsets.all(12),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          FilledButton.icon(
-            onPressed: _isRecalculating ? null : _addPlace,
-            icon: const Icon(Icons.add_location_alt_outlined),
-            label: const Text('新增景點'),
+          Row(
+            children: [
+              FilledButton.icon(
+                onPressed: _isRecalculating ? null : _addPlace,
+                icon: const Icon(Icons.add_location_alt_outlined),
+                label: const Text('新增景點'),
+              ),
+              const SizedBox(width: 12),
+              if (_isTracking) ...[
+                const Icon(Icons.gps_fixed, size: 18),
+                const SizedBox(width: 6),
+                const Text('GPS 追蹤中'),
+                const SizedBox(width: 12),
+              ],
+              const Expanded(
+                child: Text(
+                  '長按景點後拖到新的 Day 與時間；鎖定時段不接受放置。',
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (_isRecalculating) ...[
+                const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2.5),
+                ),
+                const SizedBox(width: 8),
+                const Text('正在重排…'),
+              ],
+            ],
           ),
-          const SizedBox(width: 12),
-          if (_isTracking) ...[
-            const Icon(Icons.gps_fixed, size: 18),
-            const SizedBox(width: 6),
-            const Text('GPS 追蹤中'),
-            const SizedBox(width: 12),
-          ],
-          const Expanded(
-            child: Text(
-              '長按景點後拖到新的 Day 與時間；鎖定時段不接受放置。',
-              overflow: TextOverflow.ellipsis,
+          if (kDebugMode)
+            Wrap(
+              alignment: WrapAlignment.end,
+              spacing: 8,
+              children: [
+                TextButton.icon(
+                  onPressed: _showDebugDelayDialog,
+                  icon: const Icon(Icons.bug_report_outlined),
+                  label: const Text('模擬延誤'),
+                ),
+              ],
             ),
-          ),
-          if (_isRecalculating) ...[
-            const SizedBox(
-              width: 20,
-              height: 20,
-              child: CircularProgressIndicator(strokeWidth: 2.5),
-            ),
-            const SizedBox(width: 8),
-            const Text('正在重排…'),
-          ],
         ],
       ),
     );
@@ -593,9 +625,14 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
   }
 
   Future<void> _startTracking() async {
+    _isStartingWeatherFlow = true;
+    _hasReportedWeatherError = false;
+    await _showInitialWeatherOverview();
+    if (!mounted) return;
     final started = await _tripTracker.start(_itinerary);
     if (!mounted) return;
     if (!started) {
+      _isStartingWeatherFlow = false;
       _showMessage('無法取得 GPS 位置，請確認已開啟定位服務並允許位置權限。');
       return;
     }
@@ -603,6 +640,16 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
       _isTracking = true;
       _isMapVisible = true;
     });
+    _isStartingWeatherFlow = false;
+    final currentLocation = _currentLocation;
+    if (currentLocation != null) {
+      final weather = await _checkWeatherAtCurrentLocation(currentLocation);
+      if (weather != null && mounted) {
+        await _showWeatherAdvisory(weather.advisories);
+      } else if (weather == null) {
+        _reportWeatherErrorOnce();
+      }
+    }
     _showMessage('已開始 GPS 行程追蹤；若明顯延誤，系統會更新今天剩餘行程。');
   }
 
@@ -611,17 +658,309 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
     if (mounted) setState(() => _isTracking = false);
   }
 
+  Future<void> _showWeatherOverview(CwaForecast forecast) {
+    String value(double? number, String unit) => number == null
+        ? '暫無資料'
+        : '${number.toStringAsFixed(number % 1 == 0 ? 0 : 1)}$unit';
+    final city = forecast.cityName ?? '';
+    final district = forecast.locationName ?? '';
+    final displayLocation = district.startsWith(city)
+        ? district
+        : '$city$district';
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        icon: const Icon(Icons.wb_cloudy_outlined),
+        title: Text(
+          '${displayLocation.isEmpty ? '行程地點' : displayLocation}天氣綜覽',
+        ),
+        content: SizedBox(
+          width: 330,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                forecast.weatherDescription ?? '暫無天氣預報綜合描述',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 16),
+              _weatherOverviewRow(
+                Icons.umbrella_outlined,
+                '3 小時降雨機率',
+                value(forecast.precipitationProbability, '%'),
+              ),
+              _weatherOverviewRow(
+                Icons.thermostat_outlined,
+                '最高溫度',
+                value(forecast.maximumTemperature, '°C'),
+              ),
+              _weatherOverviewRow(
+                Icons.wb_sunny_outlined,
+                '紫外線指數',
+                value(forecast.uvIndex, ''),
+              ),
+              _weatherOverviewRow(
+                Icons.ac_unit_outlined,
+                '最低溫度',
+                value(forecast.minimumTemperature, '°C'),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                '資料來源：CWA /v1/rest/datastore/F-D0047-093',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('查看行程'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showInitialWeatherOverview() async {
+    final now = DateTime.now();
+    final day = _itinerary.days
+        .where(
+          (item) =>
+              item.date.year == now.year &&
+              item.date.month == now.month &&
+              item.date.day == now.day,
+        )
+        .firstOrNull;
+    final visits = day?.visits ?? const <RouteVisit>[];
+    final visit =
+        visits
+            .where((item) => item.place.type == PlaceType.attraction)
+            .firstOrNull ??
+        visits.firstOrNull;
+    if (visit == null) {
+      _showMessage('今天沒有可用來查詢天氣的景點。');
+      return;
+    }
+
+    final names = _weatherLocationNames(visit.place);
+    final forecast = await _weatherAdvisoryService.overviewForPlace(
+      districtName: names.district,
+      cityName: names.city,
+      placePosition: LocationPoint(
+        latitude: visit.place.latitude,
+        longitude: visit.place.longitude,
+      ),
+      now: now,
+    );
+    if (!mounted) return;
+    if (forecast == null) {
+      _reportWeatherErrorOnce();
+      return;
+    }
+    await _showWeatherOverview(forecast);
+  }
+
+  ({String? district, String? city}) _weatherLocationNames(Place place) {
+    final address = place.address.trim();
+    final databaseCity = place.county.trim().replaceAll('台', '臺');
+    final databaseDistrict = place.district.trim().replaceAll('台', '臺');
+    final cityMatch = RegExp(
+      r'(臺北市|台北市|新北市|桃園市|臺中市|台中市|臺南市|台南市|高雄市|基隆市|新竹市|嘉義市|新竹縣|苗栗縣|彰化縣|南投縣|雲林縣|嘉義縣|屏東縣|宜蘭縣|花蓮縣|臺東縣|台東縣|澎湖縣|金門縣|連江縣)',
+    ).firstMatch(address);
+    final city = databaseCity.isNotEmpty
+        ? databaseCity
+        : (cityMatch?.group(1) ?? '').replaceAll('台', '臺');
+    final afterCity = cityMatch == null
+        ? address
+        : address.substring(cityMatch.end);
+    final district = databaseDistrict.isNotEmpty
+        ? databaseDistrict
+        : RegExp(
+            r'^([\u4e00-\u9fff]{1,5}(?:區|鄉|鎮|市))',
+          ).firstMatch(afterCity)?.group(1);
+    return (
+      district: district?.replaceAll('台', '臺'),
+      city: city.isEmpty ? null : city,
+    );
+  }
+
+  void _reportWeatherErrorOnce() {
+    if (_hasReportedWeatherError || !mounted) return;
+    _hasReportedWeatherError = true;
+    _showMessage(_weatherAdvisoryService.lastError ?? '目前無法取得 CWA 天氣資料。');
+  }
+
+  Future<WeatherCheckResult?> _checkWeatherAtCurrentLocation(
+    LocationPoint location,
+  ) async {
+    final resolver = await _countyResolver;
+    final city = resolver.resolve(
+      latitude: location.latitude,
+      longitude: location.longitude,
+    );
+    return _weatherAdvisoryService.check(location, cityName: city);
+  }
+
+  Widget _weatherOverviewRow(IconData icon, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        children: [
+          Icon(icon, size: 20),
+          const SizedBox(width: 10),
+          Expanded(child: Text(label)),
+          Text(value, style: const TextStyle(fontWeight: FontWeight.w600)),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showDebugDelayDialog() async {
+    if (!kDebugMode) return;
+    var scenario = DebugDelayScenario.stayTooLong;
+    var delayMinutes = 30;
+    final shouldSimulate = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('模擬延誤'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              RadioListTile<DebugDelayScenario>(
+                title: const Text('在目前景點停留太久'),
+                value: DebugDelayScenario.stayTooLong,
+                groupValue: scenario,
+                onChanged: (value) => setDialogState(() => scenario = value!),
+              ),
+              RadioListTile<DebugDelayScenario>(
+                title: const Text('距離下一個景點太遠'),
+                value: DebugDelayScenario.farFromNextStop,
+                groupValue: scenario,
+                onChanged: (value) => setDialogState(() => scenario = value!),
+              ),
+              const SizedBox(height: 8),
+              const Align(
+                alignment: Alignment.centerLeft,
+                child: Text('模擬延誤時間'),
+              ),
+              Wrap(
+                spacing: 8,
+                children: [
+                  for (final minutes in [15, 30, 60])
+                    ChoiceChip(
+                      label: Text('$minutes 分鐘'),
+                      selected: delayMinutes == minutes,
+                      onSelected: (_) =>
+                          setDialogState(() => delayMinutes = minutes),
+                    ),
+                ],
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('執行模擬'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (shouldSimulate != true || !mounted) return;
+
+    final hasToday = _itinerary.days.any(
+      (day) =>
+          day.date.year == DateTime.now().year &&
+          day.date.month == DateTime.now().month &&
+          day.date.day == DateTime.now().day,
+    );
+    if (!hasToday) {
+      _showMessage('請先建立包含今天的行程，才能模擬延誤。');
+      return;
+    }
+    setState(() => _isMapVisible = true);
+    _tripTracker.simulateDelay(
+      itinerary: _itinerary,
+      scenario: scenario,
+      delayMinutes: delayMinutes,
+    );
+  }
+
+  Future<void> _showWeatherAdvisory(List<WeatherAdvisory> advisories) async {
+    if (!mounted || advisories.isEmpty) return;
+    final shouldOfferIndoor = WeatherAdvisory.shouldOfferIndoorAlternative(
+      advisories,
+    );
+    final advice = advisories.map((advisory) => advisory.body).join('\n\n');
+    final wantsIndoorAlternatives = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        icon: Icon(
+          shouldOfferIndoor
+              ? Icons.home_work_outlined
+              : Icons.health_and_safety_outlined,
+        ),
+        title: Text(shouldOfferIndoor ? '天氣可能影響戶外行程' : '天氣提醒'),
+        content: Text(
+          shouldOfferIndoor ? '$advice\n\n要請 AI 推薦室內替代行程嗎？' : advice,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(shouldOfferIndoor ? '維持目前行程' : '知道了'),
+          ),
+          if (shouldOfferIndoor)
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('查看室內建議'),
+            ),
+        ],
+      ),
+    );
+    if (!shouldOfferIndoor || wantsIndoorAlternatives != true || !mounted)
+      return;
+    final request = WeatherIndoorItineraryRequest(
+      advisories: advisories,
+      requestedAt: DateTime.now(),
+    );
+    final handler = widget.onRequestIndoorItineraryAlternatives;
+    if (handler == null) {
+      _showMessage('已建立室內行程推薦請求（等待串接 AI 推薦服務）。');
+      return;
+    }
+    try {
+      await handler(request);
+      if (mounted) _showMessage('已送出室內行程推薦請求。');
+    } catch (_) {
+      if (mounted) _showMessage('室內行程推薦暫時無法使用，請稍後再試。');
+    }
+  }
+
   Future<void> _handleTrackingUpdate(TripTrackingUpdate update) async {
     if (!mounted) return;
     setState(() {
       _currentLocation = update.location;
       _trackedRoute = update.route;
     });
-    await _weatherAdvisoryService.check(update.location);
+    if (_isStartingWeatherFlow) return;
+    final weather = await _checkWeatherAtCurrentLocation(update.location);
+    if (weather != null && mounted) {
+      await _showWeatherAdvisory(weather.advisories);
+    } else if (weather == null && _weatherAdvisoryService.lastError != null) {
+      _reportWeatherErrorOnce();
+    }
     final alert = update.delayAlert;
     if (alert == null || _isLiveReplanning) return;
 
-    final now = DateTime.now();
+    final now = update.observedAt;
     final dayIndex = _itinerary.days.indexWhere(
       (day) =>
           day.date.year == now.year &&
@@ -642,7 +981,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
         request: _itinerary.request,
         origin: _itinerary.origin,
         days: revisedDays,
-        generatedAt: DateTime.now(),
+        generatedAt: now,
         warnings: _itinerary.warnings,
         inputs: _itinerary.inputs,
         travelModeOverrides: _itinerary.travelModeOverrides,
