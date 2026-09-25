@@ -1,2 +1,3 @@
 export 'google_route_geometry_service_stub.dart'
+    if (dart.library.io) 'google_route_geometry_service_native.dart'
     if (dart.library.js_interop) 'google_route_geometry_service_web.dart';

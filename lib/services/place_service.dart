@@ -127,6 +127,7 @@ class PlaceService {
     return parsedPlaces.where((place) => place.type == expectedType).toList();
   }
 
+
   static List<Place> filterCatalog({
     required Iterable<Place> places,
     required PlaceType type,

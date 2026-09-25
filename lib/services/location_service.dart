@@ -87,4 +87,12 @@ class LocationService implements LocationTrackingGateway {
       debugPrintStack(stackTrace: stackTrace);
     }
   }
+  static double getDistance(
+    double startLat,
+    double startLng,
+    double endLat,
+    double endLng,
+  ) {
+    return Geolocator.distanceBetween(startLat, startLng, endLat, endLng);
+  }
 }

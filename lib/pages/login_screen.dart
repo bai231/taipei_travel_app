@@ -111,15 +111,19 @@ class _LoginScreenState extends State<LoginScreen> {
             key: _formKey,
             child: Column(
               children: [
-                // 1. 頂部兩側裝飾點點
+                // 1. 頂部列：移除所有點點，叉叉靠右對齊
                 Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8.0),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: const [
-                      Icon(Icons.more_horiz, color: textPrimaryColor, size: 28),
-                      Icon(Icons.more_horiz, color: textPrimaryColor, size: 28),
-                    ],
+                  padding: const EdgeInsets.only(top: 4.0, bottom: 4.0),
+                  child: Align(
+                    alignment: Alignment.topRight,
+                    child: IconButton(
+                      icon: const Icon(
+                        Icons.close_rounded,
+                        color: textPrimaryColor,
+                        size: 28,
+                      ),
+                      onPressed: () => Navigator.pop(context), // 點擊退出關閉登入頁
+                    ),
                   ),
                 ),
 

@@ -4,12 +4,12 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../../../models/route_geometry_segment.dart';
 import '../../../services/google_route_geometry_service.dart';
 import '../../../services/map_service.dart';
+import '../../../services/route_error_message.dart';
 import '../../../services/route_geometry_gateway.dart';
 import '../../../services/route_geometry_normalizer.dart';
 import '../../../services/location_service.dart';
 import '../models/route_day.dart';
 import '../models/route_visit.dart';
-import '../models/route_travel_mode.dart';
 
 class TripMapPanel extends StatefulWidget {
   final RouteDay day;
@@ -120,38 +120,28 @@ class _TripMapPanelState extends State<TripMapPanel> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              _MapMessage(
-                icon: Icons.info_outline,
-                showProgress: _isLoadingRoute,
-                label: [
-                  '${_loadedLegs.length} 段已載入，${_failedLegs.length} 段無法取得路徑${_isLoadingRoute ? '（載入中）' : ''}',
-                  if (widget.day.travelLegs.any(
-                    (leg) => leg.travelMode == RouteTravelMode.transit,
-                  ))
-                    'Google 參考路線，可能與 TDX 班次不同。',
-                  if (_failedLegs.isNotEmpty) '紅色虛線為示意連線，不代表可行走道路。',
-                ].join('\n'),
-              ),
-              if (_failedLegs.isNotEmpty)
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    TextButton(
-                      onPressed: _showFailures,
-                      child: const Text('查看原因'),
-                    ),
-                    FilledButton(
-                      onPressed: _isLoadingRoute
-                          ? null
-                          : () => _loadRouteGeometry(retryOnly: true),
-                      child: const Text('重試失敗路段'),
-                    ),
-                  ],
+              InkWell(
+                onTap: _showFailures,
+                child: _MapMessage(
+                  icon: Icons.info_outline,
+                  showProgress: _isLoadingRoute,
+                  label: [
+                    '${_loadedLegs.length} 段已載入，${_failedLegs.length} 段無法取得路徑${_isLoadingRoute ? '（載入中）' : ''}',
+                    if (_failedLegs.isNotEmpty) '虛線非實際道路 · 點此查看說明',
+                  ].join('\n'),
                 ),
+              ),
             ],
           ),
         ),
-        const Positioned(left: 12, bottom: 12, child: _RouteLegend()),
+        Positioned(
+          right: 12,
+          bottom: 12,
+          child: FilledButton.tonal(
+            onPressed: _showFailures,
+            child: const Text('圖例與說明'),
+          ),
+        ),
       ],
     );
   }
@@ -160,18 +150,35 @@ class _TripMapPanelState extends State<TripMapPanel> {
     showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('無法取得路徑'),
+        title: const Text('路線說明'),
         content: SingleChildScrollView(
-          child: Text(
-            _failedLegs.entries
-                .map((entry) {
-                  final leg = widget.day.travelLegs[entry.key];
-                  return '${leg.origin.name} → ${leg.destination.name}\n${entry.value}';
-                })
-                .join('\n\n'),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Google 參考路線可能與 TDX 班次不同。紅色虛線僅為示意連線，不代表可行走道路。'),
+              const _RouteLegend(),
+              Text(
+                _failedLegs.entries
+                    .map((entry) {
+                      final leg = widget.day.travelLegs[entry.key];
+                      return '${leg.origin.name} → ${leg.destination.name}\n${entry.value}';
+                    })
+                    .join('\n\n'),
+              ),
+            ],
           ),
         ),
         actions: [
+          if (_failedLegs.isNotEmpty)
+            TextButton(
+              onPressed: _isLoadingRoute
+                  ? null
+                  : () {
+                      Navigator.pop(context);
+                      _loadRouteGeometry(retryOnly: true);
+                    },
+              child: const Text('重試'),
+            ),
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: const Text('關閉'),
@@ -223,7 +230,11 @@ class _TripMapPanelState extends State<TripMapPanel> {
         });
       } catch (error) {
         if (!mounted || requestVersion != _requestVersion) return;
-        setState(() => _failedLegs[index] = error.toString());
+        setState(
+          () => _failedLegs[index] = error is UnsupportedError
+              ? '此平台尚未支援路線線條。'
+              : routeErrorMessage(error),
+        );
       }
     }
     if (!mounted || requestVersion != _requestVersion) return;
