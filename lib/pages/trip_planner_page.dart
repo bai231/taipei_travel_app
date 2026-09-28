@@ -23,6 +23,7 @@ import '../services/recommendation/must_visit_resolver.dart';
 import '../models/trip_auto_fill_plan.dart';
 import '../services/recommendation/trip_auto_fill_service.dart';
 import '../models/recommendation_conflict.dart';
+import '../features/route_planning/services/itinerary_place_resolver.dart';
 
 class TripPlannerPage extends StatefulWidget {
   final TripRequest request;
@@ -56,6 +57,9 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
   final TripAutoFillService _autoFillService = const TripAutoFillService();
   final Set<String> _autoRecommendedPlaceIds = {};
   final Map<String, List<String>> _autoRecommendationReasonsByPlaceId = {};
+  double _candidateAreaHeight = 240;
+  final ItineraryPlaceResolver _itineraryPlaceResolver =
+      const ItineraryPlaceResolver();
 
   // ============================================================
   // 使用者已經加入的景點
@@ -273,11 +277,10 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
 
           //顯示篩選
           //_buildCandidateFilterCard(),
-          _buildMustVisitResultCard(),
+          //_buildMustVisitResultCard(),
 
           //顯示推薦結果
-          _buildRecommendationResultCard(),
-
+          //_buildRecommendationResultCard(),
           _buildTypeSelector(),
 
           // Day 選擇
@@ -1638,6 +1641,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
             onEdit: () => Navigator.of(resultContext).pop(),
             onAddPlace: _pickAdditionalPlaces,
             onRecalculate: _recalculateItinerary,
+            onResolvePlaceQuery: _resolveItineraryPlaceQuery,
           ),
         ),
       );
@@ -1951,6 +1955,19 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
           height: 1.3,
         ),
       ),
+    );
+  }
+
+  Future<List<ItineraryPlaceMatch>> _resolveItineraryPlaceQuery(
+    String query,
+    Set<String> excludedPlaceIds,
+  ) async {
+    return _itineraryPlaceResolver.search(
+      query: query,
+      places: widget.places,
+      excludedPlaceIds: excludedPlaceIds,
+      preferredLocation: widget.request.location,
+      recommendationScoresByPlaceId: _candidateScoresByPlaceId,
     );
   }
 }
