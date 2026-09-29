@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html>
+
 <head>
   <!--
     If you are serving your web app in a path other than the root, change the
@@ -27,7 +28,7 @@
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
 
   <!-- Favicon -->
-  <link rel="icon" type="image/png" href="favicon.png"/>
+  <link rel="icon" type="image/png" href="favicon.png" />
 
   <title>taipei_travel_app</title>
   <link rel="manifest" href="manifest.json">
@@ -49,7 +50,7 @@
 
       const mapsScript = document.createElement('script');
       mapsScript.src = 'https://maps.googleapis.com/maps/api/js?key=' +
-          encodeURIComponent(window.MAPS_API_KEY) + '&loading=async';
+        encodeURIComponent(window.MAPS_API_KEY) + '&loading=async';
       mapsScript.async = true;
       mapsScript.onload = startFlutter;
       mapsScript.onerror = function () {
@@ -59,6 +60,7 @@
     });
   </script>
 </head>
+
 <body>
   <!--
     You can customize the "flutter_bootstrap.js" script.
@@ -69,4 +71,5 @@
     * https://docs.flutter.dev/platform-integration/web/initialization
   -->
 </body>
+
 </html>

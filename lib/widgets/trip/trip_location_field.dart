@@ -38,7 +38,7 @@ class TripLocationField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DropdownButtonFormField<String>(
-      value: location,
+      initialValue: location,
 
       decoration: InputDecoration(
         labelText: "旅遊地點",

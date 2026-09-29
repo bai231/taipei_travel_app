@@ -5,6 +5,10 @@ import '../theme/app_theme.dart';
 import '../services/favorite_service.dart';
 import '../models/place.dart';
 import 'itinerary_result_page.dart';
+import 'place_detail_page.dart';
+import '../services/user_data_service.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+// import '../services/saved_itinerary_service.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -15,13 +19,17 @@ class ProfilePage extends StatefulWidget {
 
 class _ProfilePageState extends State<ProfilePage> {
   final FavoriteService _favoriteService = FavoriteService();
-
+  final UserDataService _userDataService = UserDataService();
   // 模擬行程與資料夾資料（指定明確型別避免轉型錯誤）
   final List<String> _itineraries = ["台北一日遊", "九份文化之旅"];
-  final List<Map<String, dynamic>> _folders = [
+  List<Map<String, dynamic>> _folders = [];
+  bool _isLoadingFolders = true;
+  /*final List<Map<String, dynamic>> _folders = [
     {"title": "必去美食", "places": <Place>[]},
     {"title": "拍照打卡", "places": <Place>[]},
-  ];
+  ];*/
+  List<Map<String, dynamic>> _exportedTrips = [];
+  bool _isLoadingExportedTrips = true;
 
   @override
   void initState() {
@@ -30,6 +38,19 @@ class _ProfilePageState extends State<ProfilePage> {
     _favoriteService.addListener(_onFavoritesChanged);
     // 🌟 關鍵修復：進入頁面時主動向 Supabase 撈取雲端收藏！
     _favoriteService.fetchFavoritesFromCloud();
+    _loadCloudFolders();
+    //_loadExportedTrips();
+  }
+
+  Future<void> _loadCloudFolders() async {
+    final cloudFolders = await _userDataService.fetchFolders();
+    //print("👉 抓回來的資料夾筆數: ${cloudFolders.length}");
+    if (mounted) {
+      setState(() {
+        _folders = cloudFolders;
+        _isLoadingFolders = false;
+      });
+    }
   }
 
   @override
@@ -121,8 +142,11 @@ class _ProfilePageState extends State<ProfilePage> {
                         label: '查看資訊',
                         onTap: () {
                           Navigator.pop(dialogCtx);
-                          ScaffoldMessenger.of(parentContext).showSnackBar(
-                            SnackBar(content: Text('查看「${place.name}」詳細資訊')),
+                          Navigator.push(
+                            parentContext,
+                            MaterialPageRoute(
+                              builder: (_) => PlaceDetailPage(place: place),
+                            ),
                           );
                         },
                       ),
@@ -217,7 +241,7 @@ class _ProfilePageState extends State<ProfilePage> {
                         child: ListView.separated(
                           shrinkWrap: true,
                           itemCount: places.length,
-                          separatorBuilder: (_, __) => const Divider(height: 1, color: Colors.black12),
+                          separatorBuilder: (_, _) => const Divider(height: 1, color: Colors.black12),
                           itemBuilder: (context, index) {
                             final place = places[index];
                             return ListTile(
@@ -305,17 +329,29 @@ class _ProfilePageState extends State<ProfilePage> {
                           ),
                         ),
                         trailing: const Icon(Icons.add, color: AppColors.textPrimary),
-                        onTap: () {
-                          setState(() {
-                            final List<Place> list = List<Place>.from(folder["places"] as Iterable);
-                            list.add(place);
-                            folder["places"] = list;
-                          });
-                          Navigator.pop(ctx);
-                          ScaffoldMessenger.of(parentContext).showSnackBar(
-                            SnackBar(content: Text("已將「${place.name}」加入資料夾「${folder["title"]}」！")),
-                          );
-                        },
+                        onTap: () async {
+  final int folderId = (folder["id"] as num).toInt();
+  Navigator.pop(ctx); // 先關閉彈窗
+
+  // 1. 同步寫入雲端關聯表
+  final success = await _userDataService.addPlaceToFolder(folderId, place);
+
+  // 2. 重新從雲端載入最新狀態並強制 setState 刷新畫面
+  if (success) {
+    await _loadCloudFolders();
+    if (parentContext.mounted) {
+      ScaffoldMessenger.of(parentContext).showSnackBar(
+        SnackBar(content: Text("已將「${place.name}」加入「${folder["title"]}」！")),
+      );
+    }
+  } else {
+    if (parentContext.mounted) {
+      ScaffoldMessenger.of(parentContext).showSnackBar(
+        const SnackBar(content: Text("加入失敗，請稍後再試")),
+      );
+    }
+  }
+},
                       );
                     },
                   ),
@@ -375,21 +411,32 @@ class _ProfilePageState extends State<ProfilePage> {
               foregroundColor: AppColors.surface,
               shape: const StadiumBorder(),
             ),
-            onPressed: () {
-              final folderName = folderController.text.trim();
-              if (folderName.isNotEmpty) {
-                setState(() {
-                  _folders.add({
-                    "title": folderName,
-                    "places": <Place>[place],
-                  });
-                });
-                Navigator.pop(ctx);
+            onPressed: () async {
+            final folderName = folderController.text.trim();
+            if (folderName.isEmpty) return;
+
+            Navigator.pop(ctx);
+
+            final newFolder = await _userDataService.createFolder(
+              folderName,
+              initialPlace: place,
+            );
+
+            if (newFolder != null) {
+              await _loadCloudFolders();
+              if (parentContext.mounted) {
                 ScaffoldMessenger.of(parentContext).showSnackBar(
-                  SnackBar(content: Text("已建立「$folderName」並將「${place.name}」移入！")),
+                  SnackBar(content: Text("已在雲端建立「$folderName」並將「${place.name}」移入！")),
                 );
               }
-            },
+            } else {
+              if (parentContext.mounted) {
+                ScaffoldMessenger.of(parentContext).showSnackBar(
+                  const SnackBar(content: Text("建立資料夾失敗，請確認是否已登入")),
+                );
+              }
+            }
+          },
             child: const Text("建立", style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
@@ -421,7 +468,7 @@ class _ProfilePageState extends State<ProfilePage> {
                   style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w500),
                 ),
                 trailing: const Icon(Icons.add, color: AppColors.textPrimary),
-                onTap: () {
+                onTap: () async{
                   Navigator.pop(ctx);
                   ScaffoldMessenger.of(parentContext).showSnackBar(
                     SnackBar(content: Text("已將「${place.name}」加入「$trip」！")),
@@ -497,7 +544,7 @@ class _ProfilePageState extends State<ProfilePage> {
                     : ListView.separated(
                         scrollDirection: Axis.horizontal,
                         itemCount: favorites.length,
-                        separatorBuilder: (_, __) => const SizedBox(width: 14),
+                        separatorBuilder: (_, _) => const SizedBox(width: 14),
                         itemBuilder: (context, index) {
                           final place = favorites[index];
                           return _buildPlaceCard(place);
@@ -505,7 +552,7 @@ class _ProfilePageState extends State<ProfilePage> {
                       ),
               ),
 
-              const SizedBox(height: 28),
+              const SizedBox(height: 16),
 
               // 行程區塊
               const Text(
@@ -518,14 +565,14 @@ class _ProfilePageState extends State<ProfilePage> {
                 child: ListView.separated(
                   scrollDirection: Axis.horizontal,
                   itemCount: _itineraries.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 14),
+                  separatorBuilder: (_, _) => const SizedBox(width: 14),
                   itemBuilder: (context, index) {
                     return _buildTripCard(_itineraries[index]);
                   },
                 ),
               ),
 
-              const SizedBox(height: 28),
+              const SizedBox(height: 16),
 
               // 我的資料夾區塊
               const Text(
@@ -540,7 +587,7 @@ class _ProfilePageState extends State<ProfilePage> {
                     : ListView.separated(
                         scrollDirection: Axis.horizontal,
                         itemCount: _folders.length,
-                        separatorBuilder: (_, __) => const SizedBox(width: 14),
+                        separatorBuilder: (_, _) => const SizedBox(width: 14),
                         itemBuilder: (context, index) {
                           final folder = _folders[index];
                           return _buildFolderCard(folder);
@@ -558,13 +605,19 @@ class _ProfilePageState extends State<ProfilePage> {
 
   // 景點卡片
   Widget _buildPlaceCard(Place place) {
-    return Container(
-      width: 110,
-      decoration: BoxDecoration(
-        color: AppColors.primary,
-        borderRadius: BorderRadius.circular(20),
+    return InkWell(
+      borderRadius: BorderRadius.circular(20),
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => PlaceDetailPage(place: place)),
       ),
-      child: Column(
+      child: Container(
+        width: 110,
+        decoration: BoxDecoration(
+          color: AppColors.primary,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Column(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           const Padding(
@@ -607,6 +660,7 @@ class _ProfilePageState extends State<ProfilePage> {
             ),
           ),
         ],
+        ),
       ),
     );
   }

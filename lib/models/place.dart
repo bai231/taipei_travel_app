@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 enum PlaceType {
   attraction,
   restaurant,
@@ -76,8 +78,23 @@ class Place {
   final String image;
   final PlaceType type;
   final String county;
+  final String district;
   final String openingHoursRaw;
+  final List<String> openingHours;
   final bool? openingHoursProvided;
+  final String phone;
+  final String website;
+
+  final double? distanceInMeters; // 與使用者位置的距離（公尺）
+
+  String get formattedDistance {
+    if (distanceInMeters == null) return '';
+    if (distanceInMeters! < 1000) {
+      return '${distanceInMeters!.round()}m';
+    } else {
+      return '${(distanceInMeters! / 1000).toStringAsFixed(1)}km';
+    }
+  }
 
   bool get hasKnownOpeningHours =>
       openingHoursProvided != false &&
@@ -118,8 +135,13 @@ class Place {
     required this.image,
     this.type = PlaceType.attraction,
     this.county = '',
+    this.district = '',
     this.openingHoursRaw = '',
+    this.openingHours = const [],
     this.openingHoursProvided,
+    this.phone = '',
+    this.website = '',
+    this.distanceInMeters,
     required this.stayTime,
     required this.rating,
     required this.tags,
@@ -153,6 +175,53 @@ class Place {
       return num.tryParse(value?.toString() ?? '');
     }
 
+    Object? nestedValue(Object? source, List<String> keys) {
+      if (source is! Map) return null;
+      for (final key in keys) {
+        final value = source[key];
+        if (value != null && value.toString().trim().isNotEmpty) return value;
+      }
+      return null;
+    }
+
+    List<String> stringList(Object? value) {
+      if (value == null) return const [];
+      if (value is String) {
+        final trimmed = value.trim();
+        if (trimmed.isEmpty) return const [];
+        if ((trimmed.startsWith('[') && trimmed.endsWith(']')) ||
+            (trimmed.startsWith('{') && trimmed.endsWith('}'))) {
+          try {
+            return stringList(jsonDecode(trimmed));
+          } catch (_) {
+            // 不是 JSON 時，繼續按一般文字處理。
+          }
+        }
+        return trimmed
+            .split(RegExp(r'\r?\n'))
+            .map((line) => line.trim())
+            .where((line) => line.isNotEmpty)
+            .toList();
+      }
+      if (value is Iterable) {
+        return value
+            .map((item) => item.toString().trim())
+            .where((item) => item.isNotEmpty)
+            .toList();
+      }
+      if (value is Map) {
+        return stringList(
+          nestedValue(value, const [
+            'weekday_text',
+            'weekdayText',
+            'weekday_descriptions',
+            'weekdayDescriptions',
+          ]),
+        );
+      }
+      return const [];
+    }
+
     String combinedAddress() {
       final directAddress =
           firstValue(['address', 'Address'])?.toString() ?? '';
@@ -178,6 +247,23 @@ class Place {
         ? Map<String, dynamic>.from(json['Picture'] as Map)
         : const <String, dynamic>{};
     final rawTags = json['tags'];
+    final rawOpeningHours = firstValue([
+      'opening_hours',
+      'openingHours',
+      'regular_opening_hours',
+      'regularOpeningHours',
+      'current_opening_hours',
+      'currentOpeningHours',
+      'weekday_text',
+      'weekday_descriptions',
+      'weekdayDescriptions',
+      'OpenTime',
+      'ServiceTime',
+      '營業時間',
+    ]);
+    final openingHours = stringList(rawOpeningHours);
+    String tagValue(String key) =>
+        rawTags is Map ? rawTags[key]?.toString().trim() ?? '' : '';
     final tags = rawTags is Iterable
         ? rawTags.map((tag) => tag.toString()).toList()
         : rawTags is Map
@@ -256,18 +342,55 @@ class Place {
             'location',
             '縣市名稱',
           ])?.toString() ??
-          '',
+          tagValue('addr:city'),
+      district:
+          firstValue(['district', 'town', 'Town', '行政區(鄉鎮區)名稱'])?.toString() ??
+          tagValue('addr:district'),
       stayTime: numberValue(['stayTime', 'stay_time'])?.toInt() ?? 60,
-      openingHoursRaw:
-          firstValue(['opening_hours', 'OpenTime'])?.toString() ?? '',
+      openingHoursRaw: rawOpeningHours is String
+          ? rawOpeningHours
+          : openingHours.join('\n'),
+      openingHours: openingHours,
       openingHoursProvided:
           (numberValue(['openMinutes', 'open_minutes']) != null &&
               numberValue(['closeMinutes', 'close_minutes']) != null) ||
-          firstValue(['opening_hours', 'OpenTime'])?.toString().trim() ==
-              '24/7',
+          openingHours.isNotEmpty,
+      phone:
+          firstValue([
+            'phone',
+            'phone_number',
+            'phoneNumber',
+            'telephone',
+            'Telephone',
+            'tel',
+            'Tel',
+            'formatted_phone_number',
+            'formattedPhoneNumber',
+            'national_phone_number',
+            'nationalPhoneNumber',
+            'international_phone_number',
+            'internationalPhoneNumber',
+            'Phone',
+            'PhoneNumber',
+            '電話',
+          ])?.toString() ??
+          '',
+      website:
+          firstValue([
+            'website',
+            'website_url',
+            'websiteUrl',
+            'website_uri',
+            'websiteUri',
+            'WebsiteUrl',
+            '網址',
+          ])?.toString() ??
+          '',
       rating: numberValue(['rating', 'Rating'])?.toDouble() ?? 0.0,
       tags: tags,
-      price_level: (json['price_level'] as num?)?.toInt() ?? 0,
+      price_level:
+          numberValue(['price_level', 'priceLevel', 'PriceLevel'])?.toInt() ??
+          0,
       //estimatedCost:
       //    numberValue(['estimatedCost', 'estimated_cost'])?.toDouble() ?? 0.0,
       openMinutes: numberValue(['openMinutes', 'open_minutes'])?.toInt() ?? 0,
@@ -276,7 +399,7 @@ class Place {
     );
   }
 
-  Place copyWith({String? county}) {
+  Place copyWith({String? county, double? distanceInMeters}) {
     return Place(
       id: id,
       name: name,
@@ -288,8 +411,13 @@ class Place {
       image: image,
       type: type,
       county: county ?? this.county,
+      district: district,
       openingHoursRaw: openingHoursRaw,
+      openingHours: openingHours,
       openingHoursProvided: openingHoursProvided,
+      phone: phone,
+      website: website,
+      distanceInMeters: distanceInMeters ?? this.distanceInMeters,
       stayTime: stayTime,
       rating: rating,
       tags: tags,

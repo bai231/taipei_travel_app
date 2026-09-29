@@ -181,7 +181,7 @@ class _SearchPageState extends State<SearchPage> {
                           Container(
                             width: 2,
                             height: 28,
-                            color: const Color(0xFF7CB8A3).withOpacity(0.6),
+                            color: const Color(0xFF7CB8A3).withValues(alpha: 0.6),
                           ),
                       ],
                     ),

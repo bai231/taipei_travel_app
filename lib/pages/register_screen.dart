@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart'; 
 import '../services/auth_service.dart';
 import 'guide_overlay_screen.dart';
-import '../theme/app_theme.dart'; // 引入色彩系統
+// 引入色彩系統
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});

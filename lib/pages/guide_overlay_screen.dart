@@ -250,7 +250,7 @@ void showUserGuide(BuildContext context) {
     PageRouteBuilder(
       opaque: false,
       barrierDismissible: false,
-      pageBuilder: (context, _, __) => GuideOverlayScreen(steps: defaultSteps),
+      pageBuilder: (context, _, _) => GuideOverlayScreen(steps: defaultSteps),
     ),
   );
 }

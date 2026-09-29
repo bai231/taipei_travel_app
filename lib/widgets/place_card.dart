@@ -69,11 +69,11 @@ class _PlaceCardState extends State<PlaceCard> {
                     height: 100,
                     width: double.infinity,
                     color: AppColors.primaryLight.withValues(alpha: 0.35),
-                    child: widget.place.image != null && widget.place.image!.isNotEmpty
+                    child: widget.place.image.isNotEmpty
                         ? Image.network(
-                            widget.place.image!,
+                            widget.place.image,
                             fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => _buildPlaceholder(),
+                            errorBuilder: (_, _, _) => _buildPlaceholder(),
                           )
                         : _buildPlaceholder(),
                   ),
@@ -121,6 +121,33 @@ class _PlaceCardState extends State<PlaceCard> {
                     ),
                   ),
                 ),
+                if (widget.place.distanceInMeters != null)
+                  Positioned(
+                    top: 8,
+                    left: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3.5),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.65), // 半透明黑底
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.near_me_rounded, color: Colors.white, size: 10),
+                          const SizedBox(width: 3),
+                          Text(
+                            widget.place.formattedDistance,
+                            style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
               ],
             ),
 

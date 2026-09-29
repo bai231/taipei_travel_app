@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'place_detail_page.dart';
 import '../models/place.dart';
+import '../widgets/trip/planner_favorite_picker_dialog.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../services/saved_itinerary_service.dart';
 
 class ItineraryResultPage extends StatefulWidget {
   final String tripTitle;

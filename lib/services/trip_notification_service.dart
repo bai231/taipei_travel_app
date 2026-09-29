@@ -14,6 +14,7 @@ class TripNotificationService {
     if (_initialized) return;
     const settings = InitializationSettings(
       android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+      linux: LinuxInitializationSettings(defaultActionName: '開啟'),
       iOS: DarwinInitializationSettings(
         requestAlertPermission: false,
         requestBadgePermission: false,
@@ -56,6 +57,9 @@ class TripNotificationService {
           presentBadge: true,
           presentSound: true,
         ),
+        linux: LinuxNotificationDetails(
+          urgency: LinuxNotificationUrgency.normal,
+        ),
       ),
     );
   }
@@ -84,6 +88,9 @@ class TripNotificationService {
           presentAlert: true,
           presentBadge: true,
           presentSound: true,
+        ),
+        linux: LinuxNotificationDetails(
+          urgency: LinuxNotificationUrgency.normal,
         ),
       ),
     );
