@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart'; // 引入 Supabase 錯誤型別
 import '../services/auth_service.dart';                  // 引入會員驗證服務
 import '../services/favorite_service.dart';              // 引入收藏雲端同步服務
+import '../services/user_data_service.dart';     
+import '../services/saved_itinerary_service.dart';   
 import 'register_screen.dart';
 import '../theme/app_theme.dart';
 
@@ -56,14 +58,18 @@ class _LoginScreenState extends State<LoginScreen> {
       password: password,
     );
 
-    debugPrint("✅ 2. 帳密驗證成功！開始同步收藏清單...");
+    final user = Supabase.instance.client.auth.currentUser;
 
-    // 2. 嘗試載入收藏（若這裡報錯也不卡死登入流程）
-    try {
-      await FavoriteService().fetchFavoritesFromCloud();
-      debugPrint("✅ 3. 雲端收藏同步成功！");
-    } catch (favError) {
-      debugPrint("⚠️ 收藏同步失敗（但不影響登入）: $favError");
+    if (user != null) {
+    // 🌟 核心：一次把「收藏」、「自訂資料夾」、「自己排好的行程」全部撈齊
+      await Future.wait([
+        FavoriteService().fetchFavoritesFromCloud(),
+        UserDataService().fetchFolders(),
+        SavedItineraryService(Supabase.instance.client).list(
+        offset: 0,
+        limit: 50,
+        ),
+      ]);
     }
 
     if (!mounted) return;

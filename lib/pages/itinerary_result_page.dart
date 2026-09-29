@@ -1,741 +1,558 @@
 import 'package:flutter/material.dart';
-import 'place_detail_page.dart';
-import '../models/place.dart';
-import '../widgets/trip/planner_favorite_picker_dialog.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/saved_itinerary_service.dart';
+import '../features/route_planning/pages/itinerary_result_page.dart' as planner;
+import '../features/route_planning/models/route_itinerary.dart';
+import '../features/route_planning/services/itinerary_planning_service.dart';
+import '../widgets/trip/planner_item_picker.dart';
+import '../widgets/trip/planner_favorite_picker_dialog.dart';
+import '../models/place.dart';
+import '../algorithm/route_optimizer.dart';
+
+
+import '../features/route_planning/models/route_itinerary.dart';
+import '../features/route_planning/models/route_day.dart';
+import '../features/route_planning/models/route_visit.dart';
+import '../features/route_planning/models/route_travel_mode.dart';
+import '../features/route_planning/models/travel_leg.dart';
+
+import '../models/trip_place_constraint.dart';
+
 
 class ItineraryResultPage extends StatefulWidget {
   final String tripTitle;
+  final Map<String, dynamic>? initialSnapshot;
 
-  const ItineraryResultPage({super.key, this.tripTitle = "台北文藝慢活之旅"});
+  const ItineraryResultPage({
+    super.key,
+    required this.tripTitle,
+    this.initialSnapshot,
+  });
 
   @override
   State<ItineraryResultPage> createState() => _ItineraryResultPageState();
 }
 
 class _ItineraryResultPageState extends State<ItineraryResultPage> {
-  // 色彩配置：高透白手帳卡片底色與水彩綠
-  static const Color pageBgColor = Color(0xFFC7DEC8); // 淺水彩綠底色[cite: 1]
-  static final Color dayColumnBg = Colors.white.withValues(
-    alpha: 0.88,
-  ); // 高透白天數底色
-  static const Color cardBg = Color(0xFF70B19B); // 景點卡片青綠色[cite: 1]
-  static const Color dividerColor = Color(0xFF5A9B85); // 卡片內部分隔線
-  static const Color textDark = Color(0xFF1E3A2F); // 墨綠主文字[cite: 1]
+  // 色彩配置
+  static const Color primaryBg = Color(0xFFC7DEC8);
+  static const Color dayColumnBg = Colors.white; // 珍珠白大底欄
+  static const Color cardColor = Color(0xFFF4F8F5);
+  static const Color textDark = Color(0xFF1E3A2F);
+  static const Color textSub = Color(0xFF5A7265);
+  static const Color accentBrown = Color(0xFF8C7355);
 
-  final TextEditingController _promptController = TextEditingController();
-
-  // 追蹤展開推薦理由的狀態（以 spot['id'] 識別，避免拖曳換順序時展開錯亂）
-  final Set<String> _expandedSpotIds = {};
-
-  // 多日排程資料（每個景點加上唯一 id 供 Reorderable Key 與展開使用）
-  final List<Map<String, dynamic>> _daysData = [
-    {
-      "dayTitle": "day1",
-      "spots": [
-        {
-          "id": "s1_1",
-          "name": "故宮博物院",
-          "category": "文藝展覽",
-          "time": "09:00",
-          "stayTime": 120,
-          "transit": "搭乘紅30公車約 15 分鐘",
-          "reason": "館藏豐富，早晨人潮相對少，非常適合安排為第一站靜心品味歷史底蘊。",
-        },
-        {
-          "id": "s1_2",
-          "name": "士林官邸",
-          "category": "歷史古蹟",
-          "time": "11:30",
-          "stayTime": 60,
-          "transit": "搭乘捷運淡水信義線約 25 分鐘",
-          "reason": "中西合璧的花園造景，平緩步道非常適合放慢腳步散步拍照。",
-        },
-        {
-          "id": "s1_3",
-          "name": "台北 101 景觀台",
-          "category": "現代地標",
-          "time": "14:30",
-          "stayTime": 90,
-          "transit": "步行約 15 分鐘",
-          "reason": "俯瞰整個台北盆地的絕佳制高點，午後光線透亮很適合眺望市景。",
-        },
-        {
-          "id": "s1_4",
-          "name": "象山步道夕陽",
-          "category": "自然步道",
-          "time": "17:00",
-          "stayTime": 75,
-          "transit": "",
-          "reason": "傍晚登頂正好能捕捉夕陽餘暉灑落 101 大樓的經典光影。",
-        },
-      ],
-    },
-    {
-      "dayTitle": "day2",
-      "spots": [
-        {
-          "id": "s2_1",
-          "name": "華山1914文創園區",
-          "category": "文創生活",
-          "time": "10:00",
-          "stayTime": 90,
-          "transit": "步行約 12 分鐘",
-          "reason": "老倉庫改建的藝文展區，充滿特色選品店與香醇咖啡香。",
-        },
-        {
-          "id": "s2_2",
-          "name": "永康街商圈",
-          "category": "在地美食",
-          "time": "12:00",
-          "stayTime": 75,
-          "transit": "捷運轉乘約 20 分鐘",
-          "reason": "品嚐經典小籠包與芒果冰，享受愜意又具質感的午間漫遊。",
-        },
-        {
-          "id": "s2_3",
-          "name": "中正紀念堂",
-          "category": "歷史地標",
-          "time": "14:30",
-          "stayTime": 60,
-          "transit": "搭乘捷運約 15 分鐘",
-          "reason": "壯闊的白牆藍瓦與整點衛兵交接，感受宏偉的都市建築景觀。",
-        },
-        {
-          "id": "s2_4",
-          "name": "師大夜市散策",
-          "category": "夜市小吃",
-          "time": "18:00",
-          "stayTime": 90,
-          "transit": "",
-          "reason": "巷弄中的異國美食與平價服飾店，輕鬆體驗台北青春夜生活。",
-        },
-      ],
-    },
-    {
-      "dayTitle": "day3",
-      "spots": [
-        {
-          "id": "s3_1",
-          "name": "淡水老街漫遊",
-          "category": "老街懷舊",
-          "time": "10:30",
-          "stayTime": 90,
-          "transit": "步行約 10 分鐘",
-          "reason": "漫步在淡水河畔，邊吹海風邊品嚐阿給與魚酥。",
-        },
-        {
-          "id": "s3_2",
-          "name": "紅毛城古蹟群",
-          "category": "歷史建築",
-          "time": "13:00",
-          "stayTime": 60,
-          "transit": "公車約 15 分鐘",
-          "reason": "磚紅色荷蘭城堡外觀，沉浸在淡水的百年歷史回憶中。",
-        },
-        {
-          "id": "s3_3",
-          "name": "漁人碼頭情人橋",
-          "category": "浪漫夕陽",
-          "time": "16:30",
-          "stayTime": 90,
-          "transit": "",
-          "reason": "著名的落日勝地，橋上眺望出海口晚霞格外浪漫動人。",
-        },
-      ],
-    },
-  ];
+  List<Map<String, dynamic>> _daysData = [];
+  final Set<String> _expandedReasons = {};
+  bool _isExporting = false;
+  
 
   @override
-  void dispose() {
-    _promptController.dispose();
-    super.dispose();
+  void initState() {
+    super.initState();
+    if (widget.initialSnapshot != null && widget.initialSnapshot!['days'] != null) {
+      _daysData = _convertSnapshotToDaysData(widget.initialSnapshot!);
+    }
   }
 
-  // 🌟 核心拖曳調換邏輯
-  void _onReorderSpots(int dayIndex, int oldIndex, int newIndex) {
-    setState(() {
-      final List<Map<String, dynamic>> spots =
-          _daysData[dayIndex]["spots"] as List<Map<String, dynamic>>;
+  // 🔄 精準解析 Snapshot v2 快照
+  List<Map<String, dynamic>> _convertSnapshotToDaysData(Map<String, dynamic> snapshot) {
+    final rawDays = (snapshot['days'] as List<dynamic>? ?? []);
 
-      if (newIndex > oldIndex) {
-        newIndex -= 1; // 修正 Flutter Reorderable 下移時的偏移
-      }
-      final item = spots.removeAt(oldIndex);
-      spots.insert(newIndex, item);
-    });
+    return rawDays.map<Map<String, dynamic>>((day) {
+      final dayMap = day as Map<String, dynamic>;
+      final int dayNumber = dayMap['day'] ?? 1;
+      final String dayTitle = "Day $dayNumber";
 
-    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        duration: Duration(milliseconds: 900),
-        content: Text('景點順序已即時更新 🔄'),
-      ),
-    );
+      final rawVisits = (dayMap['visits'] as List<dynamic>? ?? []);
+      final rawLegs = (dayMap['travelLegs'] as List<dynamic>? ?? []);
+
+      final spots = rawVisits.asMap().entries.map((entry) {
+        final index = entry.key;
+        final visit = entry.value as Map<String, dynamic>;
+        final place = (visit['place'] as Map<String, dynamic>? ?? {});
+
+        // 將分鐘數轉成 HH:mm 格式
+        final int minutes = visit['startMinutes'] ?? visit['arrivalMinutes'] ?? 540;
+        final int hour = (minutes ~/ 60) % 24;
+        final int minute = minutes % 60;
+        final String formattedTime =
+            "${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}";
+
+        // 交通連線文字
+        String transitText = "";
+        if (index < rawLegs.length) {
+          final leg = rawLegs[index] as Map<String, dynamic>;
+          final String mode = leg['travelMode']?.toString() ?? '';
+          final route = leg['route'] as Map<String, dynamic>?;
+
+          if (route != null && route['travelTime'] != null) {
+            transitText = "$mode 約 ${route['travelTime']} 分鐘";
+          } else {
+            transitText = mode.isNotEmpty ? "搭乘 $mode 前往" : "搭乘大眾運輸前往";
+          }
+        }
+
+        final String spotName = place['name']?.toString() ?? "未命名景點";
+        final String category = place['category']?.toString() ?? "精選地標";
+        final String reason = (visit['information']?.toString().isNotEmpty == true)
+            ? visit['information'].toString()
+            : (place['description']?.toString() ?? "推薦參訪景點");
+
+        return {
+          "id": "spot_${dayNumber}_$index",
+          "placeId": place['id'] ?? index,
+          "name": spotName,
+          "category": category,
+          "time": formattedTime,
+          "stayTime": visit['stayMinutes'] ?? place['stayTime'] ?? 60,
+          "transit": transitText,
+          "reason": reason,
+        };
+      }).toList();
+
+      return {
+        "dayTitle": dayTitle,
+        "spots": spots,
+      };
+    }).toList();
+  }
+
+  void _backToEditPage() {
+    if (widget.initialSnapshot == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('無行程快照資料可編輯')),
+      );
+      return;
+    }
+
+    try {
+      // 1. 還原強型別 RouteItinerary 物件
+      final itineraryObj = RouteItinerary.fromSnapshot(widget.initialSnapshot!);
+
+      // 2. 開啟編輯器，並補上隊友要求的回呼功能
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => planner.ItineraryResultPage(
+            itinerary: itineraryObj,
+            // 🎯 1. 精確對齊 RecalculateItinerary 簽名 (3 個參數)
+          onRecalculate: (
+            List<TripPlaceConstraint> constraints,
+            Map<RouteLegKey, RouteTravelMode> travelModeOverrides,
+            RouteItinerary previousItinerary,
+          ) async {
+          debugPrint("排程重算：約束條件數 = ${constraints.length}");
+
+          try {
+            final updatedDays = previousItinerary.days.map((day) {
+            final newVisits = <RouteVisit>[];
+            int currentSeq = 1;
+            int currentMinutes = 540; // 預設早上 09:00
+
+            // 篩選屬於當天的約束站點（若 c.day 為 null 則預設排入當前天數）
+            final dayConstraints = constraints.where(
+              (c) => c.day == null || c.day == day.day,
+            );
+
+            for (final c in dayConstraints) {
+            // 🌟 1. 取得開始時間：優先使用使用者鎖定/指定的 c.startMinutes
+            final start = c.startMinutes ?? currentMinutes;
+        
+            // 🌟 2. 取得停留時長：直接呼叫 c.stayMinutes (由 preferences.durationFor 計算)
+            final stay = c.stayMinutes > 0 ? c.stayMinutes : (c.place.stayTime > 0 ? c.place.stayTime : 60);
+            final end = start + stay;
+
+            newVisits.add(
+              RouteVisit(
+                place: c.place,
+                sequence: currentSeq++,
+                arrivalMinutes: start,
+                startMinutes: start,
+                endMinutes: end,
+                waitingMinutes: 0,
+                stayMinutes: stay,
+                requestedStartMinutes: c.startMinutes,
+                locked: c.locked, // 🌟 3. 使用真實的 c.locked 屬性
+                information: const [],
+              ),
+            );
+
+            // 如果該站點不是手動鎖定固定時間，自動為下一站推遲（加上 30 分鐘交通緩衝）
+            currentMinutes = end + 30;
+          }
+
+          return RouteDay(
+            day: day.day,
+            date: day.date,
+            origin: day.origin,
+            visits: newVisits.isNotEmpty ? newVisits : day.visits,
+            travelLegs: day.travelLegs,
+            isValid: true,
+            warnings: day.warnings,
+          );
+        }).toList();
+
+        return RouteItinerary(
+          request: previousItinerary.request,
+          origin: previousItinerary.origin,
+          days: updatedDays,
+          generatedAt: DateTime.now(),
+          warnings: previousItinerary.warnings,
+          travelModeOverrides: travelModeOverrides,
+        );
+      } catch (e) {
+      debugPrint("重算處理失敗: $e");
+      return previousItinerary;
+    }
+  },
+            onAddPlace: (BuildContext ctx, Set<String> selectedPlaceIds) async {
+  List<Place> pickedPlaces = <Place>[];
+
+  // 彈出「從收藏 / 資料夾加入景點」的磨砂彈窗
+  await showDialog<void>(
+    context: ctx,
+    builder: (dialogCtx) => PlannerFavoritePickerDialog(
+      onPlacesConfirmed: (List<Place> selected) {
+        pickedPlaces = selected; // 取得使用者勾選的景點物件清單
+      },
+    ),
+  );
+
+  // 🌟 必須將選到的 List<Place> 回傳給編輯器
+  return pickedPlaces;
+},
+            // 🌟 3. 頂部編輯筆按鈕
+            onEdit: () {
+              debugPrint("點擊了編輯行程資訊");
+            },
+
+            // 🌟 4. 頂部匯出按鈕（可直接連動原有的儲存/匯出功能）
+            onExport: () {
+              _exportItinerary();
+            },
+          ),
+        ),
+      );
+    } catch (e) {
+      debugPrint('轉檔或開啟編輯器失敗: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('開啟排程編輯器失敗：$e')),
+      );
+    }
+  }
+
+  // ☁️ 匯出行程至 Supabase
+  Future<void> _exportItinerary() async {
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('請先登入帳號以儲存行程 🌿')),
+      );
+      return;
+    }
+
+    setState(() => _isExporting = true);
+    try {
+      final savedService = SavedItineraryService(Supabase.instance.client);
+      final String snapshotId = DateTime.now()
+          .millisecondsSinceEpoch
+          .toRadixString(16)
+          .padLeft(32, '0');
+
+      await savedService.save(
+        userId: user.id,
+        id: snapshotId,
+        title: widget.tripTitle,
+        snapshot: widget.initialSnapshot ?? {},
+      );
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('「${widget.tripTitle}」已成功儲存至個人紀錄！🎉')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('儲存失敗：$e')),
+      );
+    } finally {
+      if (mounted) setState(() => _isExporting = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: pageBgColor,
+      backgroundColor: primaryBg,
       body: SafeArea(
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 1. 頂部退出/返回列 + AI 提示輸入框
+            // 頂部導覽列
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
               child: Row(
                 children: [
-                  GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () => Navigator.pop(context),
-                    child: Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.9),
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: textDark.withValues(alpha: 0.1),
-                            blurRadius: 6,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      child: const Icon(
-                        Icons.arrow_back_ios_new_rounded,
-                        size: 18,
-                        color: textDark,
-                      ),
-                    ),
+                  IconButton(
+                    icon: const Icon(Icons.arrow_back_ios_new_rounded, color: textDark),
+                    onPressed: () => Navigator.pop(context),
                   ),
-                  const SizedBox(width: 10),
-
-                  // AI 膠囊輸入框
-                  Expanded(
-                    child: Container(
-                      height: 44,
-                      decoration: BoxDecoration(
-                        color: cardBg,
-                        borderRadius: BorderRadius.circular(22),
-                        boxShadow: [
-                          BoxShadow(
-                            color: textDark.withValues(alpha: 0.08),
-                            blurRadius: 8,
-                            offset: const Offset(0, 3),
-                          ),
-                        ],
-                      ),
-                      padding: const EdgeInsets.symmetric(horizontal: 14),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              controller: _promptController,
-                              style: const TextStyle(
-                                color: textDark,
-                                fontSize: 13,
-                              ),
-                              decoration: const InputDecoration(
-                                hintText: "想怎麼調整？加入景點？(輸入prompt)",
-                                hintStyle: TextStyle(
-                                  color: textDark,
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                                border: InputBorder.none,
-                                isDense: true,
-                              ),
-                            ),
-                          ),
-                          IconButton(
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(),
-                            icon: const Icon(
-                              Icons.send_rounded,
-                              color: textDark,
-                              size: 18,
-                            ),
-                            onPressed: () {
-                              if (_promptController.text.trim().isNotEmpty) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      '已收到調整指令：「${_promptController.text}」',
-                                    ),
-                                  ),
-                                );
-                                _promptController.clear();
-                              }
-                            },
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 6),
-
-            // 2. 行程標題與動作列 (路線圖、匯出、編輯紀錄)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Row(
-                children: [
                   Expanded(
                     child: Text(
                       widget.tripTitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
+                        color: textDark,
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
-                        color: textDark,
-                        letterSpacing: 0.5,
                       ),
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  GestureDetector(
-                    onTap: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('開啟路線地圖模式 🗺️')),
-                      );
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 5,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.75),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Row(
-                        children: [
-                          Icon(Icons.map_outlined, size: 14, color: textDark),
-                          SizedBox(width: 4),
-                          Text(
-                            "路線圖",
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                              color: textDark,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+                  // 🌟 編輯行程按鈕
+                  _buildCapsuleButton(
+                    label: "編輯",
+                    icon: Icons.edit_note_rounded,
+                    bgColor: const Color(0xFF8C7355).withValues(alpha: 0.15),
+                    textColor: textDark,
+                    onTap: _backToEditPage,
                   ),
                   const SizedBox(width: 8),
-                  _buildActionCapsule(
-                    "匯出",
-                    onTap: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('行程已匯出分享 📤')),
-                      );
-                    },
-                  ),
-                  const SizedBox(width: 6),
-                  _buildActionCapsule(
-                    "編輯\n紀錄",
-                    isMultiline: true,
-                    onTap: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('開啟編輯紀錄 📝')),
-                      );
-                    },
-                  ),
+                  // 🌟 匯出儲存按鈕
+                  _isExporting
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: textDark),
+                        )
+                      : _buildCapsuleButton(
+                          label: "匯出",
+                          icon: Icons.bookmark_add_outlined,
+                          bgColor: const Color(0xFF70B19B),
+                          textColor: Colors.white,
+                          onTap: _exportItinerary,
+                        ),
                 ],
               ),
             ),
 
-            const SizedBox(height: 10),
-
-            // 3. 核心：橫向滑動天數欄位（內部支援長按自由拖曳排序！）
+            // 橫向滑動多日行程（純瀏覽）
             Expanded(
-              child: ListView.builder(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 4,
-                ),
-                itemCount: _daysData.length,
-                itemBuilder: (context, dayIndex) {
-                  final day = _daysData[dayIndex];
-                  final List<Map<String, dynamic>> spots =
-                      day["spots"] as List<Map<String, dynamic>>;
-
-                  return Container(
-                    width: 230, // 給予拖曳足夠舒適的操作寬度
-                    margin: const EdgeInsets.symmetric(
-                      horizontal: 6,
-                      vertical: 4,
-                    ),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 12,
-                    ),
-                    decoration: BoxDecoration(
-                      color: dayColumnBg,
-                      borderRadius: BorderRadius.circular(24),
-                      border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.9),
-                        width: 1.5,
+              child: _daysData.isEmpty
+                  ? const Center(
+                      child: Text(
+                        "查無行程內容",
+                        style: TextStyle(color: textSub, fontSize: 16),
                       ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: textDark.withValues(alpha: 0.08),
-                          blurRadius: 12,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
+                    )
+                  : ListView.separated(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      scrollDirection: Axis.horizontal,
+                      itemCount: _daysData.length,
+                      separatorBuilder: (_, __) => const SizedBox(width: 16),
+                      itemBuilder: (context, dayIndex) {
+                        return _buildDayColumn(dayIndex);
+                      },
                     ),
-                    child: Column(
-                      children: [
-                        // 天數標題與長按拖曳小提示
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 14,
-                                vertical: 4,
-                              ),
-                              decoration: BoxDecoration(
-                                color: cardBg.withValues(alpha: 0.25),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Text(
-                                day["dayTitle"],
-                                style: const TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.bold,
-                                  color: textDark,
-                                  letterSpacing: 0.5,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-
-                        // 🌟🌟 關鍵更換：ReorderableListView.builder 自由拖曳調換順序 🌟🌟
-                        Expanded(
-                          child: ReorderableListView.builder(
-                            buildDefaultDragHandles:
-                                false, // 自訂手柄，長按整張卡片或手柄皆可拖曳
-                            itemCount: spots.length,
-                            onReorder: (oldIndex, newIndex) =>
-                                _onReorderSpots(dayIndex, oldIndex, newIndex),
-                            itemBuilder: (context, spotIndex) {
-                              final spot = spots[spotIndex];
-                              final String spotId = spot["id"];
-                              final bool isLast = spotIndex == spots.length - 1;
-                              final bool isExpanded = _expandedSpotIds.contains(
-                                spotId,
-                              );
-
-                              return Container(
-                                key: ValueKey(spotId), // 👈 必須提供唯一 Key 供拖曳追蹤
-                                child: Column(
-                                  children: [
-                                    // 景點卡片（包覆 ReorderableDelayedDragStartListener 達成按住拖曳）
-                                    ReorderableDelayedDragStartListener(
-                                      index: spotIndex,
-                                      child: _buildSpotCard(
-                                        spot: spot,
-                                        stepIndex: spotIndex + 1,
-                                        isExpanded: isExpanded,
-                                        onToggleExpand: () {
-                                          setState(() {
-                                            if (isExpanded) {
-                                              _expandedSpotIds.remove(spotId);
-                                            } else {
-                                              _expandedSpotIds.add(spotId);
-                                            }
-                                          });
-                                        },
-                                        onTapCard: () {
-                                          final placeObj = Place(
-                                            id: spotId,
-                                            name: spot['name'],
-                                            category: spot['category'] ?? '景點',
-                                            description: spot['reason'] ?? '',
-                                            address: '台北市推薦景點',
-                                            latitude: 25.033,
-                                            longitude: 121.565,
-                                            image: '',
-                                            stayTime: spot['stayTime'] ?? 60,
-                                            rating: 4.8,
-                                            tags: ['熱門', '推薦'],
-                                            price_level: 1,
-                                            //estimatedCost: 100,
-                                            openMinutes: 540,
-                                            closeMinutes: 1080,
-                                          );
-
-                                          Navigator.push(
-                                            context,
-                                            MaterialPageRoute(
-                                              builder: (_) => PlaceDetailPage(
-                                                place: placeObj,
-                                              ),
-                                            ),
-                                          );
-                                        },
-                                      ),
-                                    ),
-
-                                    // 站點之間的交通連線提示（自動依照新順序顯示）
-                                    if (!isLast) ...[
-                                      const SizedBox(height: 6),
-                                      Row(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.center,
-                                        children: [
-                                          Container(
-                                            width: 1.5,
-                                            height: 10,
-                                            color: textDark.withValues(
-                                              alpha: 0.25,
-                                            ),
-                                          ),
-                                          const SizedBox(width: 6),
-                                          Text(
-                                            spot['transit']?.isNotEmpty == true
-                                                ? spot['transit']
-                                                : "搭乘交通工具前往",
-                                            style: TextStyle(
-                                              color: textDark.withValues(
-                                                alpha: 0.6,
-                                              ),
-                                              fontSize: 10,
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 6),
-                                    ],
-                                  ],
-                                ),
-                              );
-                            },
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
             ),
-            const SizedBox(height: 10),
           ],
         ),
       ),
     );
   }
 
-  // 頂部小膠囊按鈕
-  Widget _buildActionCapsule(
-    String text, {
-    required VoidCallback onTap,
-    bool isMultiline = false,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: EdgeInsets.symmetric(
-          horizontal: 10,
-          vertical: isMultiline ? 2 : 5,
-        ),
-        decoration: BoxDecoration(
-          color: cardBg,
-          borderRadius: BorderRadius.circular(14),
-        ),
-        alignment: Alignment.center,
-        child: Text(
-          text,
-          textAlign: TextAlign.center,
-          style: const TextStyle(
-            fontSize: 11,
-            color: textDark,
-            fontWeight: FontWeight.bold,
-            height: 1.1,
+  // 單天直欄容器
+  Widget _buildDayColumn(int dayIndex) {
+    final day = _daysData[dayIndex];
+    final spots = day["spots"] as List<dynamic>;
+
+    return Container(
+      width: 290,
+      decoration: BoxDecoration(
+        color: dayColumnBg.withValues(alpha: 0.92),
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: textDark.withValues(alpha: 0.08),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
           ),
-        ),
+        ],
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            day["dayTitle"],
+            style: const TextStyle(
+              color: textDark,
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 12),
+          // 景點列表（純展示 ListView，移除 Reorderable）
+          Expanded(
+            child: ListView.builder(
+              itemCount: spots.length,
+              itemBuilder: (context, spotIndex) {
+                final spot = spots[spotIndex];
+                return _buildSpotItem(spot, spotIndex, spots.length);
+              },
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  // 單一景點卡片：時間軸 + 拖曳手柄圖示 + 青綠色展開卡片
-  Widget _buildSpotCard({
-    required Map<String, dynamic> spot,
-    required int stepIndex,
-    required bool isExpanded,
-    required VoidCallback onToggleExpand,
-    required VoidCallback onTapCard,
-  }) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+  // 景點卡片項目（純閱讀 + 展開推薦理由）
+  Widget _buildSpotItem(Map<String, dynamic> spot, int index, int total) {
+    final bool isExpanded = _expandedReasons.contains(spot["id"]);
+    final String transit = spot["transit"] ?? "";
+
+    return Column(
       children: [
-        // 左側時間軸與站點編號
-        Padding(
-          padding: const EdgeInsets.only(top: 8.0, right: 6),
+        Container(
+          margin: const EdgeInsets.only(bottom: 6),
+          decoration: BoxDecoration(
+            color: cardColor,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          padding: const EdgeInsets.all(12),
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                spot['time'] ?? '09:00',
-                style: const TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.bold,
-                  color: textDark,
-                ),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 時間標籤（純文字展示）
+                  Text(
+                    spot["time"] ?? "",
+                    style: const TextStyle(
+                      color: accentBrown,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  // 景點名稱與停留時間
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          spot["name"] ?? "",
+                          style: const TextStyle(
+                            color: textDark,
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          "建議停留 ${spot["stayTime"]} 分鐘",
+                          style: const TextStyle(color: textSub, fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 2),
-              Container(
-                width: 16,
-                height: 16,
-                decoration: const BoxDecoration(
-                  color: textDark,
-                  shape: BoxShape.circle,
-                ),
-                alignment: Alignment.center,
-                child: Text(
-                  "$stepIndex",
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 9,
-                    fontWeight: FontWeight.bold,
+              // 查看推薦理由（手帳展開）
+              if ((spot["reason"] ?? "").toString().isNotEmpty) ...[
+                const SizedBox(height: 8),
+                InkWell(
+                  onTap: () {
+                    setState(() {
+                      if (isExpanded) {
+                        _expandedReasons.remove(spot["id"]);
+                      } else {
+                        _expandedReasons.add(spot["id"]);
+                      }
+                    });
+                  },
+                  child: Row(
+                    children: [
+                      Text(
+                        isExpanded ? "收起推薦理由" : "查看推薦理由",
+                        style: const TextStyle(color: accentBrown, fontSize: 12),
+                      ),
+                      Icon(
+                        isExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+                        size: 16,
+                        color: accentBrown,
+                      ),
+                    ],
                   ),
                 ),
-              ),
+                if (isExpanded) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    spot["reason"],
+                    style: const TextStyle(color: textDark, fontSize: 12, height: 1.4),
+                  ),
+                ],
+              ],
             ],
           ),
         ),
-
-        // 右側青綠景點卡片本體
-        Expanded(
-          child: Container(
-            decoration: BoxDecoration(
-              color: cardBg,
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: textDark.withValues(alpha: 0.08),
-                  blurRadius: 6,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: Column(
+        // 景點之間的交通銜接
+        if (transit.isNotEmpty && index < total - 1)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6.0),
+            child: Row(
               children: [
-                // 上半部：景點名稱 + 右上角拖曳抓手提示 (drag handle)
-                InkWell(
-                  onTap: onTapCard,
-                  borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(16),
-                  ),
-                  child: Container(
-                    height: 52,
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            "(${spot['name']})",
-                            textAlign: TextAlign.center,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.bold,
-                              color: textDark,
-                            ),
-                          ),
-                        ),
-                        // 拖曳圖示提示使用者「這裡可以長按拖曳」
-                        Icon(
-                          Icons.drag_indicator_rounded,
-                          size: 16,
-                          color: textDark.withValues(alpha: 0.4),
-                        ),
-                      ],
-                    ),
+                const SizedBox(width: 16),
+                const Icon(Icons.directions_bus_rounded, size: 15, color: accentBrown),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    transit,
+                    style: const TextStyle(color: textSub, fontSize: 11),
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
-
-                // 分隔線
-                Container(height: 1, color: dividerColor),
-
-                // 下半部：推薦理由按鈕
-                InkWell(
-                  onTap: onToggleExpand,
-                  borderRadius: const BorderRadius.vertical(
-                    bottom: Radius.circular(16),
-                  ),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      vertical: 6,
-                      horizontal: 6,
-                    ),
-                    alignment: Alignment.center,
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          isExpanded ? "收合推薦理由" : "查看推薦理由\n(向下展開)",
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            fontSize: 10,
-                            color: textDark,
-                            height: 1.15,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(width: 2),
-                        Icon(
-                          isExpanded
-                              ? Icons.keyboard_arrow_up_rounded
-                              : Icons.keyboard_arrow_down_rounded,
-                          size: 14,
-                          color: textDark,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-
-                // 展開內容
-                if (isExpanded)
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.35),
-                      borderRadius: const BorderRadius.vertical(
-                        bottom: Radius.circular(16),
-                      ),
-                    ),
-                    child: Text(
-                      spot['reason'] ?? "暫無推薦說明",
-                      softWrap: true,
-                      style: const TextStyle(
-                        fontSize: 11,
-                        height: 1.35,
-                        color: textDark,
-                      ),
-                    ),
-                  ),
               ],
             ),
           ),
-        ),
       ],
+    );
+  }
+
+  // 頂部小膠囊按鈕
+  Widget _buildCapsuleButton({
+    required String label,
+    required IconData icon,
+    required Color bgColor,
+    required Color textColor,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 15, color: textColor),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: TextStyle(
+                color: textColor,
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

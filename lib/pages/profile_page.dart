@@ -1,13 +1,15 @@
 import 'dart:ui';
+import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
 import '../services/favorite_service.dart';
+import '../services/saved_itinerary_service.dart';
 import '../models/place.dart';
 import 'itinerary_result_page.dart';
 import '../services/user_data_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-// import '../services/saved_itinerary_service.dart';
+import '../services/saved_itinerary_service.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -19,45 +21,94 @@ class ProfilePage extends StatefulWidget {
 class _ProfilePageState extends State<ProfilePage> {
   final FavoriteService _favoriteService = FavoriteService();
   final UserDataService _userDataService = UserDataService();
-  // 模擬行程與資料夾資料（指定明確型別避免轉型錯誤）
+  late final SavedItineraryService _savedItineraryService;
+
+  // 模擬行程與資料夾資料（指定明確型別避免轉型錯誤）[cite: 1]
   final List<String> _itineraries = ["台北一日遊", "九份文化之旅"];
   List<Map<String, dynamic>> _folders = [];
   bool _isLoadingFolders = true;
-  /*final List<Map<String, dynamic>> _folders = [
-    {"title": "必去美食", "places": <Place>[]},
-    {"title": "拍照打卡", "places": <Place>[]},
-  ];*/
+
+  StreamSubscription<AuthState>? _authSub; // 統一使用 _authSub 變數名稱
   List<Map<String, dynamic>> _exportedTrips = [];
-  bool _isLoadingExportedTrips = true;
+  bool _isLoadingExportedTrips = false;
 
   @override
-  void initState() {
-    super.initState();
-    // 1. 監聽收藏狀態變化（首頁或詳情頁按愛心時，這裡自動同步刷新）
-    _favoriteService.addListener(_onFavoritesChanged);
-    // 🌟 關鍵修復：進入頁面時主動向 Supabase 撈取雲端收藏！
-    _favoriteService.fetchFavoritesFromCloud();
-    _loadCloudFolders();
-    //_loadExportedTrips();
-  }
+void initState() {
+  super.initState();
 
-  Future<void> _loadCloudFolders() async {
-    final cloudFolders = await _userDataService.fetchFolders();
-    //print("👉 抓回來的資料夾筆數: ${cloudFolders.length}");
+  _savedItineraryService = SavedItineraryService(Supabase.instance.client);
+  _favoriteService.addListener(_onFavoritesChanged);
+
+  // 🌟 1. 全域監聽登入狀態改變
+  _authSub = Supabase.instance.client.auth.onAuthStateChange.listen((data) async {
+    final AuthChangeEvent event = data.event;
+    
+    if (event == AuthChangeEvent.signedIn) {
+      // 關鍵防延遲：等 300 毫秒確保 Supabase Session 完整寫入本地
+      await Future.delayed(const Duration(milliseconds: 300));
+      
+      if (mounted) {
+        _favoriteService.fetchFavoritesFromCloud();
+        await _loadCloudFolders();
+        await _loadExportedTrips();
+      }
+    } else if (event == AuthChangeEvent.signedOut) {
+      if (mounted) {
+        setState(() {
+          _exportedTrips.clear();
+          _folders.clear();
+          _isLoadingFolders = false;
+          _isLoadingExportedTrips = false;
+        });
+      }
+    }
+  });
+
+  // 🌟 2. 初始進入頁面時載入
+  _favoriteService.fetchFavoritesFromCloud();
+  _loadCloudFolders();
+  _loadExportedTrips();
+}
+
+// 🌟 3. 確保 _loadCloudFolders 撈完後一定有呼叫 setState 刷新畫面！
+Future<void> _loadCloudFolders() async {
+  if (mounted) setState(() => _isLoadingFolders = true);
+  try {
+    final folders = await _userDataService.fetchFolders();
+    debugPrint("📂 [ProfilePage] 自動抓取資料夾成功: ${folders.length} 個");
     if (mounted) {
       setState(() {
-        _folders = cloudFolders;
-        _isLoadingFolders = false;
+        _folders = folders;
       });
     }
+  } catch (e) {
+    debugPrint("❌ [ProfilePage] 抓取資料夾失敗: $e");
+  } finally {
+    if (mounted) setState(() => _isLoadingFolders = false);
   }
+}
+
+// 🌟 4. 確保 _loadExportedTrips 撈完後一定有呼叫 setState 刷新畫面！
+Future<void> _loadExportedTrips() async {
+  if (mounted) setState(() => _isLoadingExportedTrips = true);
+  try {
+    final trips = await _savedItineraryService.list(offset: 0, limit: 50);
+    debugPrint("🗓️ [ProfilePage] 自動抓取行程成功: ${trips.length} 個");
+    if (mounted) {
+      setState(() {
+        _exportedTrips = trips;
+      });
+    }
+  } catch (e) {
+    debugPrint("❌ [ProfilePage] 抓取行程失敗: $e");
+  } finally {
+    if (mounted) setState(() => _isLoadingExportedTrips = false);
+  }
+}
+
+ 
 
   @override
-  void dispose() {
-    _favoriteService.removeListener(_onFavoritesChanged);
-    super.dispose();
-  }
-
   void _onFavoritesChanged() {
     if (mounted) {
       setState(() {});
@@ -512,7 +563,11 @@ class _ProfilePageState extends State<ProfilePage> {
               // 景點區塊
               const Text(
                 "我的行程",
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.textPrimary,
+                ),
               ),
               const SizedBox(height: 8),
               const Text(
@@ -520,10 +575,27 @@ class _ProfilePageState extends State<ProfilePage> {
                 style: TextStyle(color: AppColors.textPrimary),
               ),
               const SizedBox(height: 12),
-              // 不共用收藏行程的模擬清單；待資料庫方案確認後接入。
+
+              // ✅ 移除原本的「暫時無法在此顯示」，改用真實資料渲染列表！
               SizedBox(
-                height: 100,
-                child: _buildEmptyState("行程清單尚待接入，暫時無法在此顯示已儲存行程"),
+                height: 125,
+                child: _isLoadingExportedTrips
+                    ? const Center(
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: AppColors.primary,
+                        ),
+                      )
+                    : _exportedTrips.isEmpty
+                        ? _buildEmptyState("尚未有儲存的行程，完成規劃後點擊「匯出」即可存入 🌿")
+                        : ListView.separated(
+                            scrollDirection: Axis.horizontal,
+                            itemCount: _exportedTrips.length,
+                            separatorBuilder: (_, __) => const SizedBox(width: 14),
+                            itemBuilder: (context, index) {
+                              return _buildSavedTripCard(_exportedTrips[index]);
+                            },
+                          ),
               ),
               const SizedBox(height: 28),
 
@@ -650,6 +722,88 @@ class _ProfilePageState extends State<ProfilePage> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  // 🌟 渲染每一筆真實儲存的行程卡片
+  Widget _buildSavedTripCard(Map<String, dynamic> trip) {
+    final String title = trip['title']?.toString() ?? '未命名行程';
+    final String tripId = trip['id']?.toString() ?? '';
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(20),
+      onTap: () async {
+        if (tripId.isEmpty) return;
+
+        final user = Supabase.instance.client.auth.currentUser;
+        if (user == null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('請先登入帳號')),
+          );
+          return;
+        }
+
+        try {
+          // 依據 userId 與 id 讀取真實快照
+          final snapshot = await _savedItineraryService.read(tripId);
+
+          if (!mounted) return;
+
+          // 打開行程結果頁，灌入真快照資料
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => ItineraryResultPage(
+                tripTitle: title,
+                initialSnapshot: snapshot,
+              ),
+            ),
+          );
+        } catch (e) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('讀取行程失敗: $e')),
+          );
+        }
+      },
+      child: Container(
+        width: 120,
+        decoration: BoxDecoration(
+          color: AppColors.primary,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.textPrimary.withValues(alpha: 0.08),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+        alignment: Alignment.center,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(
+              Icons.map_outlined,
+              size: 28,
+              color: AppColors.textPrimary,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
