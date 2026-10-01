@@ -42,6 +42,7 @@ class LiveItineraryTrackingService {
       StreamController.broadcast();
   final List<LocationPoint> _route = [];
   StreamSubscription<LocationPoint>? _subscription;
+  LocationPoint? _lastLocation;
   RouteItinerary? _itinerary;
   DateTime? _lastAlertAt;
 
@@ -55,6 +56,7 @@ class LiveItineraryTrackingService {
   bool get isTracking => _subscription != null;
 
   Future<bool> start(RouteItinerary itinerary) async {
+    if (isTracking) return true;
     _itinerary = itinerary;
     final location = await _locationGateway.getCurrentLocation();
     if (location == null) return false;
@@ -68,13 +70,26 @@ class LiveItineraryTrackingService {
 
   void updateItinerary(RouteItinerary itinerary) => _itinerary = itinerary;
 
-  void _record(LocationPoint location) {
-    _recordAt(location, _now());
+  /// Re-evaluate the last known position when time advances without GPS motion.
+  /// A clock tick is not appended to the travelled route.
+  void checkNow() {
+    final location = _lastLocation;
+    if (!isTracking || location == null) return;
+    _recordAt(location, _now(), appendRoute: false);
   }
 
-  void _recordAt(LocationPoint location, DateTime observedAt) {
-    _route.add(location);
-    if (_route.length > 500) _route.removeAt(0);
+  void _record(LocationPoint location) => _recordAt(location, _now());
+
+  void _recordAt(
+    LocationPoint location,
+    DateTime observedAt, {
+    bool appendRoute = true,
+  }) {
+    _lastLocation = location;
+    if (appendRoute) {
+      _route.add(location);
+      if (_route.length > 500) _route.removeAt(0);
+    }
     final alert = _delayFor(location, observedAt);
     if (alert != null) _lastAlertAt = observedAt;
     _updates.add(
@@ -96,7 +111,11 @@ class LiveItineraryTrackingService {
   }) {
     assert(() {
       if (delayMinutes < 15) {
-        throw ArgumentError.value(delayMinutes, 'delayMinutes', 'must be >= 15');
+        throw ArgumentError.value(
+          delayMinutes,
+          'delayMinutes',
+          'must be >= 15',
+        );
       }
       return true;
     }());
@@ -200,6 +219,7 @@ class LiveItineraryTrackingService {
   Future<void> stop() async {
     await _subscription?.cancel();
     _subscription = null;
+    _lastLocation = null;
   }
 
   Future<void> dispose() async {
@@ -416,8 +436,5 @@ double _distanceKm(double aLat, double aLng, double bLat, double bLng) {
 bool _sameDate(DateTime a, DateTime b) =>
     a.year == b.year && a.month == b.month && a.day == b.day;
 
-DateTime _atMinute(DateTime date, int minute) => DateTime(
-  date.year,
-  date.month,
-  date.day,
-).add(Duration(minutes: minute));
+DateTime _atMinute(DateTime date, int minute) =>
+    DateTime(date.year, date.month, date.day).add(Duration(minutes: minute));

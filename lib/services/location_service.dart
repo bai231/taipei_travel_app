@@ -72,10 +72,25 @@ class LocationService implements LocationTrackingGateway {
 
     try {
       yield* Geolocator.getPositionStream(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
-          distanceFilter: 20,
-        ),
+        locationSettings:
+            !kIsWeb && defaultTargetPlatform == TargetPlatform.android
+            ? AndroidSettings(
+                accuracy: LocationAccuracy.high,
+                distanceFilter: 20,
+                intervalDuration: const Duration(seconds: 10),
+                foregroundNotificationConfig:
+                    const ForegroundNotificationConfig(
+                      notificationTitle: '正在守護行程',
+                      notificationText: '持續監測位置與交通風險；回到 App 可停止守護。',
+                      notificationChannelName: '行程守護定位',
+                      enableWakeLock: true,
+                      setOngoing: true,
+                    ),
+              )
+            : const LocationSettings(
+                accuracy: LocationAccuracy.high,
+                distanceFilter: 20,
+              ),
       ).map(
         (position) => LocationPoint(
           latitude: position.latitude,
@@ -87,6 +102,7 @@ class LocationService implements LocationTrackingGateway {
       debugPrintStack(stackTrace: stackTrace);
     }
   }
+
   static double getDistance(
     double startLat,
     double startLng,

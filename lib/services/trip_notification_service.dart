@@ -1,15 +1,50 @@
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
+abstract interface class TripNotificationGateway {
+  Future<void> initialize();
+
+  Future<bool?> androidNotificationsEnabled();
+
+  Future<void> showScheduleAdjusted({
+    required int lateMinutes,
+    required String nextStopName,
+  });
+
+  Future<void> showAlternativeAvailable({
+    required int lateMinutes,
+    required String nextStopName,
+  });
+
+  Future<void> showTransitRisk({
+    required String reason,
+    required String nextStopName,
+  });
+
+  Future<void> showWeatherAdvisory({
+    required int id,
+    required String title,
+    required String body,
+  });
+
+  Future<void> showTestNotification({
+    required String title,
+    required String body,
+  });
+}
+
 /// Shows the on-device notification used when the live itinerary falls behind.
-class TripNotificationService {
+class TripNotificationService implements TripNotificationGateway {
   static const _channelId = 'trip_schedule_alerts';
   static const _weatherChannelId = 'trip_weather_alerts';
   final FlutterLocalNotificationsPlugin _plugin;
   bool _initialized = false;
+  static void Function(String? payload)? onNotificationTap;
+  static int _testNotificationId = 7900;
 
   TripNotificationService({FlutterLocalNotificationsPlugin? plugin})
     : _plugin = plugin ?? FlutterLocalNotificationsPlugin();
 
+  @override
   Future<void> initialize() async {
     if (_initialized) return;
     const settings = InitializationSettings(
@@ -21,7 +56,11 @@ class TripNotificationService {
         requestSoundPermission: false,
       ),
     );
-    await _plugin.initialize(settings);
+    await _plugin.initialize(
+      settings,
+      onDidReceiveNotificationResponse: (response) =>
+          onNotificationTap?.call(response.payload),
+    );
     await _plugin
         .resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin
@@ -35,6 +74,16 @@ class TripNotificationService {
     _initialized = true;
   }
 
+  @override
+  Future<bool?> androidNotificationsEnabled() async {
+    return _plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >()
+        ?.areNotificationsEnabled();
+  }
+
+  @override
   Future<void> showScheduleAdjusted({
     required int lateMinutes,
     required String nextStopName,
@@ -61,11 +110,69 @@ class TripNotificationService {
           urgency: LinuxNotificationUrgency.normal,
         ),
       ),
+      payload: 'guardian:alternative',
+    );
+  }
+
+  @override
+  Future<void> showAlternativeAvailable({
+    required int lateMinutes,
+    required String nextStopName,
+  }) async {
+    await initialize();
+    await _plugin.show(
+      7001,
+      '行程可能延誤',
+      '目前約晚了 $lateMinutes 分鐘；請開啟 App 檢查前往 $nextStopName 的備案，確認後才套用。',
+      const NotificationDetails(
+        android: AndroidNotificationDetails(
+          _channelId,
+          '行程時間提醒',
+          channelDescription: '旅程延誤與行程備案提醒',
+          importance: Importance.max,
+          priority: Priority.high,
+        ),
+        iOS: DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: true,
+        ),
+      ),
+      payload: 'guardian:alternative',
+    );
+  }
+
+  @override
+  Future<void> showTransitRisk({
+    required String reason,
+    required String nextStopName,
+  }) async {
+    await initialize();
+    await _plugin.show(
+      7002,
+      '可能趕不上原班次',
+      '$reason 請開啟 App 查詢前往 $nextStopName 的備案，確認後才套用。',
+      const NotificationDetails(
+        android: AndroidNotificationDetails(
+          _channelId,
+          '行程時間提醒',
+          channelDescription: '旅程延誤、轉乘風險與行程備案提醒',
+          importance: Importance.max,
+          priority: Priority.high,
+        ),
+        iOS: DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: true,
+        ),
+      ),
+      payload: 'guardian:transit',
     );
   }
 
   /// Delivers a standard on-device notification. It is deliberately limited to
   /// travel-weather advice and is not used for official disaster warnings.
+  @override
   Future<void> showWeatherAdvisory({
     required int id,
     required String title,
@@ -93,6 +200,36 @@ class TripNotificationService {
           urgency: LinuxNotificationUrgency.normal,
         ),
       ),
+    );
+  }
+
+  @override
+  Future<void> showTestNotification({
+    required String title,
+    required String body,
+  }) async {
+    await initialize();
+    _testNotificationId++;
+    if (_testNotificationId > 7999) _testNotificationId = 7901;
+    await _plugin.show(
+      _testNotificationId,
+      '[測試] $title',
+      '$body（模擬資料，非真實旅遊警報）',
+      const NotificationDetails(
+        android: AndroidNotificationDetails(
+          'trip_guardian_debug',
+          '保母模式測試通知',
+          channelDescription: '模擬 GPS、班次與天氣事件的手機通知',
+          importance: Importance.max,
+          priority: Priority.high,
+        ),
+        iOS: DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: true,
+        ),
+      ),
+      payload: 'guardian:test',
     );
   }
 }
