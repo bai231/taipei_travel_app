@@ -8,15 +8,23 @@ import '../../../widgets/trip/android_layout.dart';
 import '../widgets/android_day_itinerary.dart';
 
 import '../../../models/place.dart';
+import '../../../models/tdx_route.dart';
 import '../../../models/trip_place_constraint.dart';
 import '../../../models/visit_preferences.dart';
 import '../../../services/live_itinerary_tracking_service.dart';
+import '../../../services/live_itinerary_alternative_planner.dart';
+import '../../../services/google_route_planning_service.dart';
 import '../../../services/location_service.dart';
 import '../../../services/taiwan_county_resolver.dart';
-import '../../../services/trip_notification_service.dart';
 import '../../../services/weather_advisory_service.dart';
+import '../../../services/transit_alternative_service.dart';
+import '../../../services/transit_realtime_monitor.dart';
+import '../services/active_guardian_session.dart';
+
 import '../../../widgets/trip/visit_preferences_dialog.dart';
 import '../../../widgets/trip/save_itinerary_button.dart';
+import '../debug/guardian_debug_console.dart';
+import 'itinerary_result_dependencies.dart';
 import '../models/route_day.dart';
 import '../models/route_itinerary.dart';
 import '../models/route_travel_mode.dart';
@@ -39,12 +47,21 @@ typedef RecalculateItinerary =
 typedef RequestIndoorItineraryAlternatives =
     Future<void> Function(WeatherIndoorItineraryRequest request);
 
+typedef _ComparisonEntry = ({
+  int startMinutes,
+  String title,
+  String? subtitle,
+  String? details,
+  IconData? icon,
+});
+
 class ItineraryResultPage extends StatefulWidget {
   final RouteItinerary itinerary;
   final VoidCallback? onEdit;
   final VoidCallback? onExport;
   final AddItineraryPlaces? onAddPlace;
   final RecalculateItinerary? onRecalculate;
+  final ItineraryResultDependencies? dependencies;
 
   /// Integration point for an AI-powered indoor itinerary recommendation.
   /// This page asks for consent but deliberately does not change the itinerary.
@@ -59,6 +76,7 @@ class ItineraryResultPage extends StatefulWidget {
     this.onAddPlace,
     this.onRecalculate,
     this.onRequestIndoorItineraryAlternatives,
+    this.dependencies,
   });
 
   @override
@@ -75,11 +93,15 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
   final _horizontalController = ScrollController();
   final _verticalController = ScrollController();
   final List<Place> _pendingPlaces = [];
-  final _tripTracker = LiveItineraryTrackingService();
-  final _notificationService = TripNotificationService();
   late final WeatherAdvisoryService _weatherAdvisoryService;
   late final Future<TaiwanCountyResolver> _countyResolver;
-  final _liveDayReplanner = LiveDayItineraryReplanner();
+  late final ItineraryResultDependencies _dependencies;
+  late final LiveItineraryTrackingService _tripTracker;
+  StreamSubscription<TripTrackingUpdate>? _trackingUpdatesSubscription;
+  ActiveGuardianSession? _guardianSession;
+  late final ForegroundTransitGuardian _transitGuardian;
+  late final TransitAlternativeService _transitAlternativeService;
+  late final LiveItineraryAlternativePlanner _alternativePlanner;
 
   late RouteItinerary _itinerary;
   late List<TripPlaceConstraint> _constraints;
@@ -93,9 +115,14 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
   Timer? _gapHoverTimer;
   bool _isRecalculating = false;
   bool _isTracking = false;
-  bool _isStartingWeatherFlow = false;
   bool _hasReportedWeatherError = false;
-  bool _isLiveReplanning = false;
+  bool _isStartingTracking = false;
+  bool _isAlternativePromptOpen = false;
+  bool _isEvaluatingTrackingUpdate = false;
+  bool _realtimeWarningShown = false;
+  final Map<String, DateTime> _lastTransitRiskPromptAt = {};
+  final Map<int, int> _confirmedCompletedCounts = {};
+
   LocationPoint? _currentLocation;
   List<LocationPoint> _trackedRoute = const [];
   double _mapHeightRatio = 0.34;
@@ -111,14 +138,60 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
   @override
   void initState() {
     super.initState();
-    _weatherAdvisoryService = WeatherAdvisoryService(
-      apiKey: const String.fromEnvironment('CWA_API_KEY'),
-    );
     _countyResolver = TaiwanCountyResolver.load();
+    _mapHeightRatio = usesAndroidTripLayout ? 0.26 : 0.34;
+    final existingSession = ActiveGuardianSession.active;
+    final resumeSession =
+        existingSession != null &&
+        identical(existingSession.itinerary, widget.itinerary);
+    _guardianSession = resumeSession ? existingSession : null;
+
     _itinerary = widget.itinerary;
     _constraints = _constraintsFromItinerary(_itinerary);
     _travelModeOverrides = Map.of(_itinerary.travelModeOverrides);
-    _tripTracker.updates.listen(_handleTrackingUpdate);
+    _dependencies =
+        _guardianSession?.dependencies ??
+        widget.dependencies ??
+        ItineraryResultDependencies.production();
+    _weatherAdvisoryService =
+        _dependencies.productionWeatherService ??
+        WeatherAdvisoryService(
+          apiKey: const String.fromEnvironment('CWA_API_KEY'),
+        );
+    _tripTracker =
+        _guardianSession?.tracker ??
+        LiveItineraryTrackingService(
+          locationGateway: _dependencies.locationGateway,
+          now: _dependencies.now,
+        );
+    _transitGuardian = ForegroundTransitGuardian(
+      monitor: TransitRealtimeMonitor(gateway: _dependencies.realtimeGateway),
+      minimumCheckInterval: const Duration(minutes: 2),
+    );
+    _transitAlternativeService = TransitAlternativeService(
+      routingGateway: _dependencies.routingGateway,
+    );
+    _alternativePlanner = LiveItineraryAlternativePlanner(
+      transit: _dependencies.routingGateway,
+      google:
+          _dependencies.googleRoutingGateway ??
+          const GoogleRoutePlanningService(),
+    );
+    _trackingUpdatesSubscription = _tripTracker.updates.listen(
+      _handleTrackingUpdate,
+    );
+    if (_guardianSession != null) {
+      _isTracking = true;
+      _guardianSession!.attachPage(onResume: _resumePendingGuardianRisk);
+      final latest = _guardianSession!.latestUpdate;
+      if (latest != null) {
+        _currentLocation = latest.location;
+        _trackedRoute = latest.route;
+      }
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _resumePendingGuardianRisk(),
+      );
+    }
   }
 
   @override
@@ -129,7 +202,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
       _mapDayIndex = _validMapDayIndex;
       _constraints = _constraintsFromItinerary(_itinerary);
       _travelModeOverrides = Map.of(_itinerary.travelModeOverrides);
-      _tripTracker.updateItinerary(_itinerary);
+      _updateTrackedItinerary(_itinerary);
       _selectedDayIndex = min(
         _selectedDayIndex,
         max(0, _itinerary.days.length - 1),
@@ -140,8 +213,15 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
   @override
   void dispose() {
     _gapHoverTimer?.cancel();
-    _tripTracker.dispose();
-    _weatherAdvisoryService.dispose();
+    _trackingUpdatesSubscription?.cancel();
+    if (_guardianSession != null &&
+        identical(ActiveGuardianSession.active, _guardianSession)) {
+      _guardianSession!.detachPage();
+    } else {
+      _tripTracker.dispose();
+      _dependencies.weatherGateway.dispose();
+      _dependencies.disposeRealtimeGateway?.call();
+    }
     _horizontalController.dispose();
     _verticalController.dispose();
     super.dispose();
@@ -171,15 +251,32 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
             icon: Icon(_isMapVisible ? Icons.map_outlined : Icons.map),
             label: Text(_isMapVisible ? '隱藏地圖' : '顯示地圖'),
           ),
-          TextButton.icon(
-            onPressed: _isTracking ? _stopTracking : _startTracking,
-            icon: Icon(
-              _isTracking
-                  ? Icons.stop_circle_outlined
-                  : Icons.play_circle_outline,
+          if (usesAndroidTripLayout)
+            IconButton(
+              tooltip: _isStartingTracking
+                  ? '正在取得定位'
+                  : (_isTracking ? '停止追蹤' : '開始行程'),
+              onPressed: _isStartingTracking
+                  ? null
+                  : (_isTracking ? _stopTracking : _startTracking),
+              icon: Icon(
+                _isTracking
+                    ? Icons.stop_circle_outlined
+                    : Icons.play_circle_outline,
+              ),
+            )
+          else
+            TextButton.icon(
+              onPressed: _isStartingTracking
+                  ? null
+                  : (_isTracking ? _stopTracking : _startTracking),
+              icon: Icon(
+                _isTracking
+                    ? Icons.stop_circle_outlined
+                    : Icons.play_circle_outline,
+              ),
+              label: Text(_isTracking ? '停止追蹤' : '開始行程'),
             ),
-            label: Text(_isTracking ? '停止追蹤' : '開始行程'),
-          ),
           IconButton(
             tooltip: '編輯行程',
             onPressed: widget.onEdit,
@@ -198,6 +295,10 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
           : LayoutBuilder(
               builder: (context, constraints) => Column(
                 children: [
+                  if (kDebugMode &&
+                      _dependencies.debugController != null &&
+                      !usesAndroidTripLayout)
+                    _buildGuardianDebugEntry(),
                   _buildToolbar(),
                   if (_pendingPlaces.isNotEmpty) _buildPendingArea(),
                   if (_itinerary.warnings.isNotEmpty) _buildWarnings(),
@@ -277,6 +378,8 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
                               if (index >= 0) _showTravelLeg(day, index);
                             },
                           )
+                        : usesAndroidTripLayout
+                        ? _buildCompactOverview()
                         : _buildTimetable(),
                   ),
                 ],
@@ -286,6 +389,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
   }
 
   Widget _buildToolbar() {
+    if (usesAndroidTripLayout) return _buildAndroidToolbar();
     final zoomControls = <Widget>[
       IconButton(
         tooltip: '縮小行程表',
@@ -322,6 +426,29 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
             const SizedBox(width: 6),
             const Text('GPS 追蹤中'),
             const SizedBox(width: 12),
+            TextButton.icon(
+              onPressed: () async {
+                final now = _dependencies.now();
+                final index = _itinerary.days.indexWhere(
+                  (day) =>
+                      day.date.year == now.year &&
+                      day.date.month == now.month &&
+                      day.date.day == now.day,
+                );
+                if (index >= 0) {
+                  await _confirmCompletedCount(_itinerary.days[index]);
+                }
+              },
+              icon: const Icon(Icons.checklist),
+              label: const Text('確認進度'),
+            ),
+            TextButton.icon(
+              onPressed: _isAlternativePromptOpen
+                  ? null
+                  : _requestRemainingAlternative,
+              icon: const Icon(Icons.alt_route),
+              label: const Text('重排剩餘行程'),
+            ),
           ],
           if (!usesAndroidTripLayout)
             const Text('長按景點後拖到新的 Day 與時間；鎖定時段不接受放置。'),
@@ -350,6 +477,160 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
       ),
     );
   }
+
+  Widget _buildAndroidToolbar() => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+    child: Row(
+      children: [
+        FilledButton.icon(
+          onPressed: _isRecalculating ? null : _addPlace,
+          icon: const Icon(Icons.add_location_alt_outlined, size: 18),
+          label: const Text('新增'),
+        ),
+        IconButton(
+          tooltip: _androidOverview ? '單日課表' : '多日總覽',
+          onPressed: () => setState(() => _androidOverview = !_androidOverview),
+          icon: Icon(
+            _androidOverview
+                ? Icons.view_day_outlined
+                : Icons.view_week_outlined,
+          ),
+        ),
+        const Spacer(),
+        if (_isRecalculating)
+          const SizedBox(
+            width: 32,
+            height: 24,
+            child: Center(
+              child: SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          ),
+        if (_isTracking)
+          IconButton(
+            tooltip: 'GPS 追蹤中',
+            onPressed: _showTrackingStatus,
+            color: Theme.of(context).colorScheme.primary,
+            icon: const Icon(Icons.gps_fixed),
+          ),
+        if (kDebugMode && _dependencies.debugController != null)
+          IconButton(
+            tooltip: '保母測試控制台',
+            onPressed: _showGuardianDebugConsole,
+            color: _dependencies.debugController!.enabled
+                ? Colors.deepOrange
+                : null,
+            icon: Icon(
+              _dependencies.debugController!.enabled
+                  ? Icons.science
+                  : Icons.science_outlined,
+            ),
+          ),
+        PopupMenuButton<String>(
+          tooltip: '更多行程操作',
+          onSelected: _handleAndroidToolbarAction,
+          itemBuilder: (context) => [
+            PopupMenuItem(
+              value: 'hours',
+              child: Text(_expandAllHours ? '壓縮頭尾空白' : '展開全部時段'),
+            ),
+            if (_androidOverview) ...[
+              PopupMenuItem(
+                value: 'zoom-out',
+                enabled: _timetableZoom > 0.6,
+                child: Text('縮小行程表 · ${(_timetableZoom * 100).round()}%'),
+              ),
+              PopupMenuItem(
+                value: 'zoom-in',
+                enabled: _timetableZoom < 1.8,
+                child: Text('放大行程表 · ${(_timetableZoom * 100).round()}%'),
+              ),
+            ],
+            const PopupMenuItem(value: 'drag-help', child: Text('拖曳操作說明')),
+            if (_isTracking) ...[
+              const PopupMenuItem(value: 'progress', child: Text('確認進度')),
+              PopupMenuItem(
+                value: 'replan',
+                enabled: !_isAlternativePromptOpen,
+                child: const Text('重排剩餘行程'),
+              ),
+            ],
+          ],
+        ),
+      ],
+    ),
+  );
+
+  void _handleAndroidToolbarAction(String action) {
+    switch (action) {
+      case 'hours':
+        setState(() {
+          _gapHoverTimer?.cancel();
+          _expandedHours.clear();
+          _expandAllHours = !_expandAllHours;
+        });
+        return;
+      case 'zoom-out':
+        _setZoom(-0.2);
+        return;
+      case 'zoom-in':
+        _setZoom(0.2);
+        return;
+      case 'drag-help':
+        showDialog<void>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('拖曳行程'),
+            content: const Text('長按景點後拖到新的時間；頭尾收合的空白時段可點開，或拖曳停留後展開。鎖定時段不接受放置。'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: const Text('知道了'),
+              ),
+            ],
+          ),
+        );
+        return;
+      case 'progress':
+        _confirmTodayProgress();
+        return;
+      case 'replan':
+        _requestRemainingAlternative();
+        return;
+    }
+  }
+
+  Future<void> _confirmTodayProgress() async {
+    final now = _dependencies.now();
+    final index = _itinerary.days.indexWhere(
+      (day) =>
+          day.date.year == now.year &&
+          day.date.month == now.month &&
+          day.date.day == now.day,
+    );
+    if (index >= 0) {
+      await _confirmCompletedCount(_itinerary.days[index]);
+    } else if (mounted) {
+      _showMessage('目前日期不在這份行程內。');
+    }
+  }
+
+  Future<void> _showTrackingStatus() => showDialog<void>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: const Text('行程追蹤'),
+      content: const Text('GPS 追蹤中。保母系統會在此行程頁開啟期間檢查延誤與交通風險；備案須由你確認才會套用。'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(dialogContext).pop(),
+          child: const Text('關閉'),
+        ),
+      ],
+    ),
+  );
 
   void _setZoom(double delta) {
     final oldZoom = _timetableZoom;
@@ -465,6 +746,153 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
     );
   }
 
+  Widget _buildCompactOverview() {
+    // All days share one time axis. Collapse a boundary only when every day
+    // is empty there, so visits in another column never disappear.
+    final bands = compactDayBands(
+      endHour: _endHour,
+      visits: [
+        for (final day in _itinerary.days)
+          for (final visit in day.visits)
+            (start: visit.startMinutes, end: visit.endMinutes),
+      ],
+      hourHeight: _hourHeight,
+      gapHeight: max(48, MediaQuery.textScalerOf(context).scale(28) + 16),
+      expandedHours: _expandedHours,
+      expandAll: _expandAllHours,
+    );
+    final height = bands.last.top + bands.last.height;
+    final width = _timeWidth + _itinerary.days.length * _dayWidth;
+
+    void expand(CompactDayBand band) {
+      if (!mounted) return;
+      setState(() {
+        for (var hour = band.startHour; hour < band.endHour; hour++) {
+          _expandedHours.add(hour);
+        }
+      });
+    }
+
+    return Scrollbar(
+      controller: _verticalController,
+      thumbVisibility: true,
+      child: SingleChildScrollView(
+        controller: _verticalController,
+        child: Scrollbar(
+          controller: _horizontalController,
+          thumbVisibility: true,
+          notificationPredicate: (notification) => notification.depth == 1,
+          child: SingleChildScrollView(
+            controller: _horizontalController,
+            scrollDirection: Axis.horizontal,
+            child: SizedBox(
+              width: width,
+              child: Column(
+                children: [
+                  _buildHeader(),
+                  SizedBox(
+                    height: height,
+                    child: Stack(
+                      children: [
+                        for (final band in bands)
+                          Positioned(
+                            top: band.top,
+                            height: band.height,
+                            left: 0,
+                            right: 0,
+                            child: band.collapsed
+                                ? DragTarget<_DragData>(
+                                    onWillAcceptWithDetails: (_) {
+                                      _gapHoverTimer?.cancel();
+                                      _gapHoverTimer = Timer(
+                                        const Duration(milliseconds: 500),
+                                        () => expand(band),
+                                      );
+                                      // Expand first; never assign an hour from
+                                      // a compressed pixel position.
+                                      return false;
+                                    },
+                                    onLeave: (_) => _gapHoverTimer?.cancel(),
+                                    builder: (context, candidate, rejected) =>
+                                        InkWell(
+                                          onTap: () => expand(band),
+                                          child: Container(
+                                            alignment: Alignment.center,
+                                            color: Theme.of(
+                                              context,
+                                            ).colorScheme.surfaceContainerLow,
+                                            child: Text(
+                                              '${band.startHour.toString().padLeft(2, '0')}:00–${band.endHour.toString().padLeft(2, '0')}:00 空白 · 點開／拖曳停留',
+                                              maxLines: 2,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                        ),
+                                  )
+                                : Row(
+                                    children: [
+                                      SizedBox(
+                                        width: _timeWidth,
+                                        child: Align(
+                                          alignment: Alignment.topCenter,
+                                          child: Text(
+                                            '${band.startHour.toString().padLeft(2, '0')}:00',
+                                          ),
+                                        ),
+                                      ),
+                                      for (final day in _itinerary.days)
+                                        SizedBox(
+                                          width: _dayWidth,
+                                          child: _buildDropCell(
+                                            day,
+                                            band.startHour,
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                          ),
+                        for (
+                          var dayIndex = 0;
+                          dayIndex < _itinerary.days.length;
+                          dayIndex++
+                        )
+                          for (final visit in _itinerary.days[dayIndex].visits)
+                            _buildVisit(
+                              _itinerary.days[dayIndex],
+                              visit,
+                              0,
+                              displayTop: compactMinuteOffset(
+                                bands,
+                                visit.startMinutes,
+                              ),
+                              displayHeight: max(
+                                28,
+                                compactMinuteOffset(bands, visit.endMinutes) -
+                                    compactMinuteOffset(
+                                      bands,
+                                      visit.startMinutes,
+                                    ) -
+                                    4,
+                              ),
+                              displayLeft:
+                                  _timeWidth + dayIndex * _dayWidth + 6,
+                              displayRight:
+                                  (_itinerary.days.length - dayIndex - 1) *
+                                      _dayWidth +
+                                  6,
+                            ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildCompactDay() {
     final day = _itinerary.days[_selectedDayIndex];
     final bands = compactDayBands(
@@ -487,96 +915,77 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
       });
     }
 
-    return Column(
-      children: [
-        TextButton(
-          onPressed: () => setState(() {
-            _gapHoverTimer?.cancel();
-            _expandedHours.clear();
-            _expandAllHours = !_expandAllHours;
-          }),
-          child: Text(_expandAllHours ? '壓縮空白時段' : '展開全部時段'),
-        ),
-        Expanded(
-          child: SingleChildScrollView(
-            controller: _verticalController,
-            child: SizedBox(
-              height: bands.last.top + bands.last.height,
-              child: Stack(
-                children: [
-                  for (final band in bands)
-                    Positioned(
-                      top: band.top,
-                      height: band.height,
-                      left: 0,
-                      right: 0,
-                      child: band.collapsed
-                          ? DragTarget<_DragData>(
-                              onWillAcceptWithDetails: (_) {
-                                _gapHoverTimer?.cancel();
-                                _gapHoverTimer = Timer(
-                                  const Duration(milliseconds: 500),
-                                  () => expand(band),
-                                );
-                                // Never drop on a compressed interval: choose an actual hour after expansion.
-                                return false;
-                              },
-                              onLeave: (_) => _gapHoverTimer?.cancel(),
-                              builder: (context, candidate, rejected) => InkWell(
-                                onTap: () => expand(band),
-                                child: Container(
-                                  alignment: Alignment.center,
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.surfaceContainerLow,
-                                  child: Text(
-                                    '${band.startHour.toString().padLeft(2, '0')}:00–${band.endHour.toString().padLeft(2, '0')}:00 空白 · 點開／拖曳停留',
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              ),
-                            )
-                          : Row(
-                              children: [
-                                SizedBox(
-                                  width: _timeWidth,
-                                  child: Align(
-                                    alignment: Alignment.topCenter,
-                                    child: Text(
-                                      '${band.startHour.toString().padLeft(2, '0')}:00',
-                                    ),
-                                  ),
-                                ),
-                                Expanded(
-                                  child: _buildDropCell(day, band.startHour),
-                                ),
-                              ],
+    return SingleChildScrollView(
+      controller: _verticalController,
+      child: SizedBox(
+        height: bands.last.top + bands.last.height,
+        child: Stack(
+          children: [
+            for (final band in bands)
+              Positioned(
+                top: band.top,
+                height: band.height,
+                left: 0,
+                right: 0,
+                child: band.collapsed
+                    ? DragTarget<_DragData>(
+                        onWillAcceptWithDetails: (_) {
+                          _gapHoverTimer?.cancel();
+                          _gapHoverTimer = Timer(
+                            const Duration(milliseconds: 500),
+                            () => expand(band),
+                          );
+                          // Never drop on a compressed interval: choose an actual hour after expansion.
+                          return false;
+                        },
+                        onLeave: (_) => _gapHoverTimer?.cancel(),
+                        builder: (context, candidate, rejected) => InkWell(
+                          onTap: () => expand(band),
+                          child: Container(
+                            alignment: Alignment.center,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.surfaceContainerLow,
+                            child: Text(
+                              '${band.startHour.toString().padLeft(2, '0')}:00–${band.endHour.toString().padLeft(2, '0')}:00 空白 · 點開／拖曳停留',
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
                             ),
-                    ),
-                  for (final visit in day.visits)
-                    _buildVisit(
-                      day,
-                      visit,
-                      0,
-                      displayTop: compactMinuteOffset(
-                        bands,
-                        visit.startMinutes,
+                          ),
+                        ),
+                      )
+                    : Row(
+                        children: [
+                          SizedBox(
+                            width: _timeWidth,
+                            child: Align(
+                              alignment: Alignment.topCenter,
+                              child: Text(
+                                '${band.startHour.toString().padLeft(2, '0')}:00',
+                              ),
+                            ),
+                          ),
+                          Expanded(child: _buildDropCell(day, band.startHour)),
+                        ],
                       ),
-                      displayHeight: max(
-                        28,
-                        compactMinuteOffset(bands, visit.endMinutes) -
-                            compactMinuteOffset(bands, visit.startMinutes) -
-                            4,
-                      ),
-                      displayLeft: _timeWidth + 6,
-                    ),
-                ],
               ),
-            ),
-          ),
+            for (final visit in day.visits)
+              _buildVisit(
+                day,
+                visit,
+                0,
+                displayTop: compactMinuteOffset(bands, visit.startMinutes),
+                displayHeight: max(
+                  28,
+                  compactMinuteOffset(bands, visit.endMinutes) -
+                      compactMinuteOffset(bands, visit.startMinutes) -
+                      4,
+                ),
+                displayLeft: _timeWidth + 6,
+              ),
+          ],
         ),
-      ],
+      ),
     );
   }
 
@@ -721,7 +1130,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
       day.date.day,
     ).add(Duration(minutes: startMinutes));
 
-    final now = DateTime.now();
+    final now = _dependencies.now();
 
     // 與排程起始時間規則一致：最早只能放在現在的下一分鐘。
     final minimumDateTime = DateTime(
@@ -742,6 +1151,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
     double? displayTop,
     double? displayHeight,
     double displayLeft = 6,
+    double displayRight = 6,
   }) {
     final travelLegIndex = day.travelLegs.indexWhere(
       (leg) => leg.destination.id == visit.occurrenceId,
@@ -760,7 +1170,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
     );
     return Positioned(
       left: displayLeft,
-      right: 6,
+      right: displayRight,
       top: max(0.0, top),
       height: height,
       child:
@@ -865,37 +1275,124 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
     );
   }
 
+  Widget _buildGuardianDebugEntry() {
+    final enabled = _dependencies.debugController?.enabled == true;
+    return Container(
+      width: double.infinity,
+      color: enabled
+          ? Colors.orange.shade100
+          : Theme.of(context).colorScheme.surfaceContainerLow,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      child: Row(
+        children: [
+          Icon(
+            Icons.science_outlined,
+            size: 18,
+            color: enabled ? Colors.orange.shade900 : null,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              enabled ? '保母模擬模式：假 GPS／班次；備案查真實 TDX' : 'Debug 保母測試工具',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontWeight: enabled ? FontWeight.bold : FontWeight.normal,
+              ),
+            ),
+          ),
+          Tooltip(
+            message: '保母測試控制台',
+            child: TextButton(
+              onPressed: _showGuardianDebugConsole,
+              child: const Text('開啟'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showGuardianDebugConsole() async {
+    final controller = _dependencies.debugController;
+    if (!kDebugMode || controller == null) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (context) => FractionallySizedBox(
+        heightFactor: .9,
+        child: GuardianDebugConsole(
+          controller: controller,
+          itinerary: _itinerary,
+          isTracking: _isTracking,
+        ),
+      ),
+    );
+    if (mounted) setState(() {});
+  }
+
   Future<void> _startTracking() async {
-    _isStartingWeatherFlow = true;
-    _hasReportedWeatherError = false;
-    await _showInitialWeatherOverview();
-    if (!mounted) return;
-    final started = await _tripTracker.start(_itinerary);
-    if (!mounted) return;
-    if (!started) {
-      _isStartingWeatherFlow = false;
-      _showMessage('無法取得 GPS 位置，請確認已開啟定位服務並允許位置權限。');
-      return;
-    }
-    setState(() {
-      _isTracking = true;
-      _isMapVisible = true;
-    });
-    _isStartingWeatherFlow = false;
-    final currentLocation = _currentLocation;
-    if (currentLocation != null) {
-      final weather = await _checkWeatherAtCurrentLocation(currentLocation);
-      if (weather != null && mounted) {
-        await _showWeatherAdvisory(weather.advisories);
-      } else if (weather == null) {
-        _reportWeatherErrorOnce();
+    if (_isStartingTracking || _isTracking) return;
+    setState(() => _isStartingTracking = true);
+    try {
+      _hasReportedWeatherError = false;
+      if (_dependencies.debugController?.enabled != true) {
+        await _showInitialWeatherOverview();
+        if (!mounted) return;
       }
+      if (usesAndroidTripLayout) {
+        try {
+          await _dependencies.notificationGateway.initialize();
+          final enabled = await _dependencies.notificationGateway
+              .androidNotificationsEnabled();
+          if (!mounted) return;
+          if (enabled == false) _showMessage('通知未開啟；仍可追蹤行程，可至手機設定允許通知。');
+        } catch (_) {
+          if (!mounted) return;
+          _showMessage('通知暫時無法啟用，仍可使用行程追蹤。');
+        }
+      }
+      if (!mounted) return;
+      final started = await _tripTracker.start(_itinerary);
+      if (!mounted) return;
+      if (!started) {
+        _showMessage('無法取得 GPS 位置，請確認已開啟定位服務並允許位置權限。');
+        return;
+      }
+      if (usesAndroidTripLayout) {
+        final session = ActiveGuardianSession(
+          tracker: _tripTracker,
+          dependencies: _dependencies,
+          itinerary: _itinerary,
+        );
+        await session.activate();
+        _guardianSession = session;
+        session.attachPage(onResume: _resumePendingGuardianRisk);
+      }
+      setState(() {
+        _isTracking = true;
+        _isMapVisible = true;
+      });
+      _showMessage('已開始 GPS 行程追蹤；若明顯延誤，系統會提供備案，由你確認後才會套用。');
+      if (usesAndroidTripLayout && !_dependencies.weatherGateway.isConfigured) {
+        _showMessage('天氣提醒尚未設定，GPS 行程追蹤可正常使用。');
+      }
+    } catch (_) {
+      if (mounted) _showMessage('暫時無法開始追蹤，請確認定位權限後重試。');
+    } finally {
+      if (mounted) setState(() => _isStartingTracking = false);
     }
-    _showMessage('已開始 GPS 行程追蹤；若明顯延誤，系統會更新今天剩餘行程。');
   }
 
   Future<void> _stopTracking() async {
-    await _tripTracker.stop();
+    final session = _guardianSession;
+    if (session != null) {
+      await session.stop();
+      _guardianSession = null;
+    } else {
+      await _tripTracker.stop();
+    }
     if (mounted) setState(() => _isTracking = false);
   }
 
@@ -1185,67 +1682,766 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
     }
   }
 
-  Future<void> _handleTrackingUpdate(TripTrackingUpdate update) async {
-    if (!mounted) return;
-    setState(() {
-      _currentLocation = update.location;
-      _trackedRoute = update.route;
-    });
-    if (_isStartingWeatherFlow) return;
-    final weather = await _checkWeatherAtCurrentLocation(update.location);
-    if (weather != null && mounted) {
-      await _showWeatherAdvisory(weather.advisories);
-    } else if (weather == null && _weatherAdvisoryService.lastError != null) {
-      _reportWeatherErrorOnce();
-    }
-    final alert = update.delayAlert;
-    if (alert == null || _isLiveReplanning) return;
+  void _resumePendingGuardianRisk() {
+    if (!mounted || _isAlternativePromptOpen || _isEvaluatingTrackingUpdate)
+      return;
+    final pending = _guardianSession?.takePendingRiskUpdate();
+    if (pending != null) unawaited(_handleTrackingUpdate(pending));
+  }
 
-    final now = update.observedAt;
+  void _updateTrackedItinerary(RouteItinerary itinerary) {
+    if (_guardianSession != null) {
+      _guardianSession!.updateItinerary(itinerary);
+    } else {
+      _tripTracker.updateItinerary(itinerary);
+    }
+  }
+
+  /// The traveller confirms a contiguous completed prefix. GPS proximity or
+  /// the scheduled end time alone must not silently mark a visit complete.
+  Future<int?> _confirmCompletedCount(RouteDay day) async {
+    var count = (_confirmedCompletedCounts[day.day] ?? 0).clamp(
+      0,
+      day.visits.length,
+    );
+    final selected = await showDialog<int>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('確認今天的行程進度'),
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 520, maxHeight: 480),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    '請選擇最後一個已完成的項目；系統不會只因原訂時間已過或 GPS 靠近就判定完成。正在進行的項目請勿選入。',
+                  ),
+                  const SizedBox(height: 12),
+                  ListTile(
+                    title: const Text('尚無已完成項目'),
+                    leading: Icon(
+                      count == 0
+                          ? Icons.radio_button_checked
+                          : Icons.radio_button_off,
+                    ),
+                    onTap: () => setDialogState(() => count = 0),
+                  ),
+                  for (var index = 0; index < day.visits.length; index++)
+                    ListTile(
+                      title: Text('已完成至 ${day.visits[index].label}'),
+                      leading: Icon(
+                        count == index + 1
+                            ? Icons.radio_button_checked
+                            : Icons.radio_button_off,
+                      ),
+                      onTap: () => setDialogState(() => count = index + 1),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(count),
+              child: const Text('確認進度'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (selected != null) _confirmedCompletedCounts[day.day] = selected;
+    return selected;
+  }
+
+  Future<void> _requestRemainingAlternative() async {
+    if (_isAlternativePromptOpen) return;
+    final location = _currentLocation;
+    if (location == null) {
+      _showMessage('尚未取得目前位置，請稍後再試。');
+      return;
+    }
+    final now = _dependencies.now();
+
     final dayIndex = _itinerary.days.indexWhere(
       (day) =>
           day.date.year == now.year &&
           day.date.month == now.month &&
           day.date.day == now.day,
     );
-    if (dayIndex < 0) return;
-
-    _isLiveReplanning = true;
+    if (dayIndex < 0) {
+      _showMessage('目前日期不在這份行程內，無法重排今日剩餘行程。');
+      return;
+    }
+    _isAlternativePromptOpen = true;
     try {
-      final revisedDay = _liveDayReplanner.replan(
-        day: _itinerary.days[dayIndex],
-        currentLocation: update.location,
+      final day = _itinerary.days[dayIndex];
+      final completedCount = await _confirmCompletedCount(day);
+      if (!mounted || completedCount == null) return;
+      var plan = await _alternativePlanner.plan(
+        day: day,
+        currentLocation: location,
         now: now,
+        completedCount: completedCount,
+        strategy: LiveAlternativeStrategy.preserveOrder,
       );
-      final revisedDays = List.of(_itinerary.days)..[dayIndex] = revisedDay;
+      if (!plan.canApply && plan.needsNewLegMode) {
+        final mode = await _chooseNewLegMode();
+        if (!mounted || mode == null) return;
+        plan = await _alternativePlanner.plan(
+          day: day,
+          currentLocation: location,
+          now: now,
+          completedCount: completedCount,
+          strategy: LiveAlternativeStrategy.preserveOrder,
+          newLegMode: mode,
+        );
+      }
+      if (!plan.canApply && plan.reorderMayHelp) {
+        final mode = await _chooseNewLegMode();
+        if (!mounted || mode == null) return;
+        plan = await _alternativePlanner.plan(
+          day: day,
+          currentLocation: location,
+          now: now,
+          completedCount: completedCount,
+          strategy: LiveAlternativeStrategy.reorderRemaining,
+          newLegMode: mode,
+        );
+      }
+      if (!mounted) return;
+      if (!plan.canApply) {
+        await _showPlanningFailure(plan.failure ?? '目前無法產生經路線查詢驗證的備案。');
+        return;
+      }
+      final revisedDay = plan.day!;
+      final shouldApply = await _confirmAlternative(
+        originalDay: day,
+        revisedDay: revisedDay,
+        reason: '你要求依目前位置與時間重新檢查今天的剩餘行程。',
+        nowMinute: now.hour * 60 + now.minute,
+      );
+      if (!mounted) return;
+      if (!shouldApply) {
+        _showMessage('已保留原行程，尚未變更任何安排。');
+        return;
+      }
+      final revisedDays = List<RouteDay>.of(_itinerary.days)
+        ..[dayIndex] = revisedDay;
+      final revisedModes = _modesFromDays(revisedDays);
       final revised = RouteItinerary(
         request: _itinerary.request,
         origin: _itinerary.origin,
         days: revisedDays,
-        generatedAt: now,
+        generatedAt: _dependencies.now(),
+
         warnings: _itinerary.warnings,
         inputs: _itinerary.inputs,
-        travelModeOverrides: _itinerary.travelModeOverrides,
+        travelModeOverrides: revisedModes,
       );
-      _tripTracker.updateItinerary(revised);
-      if (!mounted) return;
+      _updateTrackedItinerary(revised);
       setState(() {
         _itinerary = revised;
+        _travelModeOverrides = revisedModes;
         _selectedDayIndex = dayIndex;
         _mapDayIndex = dayIndex;
       });
-      await _notificationService.showScheduleAdjusted(
-        lateMinutes: alert.lateMinutes,
-        nextStopName: alert.nextStopName,
-      );
-      if (mounted) {
-        _showMessage('已依目前位置更新 Day ${revisedDay.day} 的後續行程。');
-      }
+      _showMessage('已套用 Day ${revisedDay.day} 的剩餘行程備案。');
     } catch (_) {
-      if (mounted) _showMessage('偵測到延誤，但暫時無法重新安排今日行程。');
+      await _showPlanningFailure('暫時無法重新查詢剩餘行程。');
     } finally {
-      _isLiveReplanning = false;
+      if (mounted) setState(() => _isAlternativePromptOpen = false);
     }
+  }
+
+  Future<void> _handleTrackingUpdate(TripTrackingUpdate update) async {
+    if (!mounted ||
+        (_guardianSession != null && !_guardianSession!.isForegroundVisible)) {
+      return;
+    }
+    setState(() {
+      _currentLocation = update.location;
+      _trackedRoute = update.route;
+    });
+    if (_isEvaluatingTrackingUpdate || _isAlternativePromptOpen) return;
+    _isEvaluatingTrackingUpdate = true;
+    try {
+      final now = _dependencies.now();
+      try {
+        if (_dependencies.debugController?.enabled == true ||
+            _dependencies.productionWeatherService == null) {
+          await _dependencies.weatherGateway.check(update.location, now: now);
+        } else {
+          final weather = await _checkWeatherAtCurrentLocation(update.location);
+          if (weather != null && mounted && weather.advisories.isNotEmpty) {
+            await _showWeatherAdvisory(weather.advisories);
+          } else if (weather == null &&
+              _weatherAdvisoryService.lastError != null) {
+            _reportWeatherErrorOnce();
+          }
+        }
+      } catch (_) {
+        // Weather availability must not prevent GPS and transport monitoring.
+      }
+      if (!mounted) return;
+      final dayIndex = _itinerary.days.indexWhere(
+        (day) =>
+            day.date.year == now.year &&
+            day.date.month == now.month &&
+            day.date.day == now.day,
+      );
+      if (dayIndex >= 0) {
+        TransitConnectionRisk? transitRisk;
+        try {
+          transitRisk = await _transitGuardian.check(
+            day: _itinerary.days[dayIndex],
+            location: update.location,
+            now: now,
+          );
+          _realtimeWarningShown = false;
+        } catch (_) {
+          if (!_realtimeWarningShown && mounted) {
+            _realtimeWarningShown = true;
+            _showMessage('即時班次資料暫時無法取得；GPS 延誤仍會繼續監測。');
+          }
+        }
+        if (!mounted) return;
+        if (transitRisk != null) {
+          final riskKey =
+              '${transitRisk.kind.name}|${transitRisk.affectedSection.stableKey}';
+          final previousPrompt = _lastTransitRiskPromptAt[riskKey];
+          if (previousPrompt != null &&
+              !now.isBefore(previousPrompt) &&
+              now.difference(previousPrompt) < const Duration(minutes: 15)) {
+            return;
+          }
+          _lastTransitRiskPromptAt[riskKey] = now;
+          await _handleTransitRisk(
+            risk: transitRisk,
+            location: update.location,
+            now: now,
+            dayIndex: dayIndex,
+          );
+          return;
+        }
+      }
+      final alert = update.delayAlert;
+      if (alert == null || _isAlternativePromptOpen) return;
+      if (dayIndex < 0) return;
+
+      _isAlternativePromptOpen = true;
+      try {
+        final day = _itinerary.days[dayIndex];
+        final completedCount = await _confirmCompletedCount(day);
+        if (!mounted || completedCount == null) return;
+        var plan = await _alternativePlanner.plan(
+          day: day,
+          currentLocation: update.location,
+          now: now,
+          completedCount: completedCount,
+          strategy: LiveAlternativeStrategy.preserveOrder,
+        );
+        if (!plan.canApply && plan.needsNewLegMode) {
+          final mode = await _chooseNewLegMode();
+          if (!mounted || mode == null) return;
+          plan = await _alternativePlanner.plan(
+            day: day,
+            currentLocation: update.location,
+            now: now,
+            completedCount: completedCount,
+            strategy: LiveAlternativeStrategy.preserveOrder,
+            newLegMode: mode,
+          );
+        }
+        if (!plan.canApply && plan.reorderMayHelp) {
+          final newLegMode = await _chooseNewLegMode();
+          if (!mounted || newLegMode == null) return;
+          plan = await _alternativePlanner.plan(
+            day: day,
+            currentLocation: update.location,
+            now: now,
+            completedCount: completedCount,
+            strategy: LiveAlternativeStrategy.reorderRemaining,
+            newLegMode: newLegMode,
+          );
+        }
+        if (!mounted) return;
+        if (!plan.canApply) {
+          await _showPlanningFailure(plan.failure ?? '目前無法產生經路線查詢驗證的備案。');
+          return;
+        }
+        final revisedDay = plan.day!;
+        final revisedDays = List.of(_itinerary.days)..[dayIndex] = revisedDay;
+        final revisedModes = _modesFromDays(revisedDays);
+        final revised = RouteItinerary(
+          request: _itinerary.request,
+          origin: _itinerary.origin,
+          days: revisedDays,
+          generatedAt: _dependencies.now(),
+          warnings: _itinerary.warnings,
+          inputs: _itinerary.inputs,
+          travelModeOverrides: revisedModes,
+        );
+        if (!mounted) return;
+        try {
+          await _dependencies.notificationGateway.showAlternativeAvailable(
+            lateMinutes: alert.lateMinutes,
+            nextStopName: alert.nextStopName,
+          );
+        } catch (_) {
+          // 通知失敗不應阻止使用者在 App 內查看及決定是否套用備案。
+        }
+        if (!mounted) return;
+        final shouldApply = await _confirmAlternative(
+          originalDay: _itinerary.days[dayIndex],
+          revisedDay: revisedDay,
+          reason:
+              '目前約晚了 ${alert.lateMinutes} 分鐘，可能無法依原訂時間前往「${alert.nextStopName}」。',
+          nowMinute: now.hour * 60 + now.minute,
+        );
+        if (!mounted) return;
+        if (shouldApply) {
+          _updateTrackedItinerary(revised);
+          setState(() {
+            _itinerary = revised;
+            _travelModeOverrides = revisedModes;
+            _selectedDayIndex = dayIndex;
+            _mapDayIndex = dayIndex;
+          });
+          _showMessage('已套用 Day ${revisedDay.day} 的行程備案。');
+        } else {
+          _showMessage('已保留原行程，尚未變更任何安排。');
+        }
+      } catch (_) {
+        await _showPlanningFailure('偵測到延誤，但暫時無法產生今日行程備案。');
+      } finally {
+        if (mounted) setState(() => _isAlternativePromptOpen = false);
+      }
+    } finally {
+      _isEvaluatingTrackingUpdate = false;
+    }
+  }
+
+  Future<void> _handleTransitRisk({
+    required TransitConnectionRisk risk,
+    required LocationPoint location,
+    required DateTime now,
+    required int dayIndex,
+  }) async {
+    _isAlternativePromptOpen = true;
+    try {
+      try {
+        await _dependencies.notificationGateway.showTransitRisk(
+          reason: risk.reason,
+          nextStopName: risk.affectedSection.section.arrivalTitle ?? '下一個目的地',
+        );
+      } catch (_) {
+        // App 內仍會顯示備案；通知權限不影響主要流程。
+      }
+      final day = _itinerary.days[dayIndex];
+      final options = await _transitAlternativeService.options(
+        day: day,
+        risk: risk,
+        currentLocation: location,
+        now: now,
+      );
+      if (!mounted) return;
+      if (options.isEmpty) {
+        await _showPlanningFailure('偵測到轉乘風險，但目前查不到可用的即時交通備案。');
+        return;
+      }
+      final selected = await _chooseTransitAlternative(
+        risk: risk,
+        options: options.take(3).toList(growable: false),
+      );
+      if (!mounted) return;
+      if (selected == null) {
+        _showMessage('已保留原行程，尚未變更任何安排。');
+        return;
+      }
+      _showMessage('正在計算所選交通備案的完整後續行程…');
+      final completedCount = await _confirmCompletedCount(day);
+      if (!mounted || completedCount == null) return;
+      final alternativeStart = _transitAlternativeService.startForRisk(
+        day: day,
+        risk: risk,
+        currentLocation: location,
+        now: now,
+      );
+      var plan = await _alternativePlanner.plan(
+        day: day,
+        currentLocation: location,
+        now: now,
+        completedCount: completedCount,
+        strategy: LiveAlternativeStrategy.preserveOrder,
+        affectedLegIndex: risk.affectedSection.legIndex,
+        selectedFirstRoute: selected,
+        firstOrigin: alternativeStart.origin,
+        firstDeparture: alternativeStart.departure,
+        preservedFirstSections: risk.affectedSection.sectionIndex,
+      );
+      if (!mounted) return;
+      if (!plan.canApply && plan.reorderMayHelp) {
+        final mode = await _chooseNewLegMode();
+        if (!mounted || mode == null) return;
+        plan = await _alternativePlanner.plan(
+          day: day,
+          currentLocation: location,
+          now: now,
+          completedCount: completedCount,
+          strategy: LiveAlternativeStrategy.reorderRemaining,
+          affectedLegIndex: risk.affectedSection.legIndex,
+          selectedFirstRoute: selected,
+          newLegMode: mode,
+          firstOrigin: alternativeStart.origin,
+          firstDeparture: alternativeStart.departure,
+          preservedFirstSections: risk.affectedSection.sectionIndex,
+          keepFirstRemaining: true,
+        );
+      }
+      if (!mounted) return;
+      if (!plan.canApply) {
+        await _showPlanningFailure(plan.failure ?? '後續路段無法完整銜接。');
+        return;
+      }
+      final revisedDay = plan.day!;
+      final shouldApply = await _confirmAlternative(
+        originalDay: day,
+        revisedDay: revisedDay,
+        reason: risk.reason,
+        nowMinute: now.hour * 60 + now.minute,
+        affectedLegIndex: risk.affectedSection.legIndex,
+      );
+      if (!mounted) return;
+      if (!shouldApply) {
+        _showMessage('已保留原行程，尚未變更任何安排。');
+        return;
+      }
+      final revisedDays = List<RouteDay>.of(_itinerary.days)
+        ..[dayIndex] = revisedDay;
+      final revisedModes = _modesFromDays(revisedDays);
+      final revised = RouteItinerary(
+        request: _itinerary.request,
+        origin: _itinerary.origin,
+        days: revisedDays,
+        generatedAt: _dependencies.now(),
+        warnings: _itinerary.warnings,
+        inputs: _itinerary.inputs,
+        travelModeOverrides: revisedModes,
+      );
+      _updateTrackedItinerary(revised);
+      setState(() {
+        _itinerary = revised;
+        _travelModeOverrides = revisedModes;
+        _selectedDayIndex = dayIndex;
+        _mapDayIndex = dayIndex;
+      });
+      _showMessage('已套用 Day ${revisedDay.day} 的交通備案。');
+    } catch (_) {
+      await _showPlanningFailure('即時交通資料暫時無法取得。');
+    } finally {
+      if (mounted) setState(() => _isAlternativePromptOpen = false);
+    }
+  }
+
+  Future<void> _showPlanningFailure(String reason) async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('暫時無法產生備案'),
+        content: Text('$reason\n\n原行程沒有變更。你可以稍後重試，或在結果頁選擇其他交通方式與調整行程。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('知道了'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<TdxRoute?> _chooseTransitAlternative({
+    required TransitConnectionRisk risk,
+    required List<TdxRoute> options,
+  }) async {
+    var selectedIndex = 0;
+    return showDialog<TdxRoute>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('可能趕不上原班次'),
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 520, maxHeight: 480),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(risk.reason),
+                  const SizedBox(height: 8),
+                  const Text('先選擇路線預覽完整變更；此步驟不會修改原行程。'),
+                  const SizedBox(height: 12),
+                  for (var index = 0; index < options.length; index++)
+                    ListTile(
+                      selected: selectedIndex == index,
+                      onTap: () => setDialogState(() => selectedIndex = index),
+                      leading: Icon(
+                        selectedIndex == index
+                            ? Icons.radio_button_checked
+                            : Icons.radio_button_off,
+                      ),
+                      title: Text('備案 ${index + 1}'),
+                      subtitle: Text(_transitOptionSummary(options[index])),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('保留原行程'),
+            ),
+            FilledButton(
+              onPressed: () =>
+                  Navigator.of(dialogContext).pop(options[selectedIndex]),
+              child: const Text('預覽所選備案'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<RouteTravelMode?> _chooseNewLegMode() => showDialog<RouteTravelMode>(
+    context: context,
+    builder: (dialogContext) => SimpleDialog(
+      title: const Text('新路段要怎麼移動？'),
+      children: [
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+          child: Text('原路段會保留原交通模式；新相鄰的景點需要你選擇交通方式。'),
+        ),
+        for (final mode in RouteTravelMode.values)
+          SimpleDialogOption(
+            onPressed: () => Navigator.of(dialogContext).pop(mode),
+            child: Text(mode.label),
+          ),
+      ],
+    ),
+  );
+
+  String _transitOptionSummary(TdxRoute route) {
+    final start = route.startTime;
+    final end = route.endTime;
+    final time = start != null && end != null
+        ? '${_dateTimeHm(start)}–${_dateTimeHm(end)}'
+        : '約 ${(route.travelTime / 60).ceil()} 分鐘';
+    final lines = route.sections
+        .where((section) => section.mode != 'pedestrian')
+        .map((section) => section.lineName)
+        .whereType<String>()
+        .where((name) => name.trim().isNotEmpty)
+        .join(' → ');
+    return [
+      time,
+      if (lines.isNotEmpty) lines,
+      '轉乘 ${route.transfers} 次',
+    ].join('・');
+  }
+
+  String _dateTimeHm(DateTime value) =>
+      '${value.hour.toString().padLeft(2, '0')}:'
+      '${value.minute.toString().padLeft(2, '0')}';
+
+  Map<RouteLegKey, RouteTravelMode> _modesFromDays(List<RouteDay> days) => {
+    for (final day in days)
+      for (final leg in day.travelLegs)
+        routeLegKey(
+          day: day.day,
+          originId: leg.origin.id,
+          destinationId: leg.destination.id,
+        ): leg.travelMode,
+  };
+
+  Future<bool> _confirmAlternative({
+    required RouteDay originalDay,
+    required RouteDay revisedDay,
+    required String reason,
+    required int nowMinute,
+    int? affectedLegIndex,
+  }) async {
+    return await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('行程備案'),
+            content: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 560, maxHeight: 520),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(reason),
+                    const SizedBox(height: 10),
+                    const Text('以下只對照受影響的後續行程；已完成項目與其他日期不變。按「套用備案」前不會修改原行程。'),
+                    const SizedBox(height: 16),
+                    _buildItineraryComparison(
+                      originalDay: originalDay,
+                      revisedDay: revisedDay,
+                      nowMinute: nowMinute,
+                      affectedLegIndex: affectedLegIndex,
+                    ),
+                    for (final warning in revisedDay.warnings.where(
+                      (item) => !originalDay.warnings.contains(item),
+                    )) ...[const SizedBox(height: 8), Text('注意：$warning')],
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: const Text('保留原行程'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+                child: const Text('套用備案'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
+  Widget _buildItineraryComparison({
+    required RouteDay originalDay,
+    required RouteDay revisedDay,
+    required int nowMinute,
+    int? affectedLegIndex,
+  }) {
+    final originalEntries = _comparisonEntries(
+      originalDay,
+      nowMinute: nowMinute,
+      affectedLegIndex: affectedLegIndex,
+    );
+    final revisedEntries = _comparisonEntries(
+      revisedDay,
+      nowMinute: nowMinute,
+      affectedLegIndex: affectedLegIndex,
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _comparisonPanel('原行程 Before', originalEntries),
+        const SizedBox(height: 12),
+        _comparisonPanel('建議行程 After', revisedEntries),
+      ],
+    );
+  }
+
+  Widget _comparisonPanel(String title, List<_ComparisonEntry> entries) =>
+      Card.outlined(
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              if (entries.isEmpty) const Text('沒有受影響的後續項目。'),
+              for (final entry in entries)
+                if (entry.details == null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Text(entry.title),
+                  )
+                else
+                  ExpansionTile(
+                    dense: true,
+                    visualDensity: VisualDensity.compact,
+                    tilePadding: EdgeInsets.zero,
+                    childrenPadding: const EdgeInsets.only(bottom: 8),
+                    leading: Icon(entry.icon, size: 20),
+                    title: Text(entry.title, maxLines: 2),
+                    subtitle: Text(entry.subtitle!),
+                    children: [
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(entry.details!),
+                      ),
+                    ],
+                  ),
+            ],
+          ),
+        ),
+      );
+
+  List<_ComparisonEntry> _comparisonEntries(
+    RouteDay day, {
+    required int nowMinute,
+    int? affectedLegIndex,
+  }) {
+    final entries = <_ComparisonEntry>[];
+    for (var index = 0; index < day.travelLegs.length; index++) {
+      final leg = day.travelLegs[index];
+      if (affectedLegIndex != null
+          ? index < affectedLegIndex
+          : leg.schedule.arrivalMinutes <= nowMinute) {
+        continue;
+      }
+      final routeLines = leg.route?.sections
+          .map((section) => section.lineName)
+          .whereType<String>()
+          .where((name) => name.isNotEmpty)
+          .join(' → ');
+      final transport = leg.route == null
+          ? '交通時間估計'
+          : routeLines != null && routeLines.isNotEmpty
+          ? routeLines
+          : leg.travelMode.label;
+      final travelMinutes =
+          leg.schedule.arrivalMinutes - leg.schedule.departureMinutes;
+      entries.add((
+        startMinutes: leg.schedule.departureMinutes,
+        title:
+            '${_formatMinutes(leg.schedule.departureMinutes)}–'
+            '${_formatMinutes(leg.schedule.arrivalMinutes)} '
+            '前往${leg.destination.name}',
+        subtitle: '${leg.travelMode.label} · $travelMinutes 分鐘',
+        details: '起點：${leg.origin.name}\n路線：$transport',
+        icon: switch (leg.travelMode) {
+          RouteTravelMode.transit => Icons.directions_transit,
+          RouteTravelMode.walking => Icons.directions_walk,
+          RouteTravelMode.driving => Icons.directions_car,
+        },
+      ));
+    }
+    for (final visit in day.visits) {
+      if (visit.endMinutes <= nowMinute) continue;
+      entries.add((
+        startMinutes: visit.startMinutes,
+        title:
+            '${_formatMinutes(visit.startMinutes)}–'
+            '${_formatMinutes(visit.endMinutes)} ${visit.label}',
+        subtitle: null,
+        details: null,
+        icon: null,
+      ));
+    }
+    entries.sort((a, b) => a.startMinutes.compareTo(b.startMinutes));
+    return entries;
   }
 
   Future<void> _addPlace() async {
@@ -1372,7 +2568,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
           max(0, result.days.length - 1),
         );
       });
-      _tripTracker.updateItinerary(result);
+      _updateTrackedItinerary(result);
       return true;
     } catch (error) {
       if (mounted) _showMessage('重新安排行程失敗：$error');

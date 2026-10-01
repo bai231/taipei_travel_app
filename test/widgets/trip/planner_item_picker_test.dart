@@ -59,6 +59,11 @@ void main() {
     expect(find.text('縣市'), findsOneWidget);
     await tester.tap(find.text('我的收藏'));
     await tester.pumpAndSettle();
+    final favoriteChip = tester.widget<ChoiceChip>(
+      find.ancestor(of: find.text('我的收藏'), matching: find.byType(ChoiceChip)),
+    );
+    expect(favoriteChip.selected, isTrue);
+    expect(favoriteChip.showCheckmark, isFalse);
     expect(find.text('縣市'), findsNothing);
     expect(find.text('收藏資料夾'), findsOneWidget);
     await tester.tap(find.text('全部收藏').first);
@@ -83,6 +88,39 @@ void main() {
     expect(find.text('收藏資料夾'), findsNothing);
     expect(find.text('收藏甲'), findsOneWidget);
     expect(find.text('收藏乙'), findsOneWidget);
+  });
+
+  testWidgets('手機與網頁皆可篩選未分類收藏景點', (tester) async {
+    final categorized = _place('已分類景點');
+    final uncategorized = _place('未分類景點甲');
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: PlannerItemPicker(
+            type: PlaceType.attraction,
+            places: [categorized, uncategorized],
+            favoritePlaceIds: {categorized.id, uncategorized.id},
+            favoriteFolders: [
+              PlannerFavoriteFolder(
+                id: 'folder',
+                title: '已分類資料夾',
+                placeIds: {categorized.id},
+              ),
+            ],
+            selectedPlaceIds: const {},
+            onConfirmed: (_) {},
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('我的收藏'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('全部收藏').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('未分類景點').last);
+    await tester.pumpAndSettle();
+    expect(find.text('已分類景點'), findsNothing);
+    expect(find.text('未分類景點甲'), findsOneWidget);
   });
 
   for (final type in PlaceType.values) {
