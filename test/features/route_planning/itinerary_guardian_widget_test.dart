@@ -86,6 +86,71 @@ void main() {
     await location.close();
   }, variant: TargetPlatformVariant.only(TargetPlatform.android));
 
+  testWidgets('背景天氣提醒返回正在守護的行程後顯示備案提示', (tester) async {
+    final now = DateTime(2026, 9, 22, 10);
+    final itinerary = _delayedItinerary(now);
+    final location = _FakeLocationGateway(
+      const LocationPoint(latitude: 25.04, longitude: 121.52),
+    );
+    final weather = _FakeWeatherGateway();
+    final dependencies = ItineraryResultDependencies(
+      locationGateway: location,
+      now: () => now,
+      realtimeGateway: _FakeRealtimeGateway(),
+      routingGateway: const _EmptyRoutingGateway(),
+      weatherGateway: weather,
+      notificationGateway: _FakeNotifications(),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ItineraryResultPage(
+          itinerary: itinerary,
+          dependencies: dependencies,
+        ),
+      ),
+    );
+    await tester.tap(find.byTooltip('開始行程'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.pumpWidget(const MaterialApp(home: SizedBox()));
+
+    weather.nextResult = const WeatherCheckResult(
+      forecast: CwaForecast(precipitationProbability: 60),
+      advisories: [
+        WeatherAdvisory(
+          kind: 'rain',
+          title: '稍後可能下雨',
+          body: '請準備雨具。',
+          level: WeatherRiskLevel.warning,
+        ),
+      ],
+    );
+    final session = ActiveGuardianSession.active!;
+    session.tracker.checkNow();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(weather.lastGuardianSessionId, session.id);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ItineraryResultPage(
+          itinerary: session.itinerary,
+          dependencies: session.dependencies,
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(find.text('天氣提醒'), findsOneWidget);
+    expect(find.textContaining('請準備雨具。'), findsOneWidget);
+    await tester.tap(find.text('知道了'));
+    await tester.pump();
+    expect(find.text('保母測試'), findsOneWidget);
+
+    await tester.runAsync(() async => ActiveGuardianSession.active?.stop());
+    await location.close();
+  }, variant: TargetPlatformVariant.only(TargetPlatform.android));
+
   testWidgets('注入 GPS 與固定時間後顯示延誤備案且不自動套用', (tester) async {
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1;
@@ -703,14 +768,24 @@ class _FakeRoutingGateway implements TdxRoutingGateway {
 class _FakeWeatherGateway implements WeatherAdvisoryGateway {
   final List<LocationPoint> positions = [];
   final List<DateTime> checkedAt = [];
+  WeatherCheckResult? nextResult;
+  String? lastGuardianSessionId;
 
   @override
   bool get isConfigured => true;
 
   @override
-  Future<void> check(LocationPoint position, {DateTime? now}) async {
+  Future<WeatherCheckResult?> check(
+    LocationPoint position, {
+    DateTime? now,
+    String? guardianSessionId,
+  }) async {
     positions.add(position);
     if (now != null) checkedAt.add(now);
+    lastGuardianSessionId = guardianSessionId;
+    final result = nextResult;
+    nextResult = null;
+    return result;
   }
 
   @override
@@ -756,6 +831,7 @@ class _FakeNotifications implements TripNotificationGateway {
     required int id,
     required String title,
     required String body,
+    String? payload,
   }) async {}
 
   @override

@@ -175,6 +175,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
   bool _isStartingTracking = false;
   bool _isAlternativePromptOpen = false;
   bool _isEvaluatingTrackingUpdate = false;
+  bool _isShowingPendingWeatherAdvisory = false;
   bool _realtimeWarningShown = false;
   final Map<String, DateTime> _lastTransitRiskPromptAt = {};
   final Map<int, int> _confirmedCompletedCounts = {};
@@ -1462,6 +1463,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
   Future<void> _startTracking() async {
     if (_isStartingTracking || _isTracking) return;
     setState(() => _isStartingTracking = true);
+    ActiveGuardianSession? pendingSession;
     try {
       _hasReportedWeatherError = false;
       if (_dependencies.debugController?.enabled != true) {
@@ -1481,21 +1483,24 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
         }
       }
       if (!mounted) return;
-      final started = await _tripTracker.start(_itinerary);
-      if (!mounted) return;
-      if (!started) {
-        _showMessage('無法取得 GPS 位置，請確認已開啟定位服務並允許位置權限。');
-        return;
-      }
       if (usesAndroidTripLayout) {
-        final session = ActiveGuardianSession(
+        pendingSession = ActiveGuardianSession(
           tracker: _tripTracker,
           dependencies: _dependencies,
           itinerary: _itinerary,
         );
-        await session.activate();
-        _guardianSession = session;
-        session.attachPage(onResume: _resumePendingGuardianRisk);
+        _guardianSession = pendingSession;
+      }
+      final started = await _tripTracker.start(_itinerary);
+      if (!mounted) return;
+      if (!started) {
+        _guardianSession = null;
+        _showMessage('無法取得 GPS 位置，請確認已開啟定位服務並允許位置權限。');
+        return;
+      }
+      if (pendingSession != null) {
+        await pendingSession.activate();
+        pendingSession.attachPage(onResume: _resumePendingGuardianRisk);
       }
       setState(() {
         _isTracking = true;
@@ -1506,6 +1511,10 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
         _showMessage('天氣提醒尚未設定，GPS 行程追蹤可正常使用。');
       }
     } catch (_) {
+      if (pendingSession != null &&
+          !identical(ActiveGuardianSession.active, pendingSession)) {
+        _guardianSession = null;
+      }
       if (mounted) _showMessage('暫時無法開始追蹤，請確認定位權限後重試。');
     } finally {
       if (mounted) setState(() => _isStartingTracking = false);
@@ -2122,7 +2131,11 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
       latitude: location.latitude,
       longitude: location.longitude,
     );
-    return _weatherAdvisoryService.check(location, cityName: city);
+    return _weatherAdvisoryService.check(
+      location,
+      cityName: city,
+      guardianSessionId: _guardianSession?.id,
+    );
   }
 
   Widget _weatherOverviewRow(IconData icon, String label, String value) {
@@ -2465,10 +2478,34 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
   }
 
   void _resumePendingGuardianRisk() {
-    if (!mounted || _isAlternativePromptOpen || _isEvaluatingTrackingUpdate)
+    if (!mounted ||
+        _isAlternativePromptOpen ||
+        _isEvaluatingTrackingUpdate ||
+        _isShowingPendingWeatherAdvisory) {
       return;
+    }
+    final weather = _guardianSession?.takePendingWeatherAdvisories();
+    if (weather != null && weather.isNotEmpty) {
+      _isShowingPendingWeatherAdvisory = true;
+      _currentLocation = _guardianSession?.latestUpdate?.location;
+      unawaited(_presentPendingWeatherAdvisory(weather));
+      return;
+    }
     final pending = _guardianSession?.takePendingRiskUpdate();
     if (pending != null) unawaited(_handleTrackingUpdate(pending));
+  }
+
+  Future<void> _presentPendingWeatherAdvisory(
+    List<WeatherAdvisory> advisories,
+  ) async {
+    try {
+      await _showWeatherAdvisory(advisories);
+    } catch (_) {
+      if (mounted) _showMessage('暫時無法顯示天氣備案，請稍後重試。');
+    } finally {
+      _isShowingPendingWeatherAdvisory = false;
+      if (mounted) _resumePendingGuardianRisk();
+    }
   }
 
   void _updateTrackedItinerary(RouteItinerary itinerary) {
@@ -2646,7 +2683,10 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
 
   Future<void> _handleTrackingUpdate(TripTrackingUpdate update) async {
     if (!mounted ||
-        (_guardianSession != null && !_guardianSession!.isForegroundVisible)) {
+        (_guardianSession != null &&
+            identical(ActiveGuardianSession.active, _guardianSession) &&
+            !_isStartingTracking &&
+            !_guardianSession!.isForegroundVisible)) {
       return;
     }
     setState(() {
@@ -2660,7 +2700,11 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
       try {
         if (_dependencies.debugController?.enabled == true ||
             _dependencies.productionWeatherService == null) {
-          await _dependencies.weatherGateway.check(update.location, now: now);
+          await _dependencies.weatherGateway.check(
+            update.location,
+            now: now,
+            guardianSessionId: _guardianSession?.id,
+          );
         } else {
           final weather = await _checkWeatherAtCurrentLocation(update.location);
           if (weather != null && mounted && weather.advisories.isNotEmpty) {

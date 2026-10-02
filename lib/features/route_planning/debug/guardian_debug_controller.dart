@@ -234,31 +234,53 @@ class GuardianDebugController extends ChangeNotifier
   bool get isConfigured => enabled || realWeather.isConfigured;
 
   @override
-  Future<void> check(LocationPoint position, {DateTime? now}) async {
-    if (!enabled) return realWeather.check(position, now: now);
-    _record('檢查模擬天氣：${weatherScenario.label}。');
-    switch (weatherScenario) {
-      case GuardianWeatherScenario.normal:
-      case GuardianWeatherScenario.failed:
-        return;
-      case GuardianWeatherScenario.rain:
-        await showWeatherAdvisory(
-          id: 7901,
-          title: '模擬：稍後可能下雨',
-          body: '模擬高降雨機率提醒。',
-        );
-        return;
-      case GuardianWeatherScenario.heat:
-        await showWeatherAdvisory(id: 7902, title: '模擬：天氣炎熱', body: '模擬高溫提醒。');
-        return;
-      case GuardianWeatherScenario.uv:
-        await showWeatherAdvisory(
-          id: 7903,
-          title: '模擬：紫外線很強',
-          body: '模擬高紫外線提醒。',
-        );
-        return;
+  Future<WeatherCheckResult?> check(
+    LocationPoint position, {
+    DateTime? now,
+    String? guardianSessionId,
+  }) async {
+    if (!enabled) {
+      return realWeather.check(
+        position,
+        now: now,
+        guardianSessionId: guardianSessionId,
+      );
     }
+    _record('檢查模擬天氣：${weatherScenario.label}。');
+    final advisory = switch (weatherScenario) {
+      GuardianWeatherScenario.normal || GuardianWeatherScenario.failed => null,
+      GuardianWeatherScenario.rain => const WeatherAdvisory(
+        kind: 'rain',
+        title: '模擬：稍後可能下雨',
+        body: '模擬高降雨機率提醒。',
+        level: WeatherRiskLevel.warning,
+      ),
+      GuardianWeatherScenario.heat => const WeatherAdvisory(
+        kind: 'heat',
+        title: '模擬：天氣炎熱',
+        body: '模擬高溫提醒。',
+        level: WeatherRiskLevel.warning,
+      ),
+      GuardianWeatherScenario.uv => const WeatherAdvisory(
+        kind: 'uv',
+        title: '模擬：紫外線很強',
+        body: '模擬高紫外線提醒。',
+        level: WeatherRiskLevel.warning,
+      ),
+    };
+    if (advisory == null) return null;
+    await showWeatherAdvisory(
+      id: 7901,
+      title: advisory.title,
+      body: advisory.body,
+      payload: guardianSessionId == null
+          ? null
+          : 'guardian:weather:$guardianSessionId',
+    );
+    return WeatherCheckResult(
+      forecast: const CwaForecast(),
+      advisories: [advisory],
+    );
   }
 
   @override
@@ -326,12 +348,14 @@ class GuardianDebugController extends ChangeNotifier
     required int id,
     required String title,
     required String body,
+    String? payload,
   }) async {
     if (!enabled) {
       return realNotifications.showWeatherAdvisory(
         id: id,
         title: title,
         body: body,
+        payload: payload,
       );
     }
     await showTestNotification(title: title, body: body);

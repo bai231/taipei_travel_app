@@ -26,8 +26,15 @@ Future<void> main() async {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final session = ActiveGuardianSession.active;
       final navigator = appNavigatorKey.currentState;
-      if (session == null || navigator == null || session.hasAttachedPage)
+      if (session == null || navigator == null) return;
+      if (payload.startsWith('guardian:weather:') &&
+          payload != 'guardian:weather:${session.id}') {
         return;
+      }
+      if (session.hasAttachedPage) {
+        session.onForeground?.call();
+        return;
+      }
       navigator.push(
         MaterialPageRoute<void>(
           builder: (_) => ItineraryResultPage(

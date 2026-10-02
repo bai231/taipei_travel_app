@@ -24,6 +24,7 @@ abstract interface class TripNotificationGateway {
     required int id,
     required String title,
     required String body,
+    String? payload,
   });
 
   Future<void> showTestNotification({
@@ -183,6 +184,7 @@ class TripNotificationService implements TripNotificationGateway {
     required int id,
     required String title,
     required String body,
+    String? payload,
   }) async {
     await initialize();
     await _plugin.show(
@@ -206,6 +208,7 @@ class TripNotificationService implements TripNotificationGateway {
           urgency: LinuxNotificationUrgency.normal,
         ),
       ),
+      payload: payload,
     );
   }
 

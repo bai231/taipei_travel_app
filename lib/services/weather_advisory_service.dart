@@ -9,7 +9,11 @@ import 'trip_notification_service.dart';
 
 abstract interface class WeatherAdvisoryGateway {
   bool get isConfigured;
-  Future<void> check(LocationPoint position, {DateTime? now});
+  Future<WeatherCheckResult?> check(
+    LocationPoint position, {
+    DateTime? now,
+    String? guardianSessionId,
+  });
   void dispose();
 }
 
@@ -129,6 +133,7 @@ class WeatherAdvisoryService implements WeatherAdvisoryGateway {
     LocationPoint position, {
     String? cityName,
     DateTime? now,
+    String? guardianSessionId,
   }) async {
     if (_disposed) return null;
     if (!isConfigured) {
@@ -167,6 +172,9 @@ class WeatherAdvisoryService implements WeatherAdvisoryGateway {
           id: 7100 + advisory.kind.hashCode.abs() % 100,
           title: advisory.title,
           body: advisory.body,
+          payload: guardianSessionId == null
+              ? null
+              : 'guardian:weather:$guardianSessionId',
         );
       }
       return WeatherCheckResult(forecast: forecast, advisories: newAdvisories);

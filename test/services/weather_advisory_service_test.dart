@@ -398,6 +398,25 @@ void main() {
     },
   );
 
+  test('weather notification carries the active guardian session ID', () async {
+    final notifications = _WeatherNotifications();
+    final service = WeatherAdvisoryService(
+      apiKey: 'test-key',
+      queryLimiter: CwaQueryLimiter(store: _MemoryQueryTimeStore()),
+      notifications: notifications,
+      client: MockClient((_) async => _forecastResponse(rain: 60)),
+    );
+    addTearDown(service.dispose);
+
+    await service.check(
+      const LocationPoint(latitude: 25.04, longitude: 121.52),
+      now: DateTime(2026, 9, 27, 9),
+      guardianSessionId: 'active-trip-1',
+    );
+
+    expect(notifications.payloads, ['guardian:weather:active-trip-1']);
+  });
+
   test('missing observations do not clear an active risk', () async {
     final notifications = _WeatherNotifications();
     final rainValues = <double?>[60, null, 65];
@@ -436,14 +455,17 @@ class _MemoryQueryTimeStore implements CwaQueryTimeStore {
 
 class _WeatherNotifications extends Fake implements TripNotificationGateway {
   final List<String> titles = [];
+  final List<String?> payloads = [];
 
   @override
   Future<void> showWeatherAdvisory({
     required int id,
     required String title,
     required String body,
+    String? payload,
   }) async {
     titles.add(title);
+    payloads.add(payload);
   }
 }
 

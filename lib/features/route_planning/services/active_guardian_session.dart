@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 
 import '../../../services/live_itinerary_tracking_service.dart';
 import '../../../services/transit_realtime_monitor.dart';
+import '../../../services/weather_advisory_service.dart';
 import '../models/route_itinerary.dart';
 import '../pages/itinerary_result_dependencies.dart';
 
@@ -12,6 +13,7 @@ import '../pages/itinerary_result_dependencies.dart';
 /// This is an in-process session, not an Android process-restart mechanism.
 class ActiveGuardianSession with WidgetsBindingObserver {
   static ActiveGuardianSession? active;
+  static int _nextSessionId = 0;
   static final _ActiveGuardianNotifier _activeListenable =
       _ActiveGuardianNotifier();
   static ValueListenable<ActiveGuardianSession?> get activeListenable =>
@@ -19,6 +21,8 @@ class ActiveGuardianSession with WidgetsBindingObserver {
 
   final LiveItineraryTrackingService tracker;
   final ItineraryResultDependencies dependencies;
+  final String id =
+      '${DateTime.now().microsecondsSinceEpoch}-${++_nextSessionId}';
   RouteItinerary itinerary;
   final ForegroundTransitGuardian _transitGuardian;
   StreamSubscription<TripTrackingUpdate>? _updates;
@@ -30,6 +34,7 @@ class ActiveGuardianSession with WidgetsBindingObserver {
   DateTime? _lastRealtimeCheck;
   final Map<String, DateTime> _lastRiskNotice = {};
   TripTrackingUpdate? _pendingRiskUpdate;
+  List<WeatherAdvisory> _pendingWeatherAdvisories = const [];
   TripTrackingUpdate? latestUpdate;
   VoidCallback? onForeground;
 
@@ -89,6 +94,12 @@ class ActiveGuardianSession with WidgetsBindingObserver {
     return value;
   }
 
+  List<WeatherAdvisory> takePendingWeatherAdvisories() {
+    final value = _pendingWeatherAdvisories;
+    _pendingWeatherAdvisories = const [];
+    return value;
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     _appVisible = state == AppLifecycleState.resumed;
@@ -105,20 +116,32 @@ class ActiveGuardianSession with WidgetsBindingObserver {
     _evaluating = true;
     try {
       final now = dependencies.now();
-      final day = itinerary.days.where((candidate) =>
-          candidate.date.year == now.year &&
-          candidate.date.month == now.month &&
-          candidate.date.day == now.day).firstOrNull;
+      final day = itinerary.days
+          .where(
+            (candidate) =>
+                candidate.date.year == now.year &&
+                candidate.date.month == now.month &&
+                candidate.date.day == now.day,
+          )
+          .firstOrNull;
       if (day == null) return;
 
       try {
-        await dependencies.weatherGateway.check(update.location, now: now);
+        final weather = await dependencies.weatherGateway.check(
+          update.location,
+          now: now,
+          guardianSessionId: id,
+        );
+        if (weather != null && weather.advisories.isNotEmpty) {
+          _pendingWeatherAdvisories = List.unmodifiable(weather.advisories);
+        }
       } catch (_) {
         // Weather cannot interrupt trip monitoring.
       }
 
       // GPS and clock ticks may be frequent. Do not spend TDX quota on each.
-      final checkRealtime = _lastRealtimeCheck == null ||
+      final checkRealtime =
+          _lastRealtimeCheck == null ||
           now.isBefore(_lastRealtimeCheck!) ||
           now.difference(_lastRealtimeCheck!) >= const Duration(minutes: 2);
       if (checkRealtime) {
