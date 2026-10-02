@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../theme/app_theme.dart'; // 引入色彩系統
+import '../theme/app_colors.dart'; // 引入色彩系統
 
 class SearchPage extends StatefulWidget {
   const SearchPage({super.key});

@@ -51,61 +51,81 @@ class _SettingsPageState extends State<SettingsPage> {
 
   // 彈出半透明磨砂選擇視窗（以語言選擇為例）
   void _showFrostedLanguageDialog() {
-    showDialog(
-      context: context,
-      barrierColor: Colors.black.withValues(alpha: 0.2),
-      builder: (dialogCtx) {
-        final currentLang = LanguageService().currentLanguageName;
-        return Center(
-          child: Material(
-          type: MaterialType.transparency,
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(20),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-              child: Container(
-                width: 220,
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.88),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.6),
-                    width: 1.2,
-                  ),
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text(
-                      '選擇語言',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: textDark,
+  showDialog(
+    context: context,
+    barrierColor: Colors.black.withValues(alpha: 0.2),
+    builder: (dialogCtx) {
+      // 🌟 關鍵：直接監聽全域 Locale 變更，語系一變，彈窗內部與勾勾保證立刻切換
+      return ValueListenableBuilder<Locale>(
+        valueListenable: LanguageService().currentLocale,
+        builder: (context, locale, _) {
+          final isEnglish = locale.languageCode == 'en';
+
+          return Center(
+            child: Material(
+              type: MaterialType.transparency,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(20),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                  child: Container(
+                    width: 220,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.9),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.6),
+                        width: 1.2,
                       ),
                     ),
-                    const SizedBox(height: 12),
-                    _buildLanguageOption('繁體中文', currentLang, dialogCtx),
-                    _buildLanguageOption('English', currentLang, dialogCtx),
-                  ],
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          LanguageService.tr(context, 'select_language'),
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black87,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        // 繁體中文選項
+                        // 找到 _showFrostedLanguageDialog 內部：
+                        _buildLanguageOption(
+                          '繁體中文',
+                          !isEnglish,
+                          dialogCtx,
+                        ),
+                        _buildLanguageOption(
+                          'English',
+                          isEnglish,
+                          dialogCtx,
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
             ),
-          ),
-          ),
-        );
-      },
-    );
-  }
+          );
+        },
+      );
+    },
+  );
+}
 
-  Widget _buildLanguageOption(String lang, String currentSelected, BuildContext dialogCtx) {
-    final bool isSelected = _currentLanguage == lang;
+  Widget _buildLanguageOption(String lang, bool isSelected, BuildContext dialogCtx) {
     return InkWell(
       onTap: () {
         LanguageService().changeLanguage(lang);
-        Navigator.pop(dialogCtx);
         setState(() {});
+        Future.delayed(const Duration(milliseconds: 200), () {
+        if (dialogCtx.mounted) {
+          Navigator.pop(dialogCtx);
+        }
+      });
       },
       borderRadius: BorderRadius.circular(12),
       child: Container(
@@ -177,12 +197,12 @@ class _SettingsPageState extends State<SettingsPage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // 2. 頁面標題：⚙️ 設定
-              const Row(
+               Row(
                 children: [
                   Icon(Icons.settings_outlined, size: 28, color: textDark),
                   SizedBox(width: 8),
                   Text(
-                    "設定",
+                    LanguageService.tr(context, 'settings_title'),
                     style: TextStyle(
                       fontSize: 22,
                       fontWeight: FontWeight.bold,
@@ -209,8 +229,8 @@ class _SettingsPageState extends State<SettingsPage> {
               _buildSettingsGroup([
                 _buildSettingTile(
                   icon: Icons.person_outline_rounded,
-                  title: "編輯個人資料",
-                  subtitle: "修改頭像、暱稱與個人簡介",
+                  title: LanguageService.tr(context, 'edit_profile'),
+                  subtitle: LanguageService.tr(context, 'edit_profile_sub'),
                   onTap: () async{
                     final bool? updated = await Navigator.push(
                       context,
@@ -232,8 +252,8 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),*/
                 _buildSwitchTile(
                   icon: Icons.notifications_none_rounded,
-                  title: "行程與推播通知",
-                  subtitle: "接收景點時間提醒與優惠資訊",
+                  title: LanguageService.tr(context, 'notification'),
+                  subtitle: LanguageService.tr(context, 'notification_sub') ,
                   value: _isNotificationEnabled,
                   onChanged: (val) => setState(() => _isNotificationEnabled = val),
                 ),
@@ -242,8 +262,8 @@ class _SettingsPageState extends State<SettingsPage> {
               _buildSectionDivider(),
 
               // 5. 區塊二：頁面與系統設定
-              const Text(
-                "頁面與系統設定",
+              Text(
+                LanguageService.tr(context, 'system_settings'),
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textDark),
               ),
               const SizedBox(height: 12),
@@ -263,12 +283,12 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
                 _buildSettingTile(
                   icon: Icons.help_outline_rounded,
-                  title: "重新檢視使用指南",
+                  title: LanguageService.tr(context, 'user_guide'),
                   onTap: () => showUserGuide(context),
                 ),
                 _buildSettingTile(
                   icon: Icons.info_outline_rounded,
-                  title: "關於陪伴旅伴 App",
+                  title: LanguageService.tr(context, 'about_app'),
                   trailingText: "v1.0.0",
                   onTap: () {
                     // TODO: 展示關於頁面或隱私條款

@@ -3,6 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
+import '../theme/app_colors.dart';
+import '../theme/app_colors.dart';
+import '../theme/app_typography.dart';
 import '../services/favorite_service.dart';
 import '../services/saved_itinerary_service.dart';
 import '../models/place.dart';
@@ -10,6 +13,7 @@ import 'itinerary_result_page.dart';
 import '../services/user_data_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/saved_itinerary_service.dart';
+import '../services/language_service.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -255,25 +259,25 @@ Future<void> _loadExportedTrips() async {
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
               title: Row(
                 children: [
-                  const Icon(Icons.folder_open_rounded, color: AppColors.primaryDark, size: 24),
+                  Icon(Icons.folder_open_rounded, color: AppColors.primaryDark, size: 24),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       folder["title"].toString(),
-                      style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimary, fontSize: 18),
+                      style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimary, fontSize: 18),
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
                   Text(
                     "(${places.length})",
-                    style: const TextStyle(fontSize: 14, color: AppColors.textSecondary, fontWeight: FontWeight.normal),
+                    style: TextStyle(fontSize: 14, color: AppColors.textSecondary, fontWeight: FontWeight.normal),
                   ),
                 ],
               ),
               content: SizedBox(
                 width: double.maxFinite,
                 child: places.isEmpty
-                    ? const Padding(
+                    ? Padding(
                         padding: EdgeInsets.symmetric(vertical: 24.0),
                         child: Center(
                           child: Text(
@@ -300,11 +304,11 @@ Future<void> _loadExportedTrips() async {
                                   color: AppColors.primary.withValues(alpha: 0.25),
                                   borderRadius: BorderRadius.circular(10),
                                 ),
-                                child: const Icon(Icons.place_outlined, color: AppColors.textPrimary, size: 20),
+                                child: Icon(Icons.place_outlined, color: AppColors.textPrimary, size: 20),
                               ),
                               title: Text(
                                 place.name,
-                                style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.bold, fontSize: 14),
+                                style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.bold, fontSize: 14),
                               ),
                               trailing: IconButton(
                                 icon: const Icon(Icons.remove_circle_outline, color: Colors.redAccent, size: 20),
@@ -325,7 +329,7 @@ Future<void> _loadExportedTrips() async {
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(ctx),
-                  child: const Text("關閉", style: TextStyle(color: AppColors.primaryDark, fontWeight: FontWeight.bold)),
+                  child: Text("關閉", style: TextStyle(color: AppColors.primaryDark, fontWeight: FontWeight.bold)),
                 ),
               ],
             );
@@ -342,7 +346,7 @@ Future<void> _loadExportedTrips() async {
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text(
+        title: Text(
           "加入資料夾",
           style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimary),
         ),
@@ -352,7 +356,7 @@ Future<void> _loadExportedTrips() async {
             mainAxisSize: MainAxisSize.min,
             children: [
               if (_folders.isEmpty)
-                const Padding(
+                Padding(
                   padding: EdgeInsets.symmetric(vertical: 16.0),
                   child: Text(
                     "目前尚無任何資料夾",
@@ -367,15 +371,15 @@ Future<void> _loadExportedTrips() async {
                     itemBuilder: (context, index) {
                       final folder = _folders[index];
                       return ListTile(
-                        leading: const Icon(Icons.folder_outlined, color: AppColors.textPrimary),
+                        leading: Icon(Icons.folder_outlined, color: AppColors.textPrimary),
                         title: Text(
                           folder["title"].toString(),
-                          style: const TextStyle(
+                          style: TextStyle(
                             color: AppColors.textPrimary,
                             fontWeight: FontWeight.w500,
                           ),
                         ),
-                        trailing: const Icon(Icons.add, color: AppColors.textPrimary),
+                        trailing: Icon(Icons.add, color: AppColors.textPrimary),
                         onTap: () async {
   final int folderId = (folder["id"] as num).toInt();
   Navigator.pop(ctx); // 先關閉彈窗
@@ -409,8 +413,8 @@ Future<void> _loadExportedTrips() async {
                   Navigator.pop(ctx);
                   _showCreateFolderDialog(parentContext, place);
                 },
-                icon: const Icon(Icons.create_new_folder_outlined, color: AppColors.primaryDark),
-                label: const Text(
+                icon: Icon(Icons.create_new_folder_outlined, color: AppColors.primaryDark),
+                label: Text(
                   "建立新資料夾",
                   style: TextStyle(
                     color: AppColors.primaryDark,
@@ -433,30 +437,30 @@ Future<void> _loadExportedTrips() async {
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text(
+        title: Text(
           "建立資料夾",
           style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimary),
         ),
         content: TextField(
           controller: folderController,
           autofocus: true,
-          style: const TextStyle(color: AppColors.textPrimary),
+          style: TextStyle(color: AppColors.textPrimary),
           decoration: InputDecoration(
             hintText: "請輸入資料夾名稱",
-            hintStyle: const TextStyle(color: AppColors.textSecondary),
+            hintStyle: TextStyle(color: AppColors.textSecondary),
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text("取消", style: TextStyle(color: AppColors.textSecondary)),
+            child: Text("取消", style: TextStyle(color: AppColors.textSecondary)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.primary,
               foregroundColor: AppColors.surface,
-              shape: const StadiumBorder(),
+              shape: StadiumBorder(),
             ),
             onPressed: () async {
             final folderName = folderController.text.trim();
@@ -498,7 +502,7 @@ Future<void> _loadExportedTrips() async {
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text(
+        title: Text(
           "加入行程",
           style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimary),
         ),
@@ -512,9 +516,9 @@ Future<void> _loadExportedTrips() async {
               return ListTile(
                 title: Text(
                   trip,
-                  style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w500),
+                  style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w500),
                 ),
-                trailing: const Icon(Icons.add, color: AppColors.textPrimary),
+                trailing: Icon(Icons.add, color: AppColors.textPrimary),
                 onTap: () async{
                   Navigator.pop(ctx);
                   ScaffoldMessenger.of(parentContext).showSnackBar(
@@ -542,18 +546,13 @@ Future<void> _loadExportedTrips() async {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // 個人空間：自己的行程與收藏分開呈現。
-              const Row(
+              Row(
                 children: [
                   Icon(Icons.person_outline_rounded, size: 28, color: AppColors.textPrimary),
                   SizedBox(width: 8),
                   Text(
-                    "個人空間",
-                    style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.textPrimary,
-                      letterSpacing: 0.5,
-                    ),
+                    LanguageService.tr(context, 'personal_space'),
+                    style: AppTypography.headline()
                   ),
                 ],
               ),
@@ -561,17 +560,13 @@ Future<void> _loadExportedTrips() async {
               const SizedBox(height: 24),
 
               // 景點區塊
-              const Text(
-                "我的行程",
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textPrimary,
-                ),
+              Text(
+                LanguageService.tr(context, 'my_trips'),
+                style: AppTypography.sectionTitle(),
               ),
               const SizedBox(height: 8),
-              const Text(
-                "你親自規劃並儲存的旅程",
+              Text(
+                LanguageService.tr(context, 'my_trips_desc'),
                 style: TextStyle(color: AppColors.textPrimary),
               ),
               const SizedBox(height: 12),
@@ -580,7 +575,7 @@ Future<void> _loadExportedTrips() async {
               SizedBox(
                 height: 125,
                 child: _isLoadingExportedTrips
-                    ? const Center(
+                    ? Center(
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
                           color: AppColors.primary,
@@ -600,15 +595,15 @@ Future<void> _loadExportedTrips() async {
               const SizedBox(height: 28),
 
               // 收藏景點區塊
-              const Text(
-                "收藏景點",
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+              Text(
+                LanguageService.tr(context, 'saved_spots'),
+                style: AppTypography.sectionTitle(),
               ),
               const SizedBox(height: 12),
               SizedBox(
                 height: 130,
                 child: favorites.isEmpty
-                    ? _buildEmptyState("尚未收藏任何景點")
+                    ? _buildEmptyState(LanguageService.tr(context, 'empty_spots'))
                     : ListView.separated(
                         scrollDirection: Axis.horizontal,
                         itemCount: favorites.length,
@@ -623,9 +618,9 @@ Future<void> _loadExportedTrips() async {
               const SizedBox(height: 16),
 
               // 行程區塊
-              const Text(
-                "收藏行程",
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+              Text(
+                LanguageService.tr(context, 'saved_trips'),
+                style: AppTypography.sectionTitle(),
               ),
               const SizedBox(height: 12),
               SizedBox(
@@ -643,15 +638,15 @@ Future<void> _loadExportedTrips() async {
               const SizedBox(height: 16),
 
               // 我的資料夾區塊
-              const Text(
-                "收藏資料夾",
+              Text(
+                LanguageService.tr(context, 'saved_folders'),
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
               ),
               const SizedBox(height: 12),
               SizedBox(
                 height: 130,
                 child: _folders.isEmpty
-                    ? _buildEmptyState("尚未建立任何資料夾")
+                    ? _buildEmptyState(LanguageService.tr(context, 'empty_folders'))
                     : ListView.separated(
                         scrollDirection: Axis.horizontal,
                         itemCount: _folders.length,
@@ -682,7 +677,7 @@ Future<void> _loadExportedTrips() async {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          const Padding(
+          Padding(
             padding: EdgeInsets.only(top: 28),
             child: Text(
               '圖片',
@@ -703,7 +698,7 @@ Future<void> _loadExportedTrips() async {
                     place.name,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: AppColors.textPrimary,
                       fontSize: 13,
                       fontWeight: FontWeight.bold,
@@ -713,7 +708,7 @@ Future<void> _loadExportedTrips() async {
                 GestureDetector(
                   behavior: HitTestBehavior.opaque,
                   onTap: () => _showFrostedMenu(context, place),
-                  child: const Padding(
+                  child: Padding(
                     padding: EdgeInsets.all(4.0),
                     child: Icon(Icons.more_vert, size: 18, color: AppColors.textPrimary),
                   ),
@@ -739,7 +734,7 @@ Future<void> _loadExportedTrips() async {
         final user = Supabase.instance.client.auth.currentUser;
         if (user == null) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('請先登入帳號')),
+            SnackBar(content: Text(LanguageService.tr(context, 'please_login_first'))),
           );
           return;
         }
@@ -763,7 +758,7 @@ Future<void> _loadExportedTrips() async {
         } catch (e) {
           if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('讀取行程失敗: $e')),
+            SnackBar(content: Text(LanguageService.tr(context, 'load_trips_failed'))),
           );
         }
       },
@@ -785,7 +780,7 @@ Future<void> _loadExportedTrips() async {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(
+           Icon(
               Icons.map_outlined,
               size: 28,
               color: AppColors.textPrimary,
@@ -796,7 +791,7 @@ Future<void> _loadExportedTrips() async {
               textAlign: TextAlign.center,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
+              style: TextStyle(
                 color: AppColors.textPrimary,
                 fontSize: 13,
                 fontWeight: FontWeight.bold,
@@ -840,7 +835,7 @@ Future<void> _loadExportedTrips() async {
         textAlign: TextAlign.center,
         maxLines: 2,
         overflow: TextOverflow.ellipsis,
-        style: const TextStyle(
+        style: TextStyle(
           color: AppColors.textPrimary,
           fontSize: 14,
           fontWeight: FontWeight.bold,
@@ -872,14 +867,14 @@ Future<void> _loadExportedTrips() async {
               child: Stack(
                 clipBehavior: Clip.none,
                 children: [
-                  const Icon(Icons.folder_open_rounded, size: 30, color: AppColors.textPrimary),
+                  Icon(Icons.folder_open_rounded, size: 30, color: AppColors.textPrimary),
                   if (places.isNotEmpty)
                     Positioned(
                       top: -4,
                       right: -6,
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                        decoration: const BoxDecoration(
+                        decoration: BoxDecoration(
                           color: AppColors.primaryDark,
                           shape: BoxShape.circle,
                         ),
@@ -899,7 +894,7 @@ Future<void> _loadExportedTrips() async {
                   title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: AppColors.textPrimary,
                     fontSize: 13,
                     fontWeight: FontWeight.bold,
@@ -917,10 +912,10 @@ Future<void> _loadExportedTrips() async {
   Widget _buildEmptyState(String text) {
     return Container(
       alignment: Alignment.centerLeft,
-      padding: const EdgeInsets.only(left: 8.0),
+      padding: EdgeInsets.only(left: 8.0),
       child: Text(
         text,
-        style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
+        style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
       ),
     );
   }

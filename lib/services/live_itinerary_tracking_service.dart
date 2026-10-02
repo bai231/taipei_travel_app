@@ -10,6 +10,7 @@ import '../features/route_planning/models/travel_leg.dart';
 import '../models/scheduled_visit.dart';
 import 'location_service.dart';
 
+
 class TripDelayAlert {
   final int lateMinutes;
   final String nextStopName;
