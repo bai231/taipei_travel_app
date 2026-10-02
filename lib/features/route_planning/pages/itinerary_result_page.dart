@@ -58,6 +58,10 @@ typedef _ComparisonEntry = ({
 class ItineraryResultPage extends StatefulWidget {
   final RouteItinerary itinerary;
   final VoidCallback? onEdit;
+  final String? savedItineraryId;
+  final ValueChanged<String>? onSavedItinerary;
+  final ValueChanged<RouteItinerary>? onEditItinerary;
+  final bool initiallyUnsaved;
   final VoidCallback? onExport;
   final AddItineraryPlaces? onAddPlace;
   final RecalculateItinerary? onRecalculate;
@@ -72,6 +76,10 @@ class ItineraryResultPage extends StatefulWidget {
     super.key,
     required this.itinerary,
     this.onEdit,
+    this.savedItineraryId,
+    this.onSavedItinerary,
+    this.onEditItinerary,
+    this.initiallyUnsaved = false,
     this.onExport,
     this.onAddPlace,
     this.onRecalculate,
@@ -84,6 +92,8 @@ class ItineraryResultPage extends StatefulWidget {
 }
 
 class _ItineraryResultPageState extends State<ItineraryResultPage> {
+  bool _hasUnsavedChanges = false;
+  String? _savedItineraryId;
   double _timetableZoom = 1;
   double get _dayWidth => usesAndroidTripLayout && !_androidOverview
       ? max(160, MediaQuery.sizeOf(context).width - _timeWidth)
@@ -147,6 +157,8 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
     _guardianSession = resumeSession ? existingSession : null;
 
     _itinerary = widget.itinerary;
+    _savedItineraryId = widget.savedItineraryId;
+    _hasUnsavedChanges = widget.initiallyUnsaved;
     _constraints = _constraintsFromItinerary(_itinerary);
     _travelModeOverrides = Map.of(_itinerary.travelModeOverrides);
     _dependencies =
@@ -199,6 +211,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.itinerary, widget.itinerary)) {
       _itinerary = widget.itinerary;
+      _hasUnsavedChanges = widget.initiallyUnsaved;
       _mapDayIndex = _validMapDayIndex;
       _constraints = _constraintsFromItinerary(_itinerary);
       _travelModeOverrides = Map.of(_itinerary.travelModeOverrides);
@@ -239,6 +252,16 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
         actions: [
           SaveItineraryButton(
             itinerary: _itinerary,
+            savedItineraryId: _savedItineraryId,
+            onSaved: (id) {
+              if (mounted) {
+                setState(() {
+                  _savedItineraryId = id;
+                  _hasUnsavedChanges = false;
+                });
+              }
+              widget.onSavedItinerary?.call(id);
+            },
             enabled:
                 _itinerary.days.isNotEmpty &&
                 !_isRecalculating &&
@@ -279,7 +302,9 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
             ),
           IconButton(
             tooltip: '編輯行程',
-            onPressed: widget.onEdit,
+            onPressed: widget.onEditItinerary == null
+                ? widget.onEdit
+                : () => widget.onEditItinerary!(_itinerary),
             icon: const Icon(Icons.edit_outlined),
           ),
           if (!usesAndroidTripLayout || widget.onExport != null)
@@ -300,6 +325,17 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
                       !usesAndroidTripLayout)
                     _buildGuardianDebugEntry(),
                   _buildToolbar(),
+                  if (_hasUnsavedChanges && _savedItineraryId != null)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 4,
+                      ),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text('有未儲存的變更，按上方磁碟圖示才會覆寫原行程。'),
+                      ),
+                    ),
                   if (_pendingPlaces.isNotEmpty) _buildPendingArea(),
                   if (_itinerary.warnings.isNotEmpty) _buildWarnings(),
                   if (_isMapVisible) ...[
@@ -409,11 +445,12 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
         spacing: 4,
         crossAxisAlignment: WrapCrossAlignment.center,
         children: [
-          FilledButton.icon(
-            onPressed: _isRecalculating ? null : _addPlace,
-            icon: const Icon(Icons.add_location_alt_outlined),
-            label: const Text('新增景點'),
-          ),
+          if (widget.onAddPlace != null)
+            FilledButton.icon(
+              onPressed: _isRecalculating ? null : _addPlace,
+              icon: const Icon(Icons.add_location_alt_outlined),
+              label: const Text('新增景點'),
+            ),
           if (usesAndroidTripLayout)
             TextButton(
               onPressed: () =>
@@ -1849,6 +1886,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
       _updateTrackedItinerary(revised);
       setState(() {
         _itinerary = revised;
+        _hasUnsavedChanges = true;
         _travelModeOverrides = revisedModes;
         _selectedDayIndex = dayIndex;
         _mapDayIndex = dayIndex;
@@ -2011,6 +2049,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
           _updateTrackedItinerary(revised);
           setState(() {
             _itinerary = revised;
+            _hasUnsavedChanges = true;
             _travelModeOverrides = revisedModes;
             _selectedDayIndex = dayIndex;
             _mapDayIndex = dayIndex;
@@ -2139,6 +2178,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
       _updateTrackedItinerary(revised);
       setState(() {
         _itinerary = revised;
+        _hasUnsavedChanges = true;
         _travelModeOverrides = revisedModes;
         _selectedDayIndex = dayIndex;
         _mapDayIndex = dayIndex;
@@ -2560,6 +2600,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
       if (!mounted) return false;
       setState(() {
         _itinerary = result;
+        _hasUnsavedChanges = true;
         _mapDayIndex = _validMapDayIndex;
         _constraints = _constraintsFromItinerary(result);
         _travelModeOverrides = Map.of(result.travelModeOverrides);
@@ -2655,27 +2696,33 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
     if (itinerary.inputs.isNotEmpty) {
       return [
         for (final input in itinerary.inputs)
-          TripPlaceConstraint(
-            place: input.place,
-            day: input.day,
-            startMinutes: input.startMinutes,
-            locked: input.locked,
-            preferences: input.preferences,
-          ),
+          if (input.kind != VisitKind.hotelStay)
+            TripPlaceConstraint(
+              place: input.place,
+              day: input.day,
+              startMinutes: input.startMinutes,
+              locked: input.locked,
+              preferences: input.preferences,
+              kind: input.kind,
+              suggestedMealType: input.suggestedMealType,
+            ),
       ];
     }
     return [
       for (final day in itinerary.days)
         for (final visit in day.visits)
-          TripPlaceConstraint(
-            place: visit.place,
-            day: visit.locked ? day.day : null,
-            startMinutes: visit.locked
-                ? visit.requestedStartMinutes ?? visit.startMinutes
-                : null,
-            locked: visit.locked,
-            preferences: visit.preferences,
-          ),
+          if (visit.kind != VisitKind.hotelStay)
+            TripPlaceConstraint(
+              place: visit.place,
+              day: visit.locked ? day.day : null,
+              startMinutes: visit.locked
+                  ? visit.requestedStartMinutes ?? visit.startMinutes
+                  : null,
+              locked: visit.locked,
+              preferences: visit.preferences,
+              kind: visit.kind,
+              suggestedMealType: visit.mealType,
+            ),
     ];
   }
 
@@ -2688,6 +2735,8 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
             startMinutes: item.startMinutes,
             locked: item.locked,
             preferences: item.preferences,
+            kind: item.kind,
+            suggestedMealType: item.suggestedMealType,
           ),
         )
         .toList();

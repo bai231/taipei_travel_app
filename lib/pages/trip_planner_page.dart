@@ -12,6 +12,7 @@ import '../models/trip_place_constraint.dart';
 import '../features/route_planning/models/route_place_input.dart';
 import '../features/route_planning/models/route_travel_mode.dart';
 import '../features/route_planning/models/route_itinerary.dart';
+import '../models/visit_preferences.dart';
 import '../features/route_planning/pages/itinerary_result_page.dart';
 import '../features/route_planning/services/itinerary_planning_service.dart';
 import '../services/place_service.dart';
@@ -26,6 +27,9 @@ import '../services/recommendation/trip_auto_fill_service.dart';
 class TripPlannerPage extends StatefulWidget {
   final TripRequest request;
   final List<Place> places;
+  final List<RoutePlaceInput> initialInputs;
+  final Map<RouteLegKey, RouteTravelMode> initialTravelModeOverrides;
+  final String? savedItineraryId;
 
   /// Precomputed display scores for attraction/restaurant/accommodation pickers.
   final Map<String, num> candidateScoresByPlaceId;
@@ -34,6 +38,9 @@ class TripPlannerPage extends StatefulWidget {
     super.key,
     required this.request,
     required this.places,
+    this.initialInputs = const [],
+    this.initialTravelModeOverrides = const {},
+    this.savedItineraryId,
     this.candidateScoresByPlaceId = const {},
   });
 
@@ -68,6 +75,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
   int _selectedDay = 1;
   PlaceType _selectedType = PlaceType.attraction;
   bool _isGenerating = false;
+  String? _savedItineraryId;
   bool _isWaitingForTdx = false;
   String? _planningMessage;
   ItineraryPlanningControl? _planningControl;
@@ -97,6 +105,24 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
   @override
   void initState() {
     super.initState();
+    _savedItineraryId = widget.savedItineraryId;
+
+    // Restore the user's selections, not generated overnight check-in events.
+    _selectedPlaces.addAll(
+      widget.initialInputs
+          .where((input) => input.kind != VisitKind.hotelStay)
+          .map(
+            (input) => TripPlaceConstraint(
+              place: input.place,
+              day: input.day,
+              startMinutes: input.startMinutes,
+              locked: input.locked,
+              preferences: input.preferences,
+              kind: input.kind,
+              suggestedMealType: input.suggestedMealType,
+            ),
+          ),
+    );
 
     _recommendationCriteria = RecommendationCriteriaFactory.fromTripRequest(
       widget.request,
@@ -166,7 +192,10 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
         .map((constraint) => constraint.place.id)
         .toSet();
 
-    for (final place in autoAddedMustVisitPlaces) {
+    for (final place
+        in widget.initialInputs.isEmpty
+            ? autoAddedMustVisitPlaces
+            : <Place>[]) {
       if (existingIds.add(place.id)) {
         _selectedPlaces.add(
           TripPlaceConstraint(
@@ -1466,6 +1495,8 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
           (constraint) => RoutePlaceInput(
             place: constraint.place,
             preferences: constraint.preferences,
+            kind: constraint.kind,
+            suggestedMealType: constraint.suggestedMealType,
             day: constraint.day,
             startMinutes: constraint.startMinutes,
             locked: constraint.locked,
@@ -1491,6 +1522,8 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
                 startMinutes: item.startMinutes,
                 locked: item.locked,
                 preferences: item.preferences,
+                kind: item.kind,
+                suggestedMealType: item.suggestedMealType,
               ),
             ),
           );
@@ -1541,12 +1574,15 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
               (constraint) => RoutePlaceInput(
                 place: constraint.place,
                 preferences: constraint.preferences,
+                kind: constraint.kind,
+                suggestedMealType: constraint.suggestedMealType,
                 day: constraint.day,
                 startMinutes: constraint.startMinutes,
                 locked: constraint.locked,
               ),
             )
             .toList(),
+        travelModeOverrides: widget.initialTravelModeOverrides,
         onProgress: (message) {
           if (!mounted) return;
           setState(() => _planningMessage = message);
@@ -1569,6 +1605,9 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
         MaterialPageRoute(
           builder: (resultContext) => ItineraryResultPage(
             itinerary: itinerary,
+            savedItineraryId: _savedItineraryId,
+            onSavedItinerary: (id) => _savedItineraryId = id,
+            initiallyUnsaved: _savedItineraryId != null,
             onEdit: () => Navigator.of(resultContext).pop(),
             onAddPlace: _pickAdditionalPlaces,
             onRecalculate: _recalculateItinerary,

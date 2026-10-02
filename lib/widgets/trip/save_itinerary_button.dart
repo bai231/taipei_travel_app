@@ -12,11 +12,15 @@ class SaveItineraryButton extends StatefulWidget {
   final RouteItinerary itinerary;
   final bool enabled;
   final SavedItineraryGateway? gateway;
+  final String? savedItineraryId;
+  final ValueChanged<String>? onSaved;
   const SaveItineraryButton({
     super.key,
     required this.itinerary,
     this.enabled = true,
     this.gateway,
+    this.savedItineraryId,
+    this.onSaved,
   });
   @override
   State<SaveItineraryButton> createState() => _SaveItineraryButtonState();
@@ -46,13 +50,15 @@ class _SaveItineraryButtonState extends State<SaveItineraryButton> {
       }
       setState(() => _saving = true);
       final random = Random.secure();
-      final id = _idsByUser.putIfAbsent(
-        userId,
-        () => List.generate(
-          16,
-          (_) => random.nextInt(256).toRadixString(16).padLeft(2, '0'),
-        ).join(),
-      );
+      final id =
+          widget.savedItineraryId ??
+          _idsByUser.putIfAbsent(
+            userId,
+            () => List.generate(
+              16,
+              (_) => random.nextInt(256).toRadixString(16).padLeft(2, '0'),
+            ).join(),
+          );
       // Capture a detached snapshot at click time, not after network completion.
       final snapshot =
           jsonDecode(jsonEncode(itinerarySnapshot(widget.itinerary)))
@@ -67,6 +73,7 @@ class _SaveItineraryButtonState extends State<SaveItineraryButton> {
       if (gateway.currentUserId != userId) {
         message('帳號已變更，請在原帳號確認儲存結果');
       } else {
+        widget.onSaved?.call(id);
         message('已儲存按下按鈕時的完整行程；後續修改請再次儲存');
       }
     } catch (_) {

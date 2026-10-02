@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:taipei_travel_app/algorithm/route_optimizer.dart';
 import 'package:taipei_travel_app/features/route_planning/models/route_day.dart';
 import 'package:taipei_travel_app/features/route_planning/models/route_itinerary.dart';
+import 'package:taipei_travel_app/features/route_planning/models/route_place_input.dart';
 import 'package:taipei_travel_app/features/route_planning/models/route_visit.dart';
 import 'package:taipei_travel_app/features/route_planning/models/travel_leg.dart';
 import 'package:taipei_travel_app/features/route_planning/models/route_travel_mode.dart';
@@ -13,7 +14,9 @@ import 'package:taipei_travel_app/models/place.dart';
 import 'package:taipei_travel_app/models/scheduled_visit.dart';
 import 'package:taipei_travel_app/models/trip_request.dart';
 import 'package:taipei_travel_app/models/travel_preference.dart';
+import 'package:taipei_travel_app/models/visit_preferences.dart';
 import 'package:taipei_travel_app/services/itinerary_snapshot.dart';
+import 'package:taipei_travel_app/services/itinerary_snapshot_reader.dart';
 import 'package:taipei_travel_app/services/saved_itinerary_service.dart';
 import 'package:taipei_travel_app/widgets/trip/save_itinerary_button.dart';
 
@@ -117,6 +120,71 @@ RouteItinerary sample({bool withPreference = false}) {
 }
 
 void main() {
+  test('v2 restores editable meal choices and transport override', () {
+    final base = sample();
+    final restaurant = Place.fromJson({
+      'id': 'restaurant-1',
+      'name': '測試餐廳',
+      'latitude': 25.0,
+      'longitude': 121.0,
+    }, forcedType: PlaceType.restaurant);
+    final legKey = routeLegKey(
+      day: 1,
+      originId: '42',
+      destinationId: restaurant.id,
+    );
+    final itinerary = RouteItinerary(
+      request: base.request,
+      origin: base.origin,
+      days: base.days,
+      generatedAt: base.generatedAt,
+      inputs: [
+        RoutePlaceInput(
+          place: restaurant,
+          day: 1,
+          startMinutes: 720,
+          locked: true,
+          preferences: const VisitPreferences(
+            mealType: MealType.lunch,
+            durationMinutes: 75,
+          ),
+          suggestedMealType: MealType.lunch,
+        ),
+      ],
+      travelModeOverrides: {legKey: RouteTravelMode.walking},
+    );
+    final restored = itineraryFromSnapshot(
+      Map<String, dynamic>.from(
+        jsonDecode(jsonEncode(itinerarySnapshot(itinerary))) as Map,
+      ),
+    );
+    expect(restored.inputs.single.place.type, PlaceType.restaurant);
+    expect(restored.inputs.single.locked, isTrue);
+    expect(restored.inputs.single.startMinutes, 720);
+    expect(restored.inputs.single.preferences.durationMinutes, 75);
+    expect(restored.inputs.single.suggestedMealType, MealType.lunch);
+    expect(restored.travelModeOverrides[legKey], RouteTravelMode.walking);
+  });
+
+  test(
+    'v2 snapshot restores displayed days and route modes without replanning',
+    () {
+      final raw = Map<String, dynamic>.from(
+        jsonDecode(jsonEncode(itinerarySnapshot(sample(withPreference: true))))
+            as Map,
+      );
+      final restored = itineraryFromSnapshot(raw);
+      expect(restored.days, hasLength(2));
+      expect(restored.days.first.visits.first.startMinutes, 1450);
+      expect(restored.days.last.visits.first.occurrenceId, '42:day:2');
+      expect(
+        restored.days.first.travelLegs.first.travelMode,
+        RouteTravelMode.walking,
+      );
+      expect(restored.request.parsedPreference?.dailyBudget, 2000);
+    },
+  );
+
   test('v2 keeps parsed monetary daily budget separate from budget level', () {
     final data = jsonDecode(
       jsonEncode(itinerarySnapshot(sample(withPreference: true))),
@@ -242,5 +310,45 @@ void main() {
       isNull,
     );
     expect(gateway.ids, isEmpty);
+  });
+
+  testWidgets('editing a saved trip upserts the original id only on click', (
+    tester,
+  ) async {
+    final gateway = FakeSaveGateway();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SaveItineraryButton(
+            itinerary: sample(),
+            gateway: gateway,
+          savedItineraryId: '0123456789abcdef0123456789abcdef',
+          ),
+        ),
+      ),
+    );
+    expect(gateway.ids, isEmpty);
+    await tester.tap(find.byTooltip('儲存行程'));
+    await tester.pumpAndSettle();
+    expect(gateway.ids, ['0123456789abcdef0123456789abcdef']);
+  });
+
+  testWidgets('a first save returns its id for later edits', (tester) async {
+    final gateway = FakeSaveGateway();
+    String? savedId;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SaveItineraryButton(
+            itinerary: sample(),
+            gateway: gateway,
+            onSaved: (id) => savedId = id,
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.byTooltip('儲存行程'));
+    await tester.pumpAndSettle();
+    expect(savedId, gateway.ids.single);
   });
 }

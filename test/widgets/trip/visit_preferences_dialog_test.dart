@@ -14,6 +14,36 @@ import 'package:taipei_travel_app/pages/trip_planner_page.dart';
 import 'package:taipei_travel_app/widgets/trip/visit_preferences_dialog.dart';
 
 void main() {
+  testWidgets('已儲存行程的選擇還原後仍可在規劃頁操作', (tester) async {
+    tester.view.physicalSize = const Size(1000, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final restaurant = _place(PlaceType.restaurant);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TripPlannerPage(
+          request: _request(),
+          places: [restaurant],
+          savedItineraryId: 'existing-id',
+          initialInputs: [
+            RoutePlaceInput(
+              place: restaurant,
+              preferences: const VisitPreferences(mealType: MealType.lunch),
+            ),
+          ],
+        ),
+      ),
+    );
+    await tester.tap(find.text('安排餐廳'));
+    await tester.pumpAndSettle();
+    expect(find.text(restaurant.name), findsWidgets);
+    await tester.tap(find.byTooltip('時段、停留與資訊來源'));
+    await tester.pumpAndSettle();
+    expect(find.text('餐別'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('停留時間先顯示預設，未修改時仍保存為預估', (tester) async {
     VisitPreferences? saved;
     await _open(tester, _place(PlaceType.restaurant), (value) => saved = value);

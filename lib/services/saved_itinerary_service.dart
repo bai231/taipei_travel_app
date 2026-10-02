@@ -1,4 +1,5 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter/foundation.dart';
 import 'itinerary_snapshot.dart';
 
 abstract interface class SavedItineraryGateway {
@@ -13,6 +14,7 @@ abstract interface class SavedItineraryGateway {
 
 /// Requires the reviewed saved_itineraries schema. Does not write legacy trips.
 class SavedItineraryService implements SavedItineraryGateway {
+  static final ValueNotifier<int> changes = ValueNotifier<int>(0);
   final SupabaseClient client;
   SavedItineraryService(this.client);
 
@@ -40,6 +42,7 @@ class SavedItineraryService implements SavedItineraryGateway {
       'snapshot': snapshot,
     }, onConflict: 'user_id,id');
     if (currentUserId != userId) throw StateError('帳號已變更，請在原帳號確認儲存結果');
+    changes.value++;
   }
 
   /// Summary pagination for the teammate's personal page (no large JSON field).
