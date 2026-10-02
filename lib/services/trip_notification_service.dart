@@ -47,13 +47,18 @@ class TripNotificationService implements TripNotificationGateway {
   @override
   Future<void> initialize() async {
     if (_initialized) return;
-    const settings = InitializationSettings(
-      android: AndroidInitializationSettings('@mipmap/ic_launcher'),
-      linux: LinuxInitializationSettings(defaultActionName: '開啟'),
-      iOS: DarwinInitializationSettings(
+    final settings = InitializationSettings(
+      android: const AndroidInitializationSettings('@mipmap/ic_launcher'),
+      linux: const LinuxInitializationSettings(defaultActionName: '開啟'),
+      iOS: const DarwinInitializationSettings(
         requestAlertPermission: false,
         requestBadgePermission: false,
         requestSoundPermission: false,
+      ),
+      windows: WindowsInitializationSettings(
+        appName: 'Taiwan Travel App',
+        appUserModelId: 'com.sandy.taipei_travel_app',
+        guid: '8ca31ca6-cdde-4f44-9d06-2a8c635a08b2',
       ),
     );
     await _plugin.initialize(
@@ -95,10 +100,10 @@ class TripNotificationService implements TripNotificationGateway {
       '目前約晚了 $lateMinutes 分鐘；已依您的位置調整後續景點，下一站是 $nextStopName。',
       const NotificationDetails(
         android: AndroidNotificationDetails(
-          _channelId,
-          '行程時間提醒',
-          channelDescription: '旅程延誤與當日行程更新提醒',
-          importance: Importance.max,
+          _weatherChannelId,
+          '旅遊天氣提醒',
+          channelDescription: '行程期間的降雨、紫外線與高溫提醒',
+          importance: Importance.high,
           priority: Priority.high,
         ),
         iOS: DarwinNotificationDetails(
@@ -109,6 +114,7 @@ class TripNotificationService implements TripNotificationGateway {
         linux: LinuxNotificationDetails(
           urgency: LinuxNotificationUrgency.normal,
         ),
+        windows: WindowsNotificationDetails(),
       ),
       payload: 'guardian:alternative',
     );

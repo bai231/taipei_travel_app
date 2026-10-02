@@ -323,6 +323,23 @@ void main() {
     expect(find.text('景點 已超出當天時間'), findsOneWidget);
     expect(tester.takeException(), isNull);
   }, variant: TargetPlatformVariant.only(TargetPlatform.linux));
+  testWidgets('Android 操作選單保留 main 新增的 AI 修改入口', (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ItineraryResultPage(
+          itinerary: _itinerary(RouteTravelMode.transit),
+        ),
+      ),
+    );
+    await tester.tap(find.byTooltip('更多行程操作'));
+    await tester.pumpAndSettle();
+    expect(find.text('AI 協助修改'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.android));
   testWidgets('只切換使用者選取的交通路段', (tester) async {
     tester.view.physicalSize = const Size(1100, 900);
     tester.view.devicePixelRatio = 1;

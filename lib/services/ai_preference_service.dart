@@ -29,7 +29,7 @@ class AiPreferenceService {
     try {
       final response = await _client.functions
           .invoke('parse-travel-preference', body: {'text': normalizedText})
-          .timeout(const Duration(seconds: 30));
+          .timeout(const Duration(seconds: 90));
 
       final data = response.data;
 

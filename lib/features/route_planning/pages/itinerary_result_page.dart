@@ -1,5 +1,6 @@
 import 'dart:math';
 import 'dart:async';
+import 'dart:convert';
 import '../models/compact_day_axis.dart';
 
 import 'package:flutter/foundation.dart';
@@ -32,6 +33,21 @@ import '../models/route_visit.dart';
 import '../models/travel_leg.dart';
 import '../widgets/travel_leg_card.dart';
 import '../widgets/trip_map_panel.dart';
+import '../models/itinerary_edit_result.dart';
+import '../services/ai_itinerary_edit_service.dart';
+import '../services/itinerary_edit_validator.dart';
+import '../models/itinerary_edit_command.dart';
+import '../services/itinerary_edit_executor.dart';
+import '../services/relax_day_planner.dart';
+import '../services/itinerary_place_resolver.dart';
+import '../../../services/place_service.dart';
+import '../services/itinerary_place_candidate_ranker.dart';
+import '../../../services/weather_itinerary_impact_analyzer.dart';
+
+import '../../../models/weather_alternative_strategy.dart';
+import '../../../services/weather_alternative_service.dart';
+import '../../../models/weather_alternative_candidate.dart';
+import '../../../services/weather_alternative_candidate_service.dart';
 
 typedef AddItineraryPlaces =
     Future<List<Place>> Function(
@@ -43,6 +59,11 @@ typedef RecalculateItinerary =
       List<TripPlaceConstraint> constraints,
       Map<RouteLegKey, RouteTravelMode> travelModeOverrides,
       RouteItinerary previousItinerary,
+    );
+typedef ResolveItineraryPlaceQuery =
+    Future<List<ItineraryPlaceMatch>> Function(
+      String query,
+      Set<String> excludedPlaceIds,
     );
 typedef RequestIndoorItineraryAlternatives =
     Future<void> Function(WeatherIndoorItineraryRequest request);
@@ -66,6 +87,7 @@ class ItineraryResultPage extends StatefulWidget {
   final AddItineraryPlaces? onAddPlace;
   final RecalculateItinerary? onRecalculate;
   final ItineraryResultDependencies? dependencies;
+  final ResolveItineraryPlaceQuery? onResolvePlaceQuery;
 
   /// Integration point for an AI-powered indoor itinerary recommendation.
   /// This page asks for consent but deliberately does not change the itinerary.
@@ -83,6 +105,7 @@ class ItineraryResultPage extends StatefulWidget {
     this.onExport,
     this.onAddPlace,
     this.onRecalculate,
+    this.onResolvePlaceQuery,
     this.onRequestIndoorItineraryAlternatives,
     this.dependencies,
   });
@@ -112,6 +135,29 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
   late final ForegroundTransitGuardian _transitGuardian;
   late final TransitAlternativeService _transitAlternativeService;
   late final LiveItineraryAlternativePlanner _alternativePlanner;
+  final _liveDayReplanner = LiveDayItineraryReplanner();
+  late final _aiEditService = AiItineraryEditService();
+  final _itineraryEditValidator = const ItineraryEditValidator();
+  final _itineraryEditExecutor = const ItineraryEditExecutor();
+  final _relaxDayPlanner = const RelaxDayPlanner();
+  final _itineraryPlaceCandidateRanker = const ItineraryPlaceCandidateRanker();
+  final _weatherImpactAnalyzer = WeatherItineraryImpactAnalyzer();
+  late final _weatherAlternativeService = WeatherAlternativeService();
+  late final _weatherAlternativeCandidateService =
+      WeatherAlternativeCandidateService();
+
+  List<WeatherResolvedReplacement> _pendingWeatherReplacements = const [];
+
+  Map<String, Place> _pendingWeatherSelections = const {};
+
+  RouteItinerary? _weatherBackupItinerary;
+
+  List<TripPlaceConstraint>? _weatherBackupConstraints;
+
+  Map<RouteLegKey, RouteTravelMode>? _weatherBackupTravelModes;
+  bool? _weatherBackupUnsavedChanges;
+
+  bool _isParsingAiEdit = false;
 
   late RouteItinerary _itinerary;
   late List<TripPlaceConstraint> _constraints;
@@ -258,6 +304,9 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
                 setState(() {
                   _savedItineraryId = id;
                   _hasUnsavedChanges = false;
+                  if (_weatherBackupItinerary != null) {
+                    _weatherBackupUnsavedChanges = true;
+                  }
                 });
               }
               widget.onSavedItinerary?.call(id);
@@ -451,6 +500,26 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
               icon: const Icon(Icons.add_location_alt_outlined),
               label: const Text('新增景點'),
             ),
+          OutlinedButton.icon(
+            onPressed: _isRecalculating || _isParsingAiEdit
+                ? null
+                : _requestAiEdit,
+            icon: _isParsingAiEdit
+                ? const SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.auto_awesome),
+            label: Text(_isParsingAiEdit ? '正在理解修改要求...' : 'AI 協助修改'),
+          ),
+          if (kDebugMode)
+            TextButton.icon(
+              onPressed: _itinerary.days.isEmpty
+                  ? null
+                  : _simulateSevereWeather,
+              icon: const Icon(Icons.thunderstorm_outlined),
+              label: const Text('模擬惡劣天氣'),
+            ),
           if (usesAndroidTripLayout)
             TextButton(
               onPressed: () =>
@@ -571,6 +640,11 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
           onSelected: _handleAndroidToolbarAction,
           itemBuilder: (context) => [
             PopupMenuItem(
+              value: 'ai-edit',
+              enabled: !_isRecalculating && !_isParsingAiEdit,
+              child: const Text('AI 協助修改'),
+            ),
+            PopupMenuItem(
               value: 'hours',
               child: Text(_expandAllHours ? '壓縮頭尾空白' : '展開全部時段'),
             ),
@@ -587,6 +661,11 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
               ),
             ],
             const PopupMenuItem(value: 'drag-help', child: Text('拖曳操作說明')),
+            if (kDebugMode)
+              const PopupMenuItem(
+                value: 'weather-debug',
+                child: Text('模擬惡劣天氣'),
+              ),
             if (_isTracking) ...[
               const PopupMenuItem(value: 'progress', child: Text('確認進度')),
               PopupMenuItem(
@@ -603,6 +682,12 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
 
   void _handleAndroidToolbarAction(String action) {
     switch (action) {
+      case 'ai-edit':
+        _requestAiEdit();
+        return;
+      case 'weather-debug':
+        _simulateSevereWeather();
+        return;
       case 'hours':
         setState(() {
           _gapHoverTimer?.cancel();
@@ -1422,6 +1507,27 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
     }
   }
 
+  Future<void> _simulateSevereWeather() async {
+    debugPrint('[Weather Test] 開始模擬惡劣天氣');
+
+    const advisories = <WeatherAdvisory>[
+      WeatherAdvisory(
+        kind: 'rain',
+        title: '降雨機率很高',
+        body: '目前降雨機率為 85%，建議調整戶外行程。',
+        level: WeatherRiskLevel.severe,
+      ),
+      WeatherAdvisory(
+        kind: 'storm',
+        title: '天氣狀況可能影響戶外行程',
+        body: '氣象預報包含雷雨，建議準備室內備案。',
+        level: WeatherRiskLevel.severe,
+      ),
+    ];
+
+    await _showWeatherAdvisory(advisories);
+  }
+
   Future<void> _stopTracking() async {
     final session = _guardianSession;
     if (session != null) {
@@ -1431,6 +1537,228 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
       await _tripTracker.stop();
     }
     if (mounted) setState(() => _isTracking = false);
+  }
+
+  Future<void> _showWeatherAlternativePreview({
+    required WeatherAlternativeStrategy strategy,
+    required List<WeatherResolvedReplacement> resolved,
+  }) async {
+    if (!mounted) return;
+
+    final selectedPlaceIds = <String, String>{};
+
+    // 每組替換先預選排名第一的候選景點。
+    for (final replacement in resolved) {
+      if (replacement.strategy.decision != WeatherAlternativeDecision.replace) {
+        continue;
+      }
+
+      if (replacement.candidates.isNotEmpty) {
+        selectedPlaceIds[replacement.original.occurrenceId] =
+            replacement.candidates.first.place.id;
+      }
+    }
+
+    bool hasSelectionForEveryReplacement() {
+      return resolved.every((replacement) {
+        if (replacement.strategy.decision !=
+            WeatherAlternativeDecision.replace) {
+          return true;
+        }
+
+        return selectedPlaceIds.containsKey(replacement.original.occurrenceId);
+      });
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final canConfirm = hasSelectionForEveryReplacement();
+
+            return AlertDialog(
+              icon: const Icon(Icons.auto_awesome_outlined),
+              title: const Text('天氣備案預覽'),
+              content: SizedBox(
+                width: 560,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        strategy.summary,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 16),
+
+                      for (final replacement in resolved) ...[
+                        _buildWeatherReplacementPreview(
+                          replacement: replacement,
+                          selectedPlaceId:
+                              selectedPlaceIds[replacement
+                                  .original
+                                  .occurrenceId],
+                          onChanged: (placeId) {
+                            setDialogState(() {
+                              if (placeId == null) {
+                                selectedPlaceIds.remove(
+                                  replacement.original.occurrenceId,
+                                );
+                              } else {
+                                selectedPlaceIds[replacement
+                                        .original
+                                        .occurrenceId] =
+                                    placeId;
+                              }
+                            });
+                          },
+                        ),
+                        const Divider(height: 32),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, false),
+                  child: const Text('維持原行程'),
+                ),
+                FilledButton(
+                  onPressed: canConfirm
+                      ? () => Navigator.pop(dialogContext, true)
+                      : null,
+                  child: const Text('確認備案'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    final selections = <String, Place>{};
+
+    for (final replacement in resolved) {
+      final selectedId = selectedPlaceIds[replacement.original.occurrenceId];
+
+      if (selectedId == null) continue;
+
+      for (final candidate in replacement.candidates) {
+        if (candidate.place.id == selectedId) {
+          selections[replacement.original.occurrenceId] = candidate.place;
+          break;
+        }
+      }
+    }
+
+    _pendingWeatherReplacements = List.unmodifiable(resolved);
+
+    _pendingWeatherSelections = Map.unmodifiable(selections);
+
+    await _applyWeatherAlternativeSelections();
+  }
+
+  Widget _buildWeatherReplacementPreview({
+    required WeatherResolvedReplacement replacement,
+    required String? selectedPlaceId,
+    required ValueChanged<String?> onChanged,
+  }) {
+    final strategy = replacement.strategy;
+
+    if (strategy.decision == WeatherAlternativeDecision.keep) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            replacement.original.name,
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 6),
+          const Text('建議保留原景點'),
+          const SizedBox(height: 4),
+          Text(strategy.reason),
+        ],
+      );
+    }
+
+    if (replacement.candidates.isEmpty) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            replacement.original.name,
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            '目前找不到符合條件的室內替代景點',
+            style: TextStyle(color: Colors.orange),
+          ),
+          const SizedBox(height: 4),
+          Text(strategy.reason),
+        ],
+      );
+    }
+
+    final selectedCandidate = replacement.candidates
+        .where((candidate) => candidate.place.id == selectedPlaceId)
+        .firstOrNull;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '原景點：${replacement.original.name}',
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 6),
+        Text(strategy.reason),
+        const SizedBox(height: 12),
+        DropdownButtonFormField<String>(
+          initialValue: selectedPlaceId,
+          decoration: const InputDecoration(
+            labelText: '選擇室內替代景點',
+            border: OutlineInputBorder(),
+          ),
+          isExpanded: true,
+          items: replacement.candidates
+              .map((candidate) {
+                return DropdownMenuItem<String>(
+                  value: candidate.place.id,
+                  child: Text(
+                    '${candidate.place.name}'
+                    '（${candidate.place.category}）',
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                );
+              })
+              .toList(growable: false),
+          onChanged: onChanged,
+        ),
+        if (selectedCandidate != null) ...[
+          const SizedBox(height: 10),
+          Text(
+            '推薦原因：'
+            '${selectedCandidate.reasons.join('、')}',
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '評分：'
+            '${selectedCandidate.place.rating > 0 ? selectedCandidate.place.rating.toStringAsFixed(1) : '未知'}',
+          ),
+          Text(
+            '營業時間：'
+            '${selectedCandidate.place.hasKnownOpeningHours ? '已確認涵蓋原時段' : '資料未知，套用前需再次確認'}',
+          ),
+        ],
+      ],
+    );
   }
 
   Future<void> _showWeatherOverview(CwaForecast forecast) {
@@ -1536,6 +1864,219 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
       return;
     }
     await _showWeatherOverview(forecast);
+  }
+
+  ({RouteDay day, RouteVisit visit})? _findVisitByOccurrenceId(
+    String occurrenceId,
+  ) {
+    for (final day in _itinerary.days) {
+      for (final visit in day.visits) {
+        if (visit.occurrenceId == occurrenceId) {
+          return (day: day, visit: visit);
+        }
+      }
+    }
+
+    return null;
+  }
+
+  Future<void> _applyWeatherAlternativeSelections() async {
+    if (_isRecalculating) return;
+
+    if (_pendingWeatherSelections.isEmpty) {
+      _showMessage('尚未選擇任何替代景點。');
+      return;
+    }
+
+    if (widget.onRecalculate == null) {
+      _showMessage('請先接上 onRecalculate，才能套用天氣備案。');
+      return;
+    }
+
+    final itineraryBackup = _itinerary;
+    final unsavedBackup = _hasUnsavedChanges;
+    final constraintsBackup = _copyConstraints(_constraints);
+    final travelModesBackup = Map<RouteLegKey, RouteTravelMode>.of(
+      _travelModeOverrides,
+    );
+
+    final changedConstraints = _copyConstraints(_constraints);
+
+    final errors = <String>[];
+    final appliedMessages = <String>[];
+
+    for (final resolved in _pendingWeatherReplacements) {
+      if (resolved.strategy.decision != WeatherAlternativeDecision.replace) {
+        continue;
+      }
+
+      final replacementPlace =
+          _pendingWeatherSelections[resolved.original.occurrenceId];
+
+      if (replacementPlace == null) {
+        errors.add('「${resolved.original.name}」尚未選擇替代景點。');
+        continue;
+      }
+
+      final visitResult = _findVisitByOccurrenceId(
+        resolved.original.occurrenceId,
+      );
+
+      if (visitResult == null) {
+        errors.add('找不到行程項目「${resolved.original.name}」。');
+        continue;
+      }
+
+      final originalVisit = visitResult.visit;
+      final originalDay = visitResult.day;
+
+      if (originalVisit.locked) {
+        errors.add('「${originalVisit.place.name}」已被鎖定，不能由天氣備案自動替換。');
+        continue;
+      }
+
+      final alreadyExists = changedConstraints.any(
+        (constraint) =>
+            constraint.place.id == replacementPlace.id &&
+            constraint.place.id != originalVisit.place.id,
+      );
+
+      if (alreadyExists) {
+        errors.add('「${replacementPlace.name}」已經在行程中。');
+        continue;
+      }
+
+      final constraintIndex = changedConstraints.indexWhere(
+        (constraint) => constraint.place.id == originalVisit.place.id,
+      );
+
+      if (constraintIndex < 0) {
+        errors.add('找不到「${originalVisit.place.name}」的排程條件。');
+        continue;
+      }
+
+      final originalConstraint = changedConstraints[constraintIndex];
+
+      changedConstraints[constraintIndex] = TripPlaceConstraint(
+        place: replacementPlace,
+
+        // 天氣備案只處理當天行程。
+        day: originalDay.day,
+
+        // 第一版保持原本時段，避免改動過大。
+        startMinutes: originalVisit.startMinutes,
+
+        // 鎖定替代景點的原時段。
+        locked: true,
+
+        // 保留使用者原本設定的停留偏好。
+        preferences: originalConstraint.preferences,
+      );
+
+      appliedMessages.add(
+        '已將「${originalVisit.place.name}」'
+        '替換為「${replacementPlace.name}」。',
+      );
+    }
+
+    if (errors.isNotEmpty) {
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          icon: const Icon(Icons.warning_amber_outlined),
+          title: const Text('無法套用部分備案'),
+          content: Text(errors.map((error) => '• $error').join('\n')),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('知道了'),
+            ),
+          ],
+        ),
+      );
+
+      return;
+    }
+
+    if (appliedMessages.isEmpty) {
+      _showMessage('沒有需要替換的景點。');
+      return;
+    }
+
+    setState(() {
+      _constraints = changedConstraints;
+    });
+
+    final succeeded = await _recalculate();
+
+    if (!succeeded) {
+      if (!mounted) return;
+
+      setState(() {
+        _constraints = constraintsBackup;
+        _travelModeOverrides = travelModesBackup;
+        _itinerary = itineraryBackup;
+      });
+
+      return;
+    }
+
+    if (!mounted) return;
+
+    // 只有成功重新排程後才保存復原快照。
+    _weatherBackupItinerary = itineraryBackup;
+    _weatherBackupUnsavedChanges = unsavedBackup;
+    _weatherBackupConstraints = constraintsBackup;
+    _weatherBackupTravelModes = travelModesBackup;
+
+    _pendingWeatherReplacements = const [];
+    _pendingWeatherSelections = const {};
+
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(appliedMessages.join('\n')),
+          duration: const Duration(seconds: 8),
+          action: SnackBarAction(
+            label: '復原',
+            onPressed: _undoWeatherAlternative,
+          ),
+        ),
+      );
+  }
+
+  void _undoWeatherAlternative() {
+    final itinerary = _weatherBackupItinerary;
+    final constraints = _weatherBackupConstraints;
+    final travelModes = _weatherBackupTravelModes;
+
+    if (itinerary == null || constraints == null || travelModes == null) {
+      _showMessage('目前沒有可復原的天氣備案。');
+      return;
+    }
+
+    setState(() {
+      _itinerary = itinerary;
+      _hasUnsavedChanges = _weatherBackupUnsavedChanges ?? true;
+      _constraints = _copyConstraints(constraints);
+      _travelModeOverrides = Map<RouteLegKey, RouteTravelMode>.of(travelModes);
+
+      _mapDayIndex = _validMapDayIndex;
+      _selectedDayIndex = min(
+        _selectedDayIndex,
+        max(0, itinerary.days.length - 1),
+      );
+    });
+
+    _tripTracker.updateItinerary(itinerary);
+
+    _weatherBackupItinerary = null;
+    _weatherBackupUnsavedChanges = null;
+    _weatherBackupConstraints = null;
+    _weatherBackupTravelModes = null;
+
+    _showMessage('已復原套用天氣備案前的行程。');
   }
 
   ({String? district, String? city}) _weatherLocationNames(Place place) {
@@ -1669,53 +2210,251 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
     );
   }
 
+  RouteDay? _todayRouteDay(DateTime now) {
+    for (final day in _itinerary.days) {
+      final isToday =
+          day.date.year == now.year &&
+          day.date.month == now.month &&
+          day.date.day == now.day;
+
+      if (isToday) {
+        return day;
+      }
+    }
+
+    return null;
+  }
+
+  List<RouteVisit> _remainingTodayVisits(DateTime now) {
+    final today = _todayRouteDay(now);
+
+    if (today == null) {
+      return const <RouteVisit>[];
+    }
+
+    final currentMinutes = now.hour * 60 + now.minute;
+
+    return today.visits
+        .where(
+          (visit) =>
+              visit.place.type == PlaceType.attraction &&
+              visit.endMinutes > currentMinutes,
+        )
+        .toList(growable: false);
+  }
+
+  Future<void> _showWeatherAlternativeStrategy(
+    WeatherAlternativeStrategy strategy,
+  ) {
+    final details = strategy.replacements
+        .map((replacement) {
+          final action =
+              replacement.decision == WeatherAlternativeDecision.replace
+              ? '建議替換'
+              : '建議保留';
+
+          final categories = replacement.preferredCategories.isEmpty
+              ? ''
+              : '\n類型：${replacement.preferredCategories.join('、')}';
+
+          final tags = replacement.preferredTags.isEmpty
+              ? ''
+              : '\n標籤：${replacement.preferredTags.join('、')}';
+
+          final county = replacement.preferredCounty == null
+              ? ''
+              : '\n縣市：${replacement.preferredCounty}';
+
+          return '$action\n'
+              '${replacement.reason}'
+              '$categories'
+              '$tags'
+              '$county';
+        })
+        .join('\n\n');
+
+    return showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        icon: const Icon(Icons.auto_awesome_outlined),
+        title: const Text('AI 天氣備案策略'),
+        content: SizedBox(
+          width: 430,
+          child: SingleChildScrollView(
+            child: Text('${strategy.summary}\n\n$details'),
+          ),
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('知道了'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _showWeatherAdvisory(List<WeatherAdvisory> advisories) async {
     if (!mounted || advisories.isEmpty) return;
-    final shouldOfferIndoor = WeatherAdvisory.shouldOfferIndoorAlternative(
-      advisories,
+    final now = DateTime.now();
+    final today = _todayRouteDay(now);
+    final remainingVisits = _remainingTodayVisits(now);
+
+    final impacts = _weatherImpactAnalyzer.analyze(
+      places: remainingVisits.map((visit) => visit.place),
+      advisories: advisories,
     );
+
+    final impactsByPlaceId = {
+      for (final impact in impacts) impact.place.id: impact,
+    };
+
+    final hasAffectedPlaces = impacts.isNotEmpty;
+
     final advice = advisories.map((advisory) => advisory.body).join('\n\n');
-    final wantsIndoorAlternatives = await showDialog<bool>(
+
+    final affectedPlaceText = impacts
+        .map(
+          (impact) =>
+              '• ${impact.place.name}\n'
+              '  ${impact.reasons.join('、')}',
+        )
+        .join('\n');
+
+    final content = StringBuffer()..writeln(advice);
+
+    if (hasAffectedPlaces) {
+      content
+        ..writeln()
+        ..writeln('可能受到影響的後續景點：')
+        ..writeln(affectedPlaceText)
+        ..writeln()
+        ..write('要請 AI 產生替代備案嗎？');
+    } else {
+      content
+        ..writeln()
+        ..write('目前剩餘行程沒有需要更換的戶外景點。');
+    }
+
+    final wantsAlternative = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         icon: Icon(
-          shouldOfferIndoor
+          hasAffectedPlaces
               ? Icons.home_work_outlined
               : Icons.health_and_safety_outlined,
         ),
-        title: Text(shouldOfferIndoor ? '天氣可能影響戶外行程' : '天氣提醒'),
-        content: Text(
-          shouldOfferIndoor ? '$advice\n\n要請 AI 推薦室內替代行程嗎？' : advice,
-        ),
+        title: Text(hasAffectedPlaces ? '天氣可能影響後續行程' : '天氣提醒'),
+        content: SingleChildScrollView(child: Text(content.toString())),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: Text(shouldOfferIndoor ? '維持目前行程' : '知道了'),
+            child: Text(hasAffectedPlaces ? '維持目前行程' : '知道了'),
           ),
-          if (shouldOfferIndoor)
+          if (hasAffectedPlaces)
             FilledButton(
               onPressed: () => Navigator.pop(context, true),
-              child: const Text('查看室內建議'),
+              child: const Text('產生行程備案'),
             ),
         ],
       ),
     );
-    if (!shouldOfferIndoor || wantsIndoorAlternatives != true || !mounted)
-      return;
-    final request = WeatherIndoorItineraryRequest(
-      advisories: advisories,
-      requestedAt: DateTime.now(),
-    );
-    final handler = widget.onRequestIndoorItineraryAlternatives;
-    if (handler == null) {
-      _showMessage('已建立室內行程推薦請求（等待串接 AI 推薦服務）。');
+
+    if (!hasAffectedPlaces || wantsAlternative != true || !mounted) {
       return;
     }
+
+    final request = WeatherIndoorItineraryRequest(
+      advisories: advisories,
+      requestedAt: now,
+      dayNumber: today?.day ?? 1,
+      dayDate: today?.date ?? now,
+      tripLocation: _itinerary.request.location,
+      people: _itinerary.request.people,
+      budget_level: _itinerary.request.budget_level,
+      preferences: List<String>.from(_itinerary.request.preferences),
+      preferencePrompt: _itinerary.request.aiPrompt,
+      currentLatitude: _currentLocation?.latitude,
+      currentLongitude: _currentLocation?.longitude,
+      remainingPlaces: remainingVisits
+          .map((visit) {
+            final impact = impactsByPlaceId[visit.place.id];
+            final exposure = _weatherImpactAnalyzer.classify(visit.place);
+
+            return WeatherItineraryPlace(
+              occurrenceId: visit.occurrenceId,
+              placeId: visit.place.id,
+              name: visit.place.name,
+              category: visit.place.category,
+              tags: List<String>.from(visit.place.tags),
+              address: visit.place.address,
+              county: visit.place.county,
+              startMinutes: visit.startMinutes,
+              endMinutes: visit.endMinutes,
+              locked: visit.locked,
+              exposure: exposure.name,
+              affected: impact != null,
+              impactReasons:
+                  impact?.reasons.toList(growable: false) ?? const <String>[],
+            );
+          })
+          .toList(growable: false),
+    );
+
+    if (kDebugMode) {
+      const encoder = JsonEncoder.withIndent('  ');
+
+      debugPrint(
+        '[Weather Alternative Request]\n'
+        '${encoder.convert(request.toJson())}',
+      );
+    }
+
+    final handler = widget.onRequestIndoorItineraryAlternatives;
+
     try {
-      await handler(request);
-      if (mounted) _showMessage('已送出室內行程推薦請求。');
-    } catch (_) {
-      if (mounted) _showMessage('室內行程推薦暫時無法使用，請稍後再試。');
+      if (handler != null) {
+        await handler(request);
+
+        if (mounted) {
+          _showMessage('已送出天氣備案請求。');
+        }
+
+        return;
+      }
+
+      _showMessage('AI 正在分析天氣備案...');
+
+      final strategy = await _weatherAlternativeService.generate(request);
+
+      if (!mounted) return;
+
+      _showMessage('正在搜尋符合條件的室內景點...');
+
+      final resolved = await _weatherAlternativeCandidateService.resolve(
+        strategy: strategy,
+        request: request,
+      );
+
+      if (!mounted) return;
+
+      if (resolved.isEmpty) {
+        _showMessage('AI 沒有產生可處理的備案項目。');
+        return;
+      }
+
+      await _showWeatherAlternativePreview(
+        strategy: strategy,
+        resolved: resolved,
+      );
+    } on WeatherAlternativeException catch (error) {
+      if (!mounted) return;
+
+      _showMessage(error.message);
+    } catch (error) {
+      if (!mounted) return;
+
+      _showMessage('產生行程備案時發生錯誤：$error');
     }
   }
 
@@ -2767,6 +3506,821 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
   }
 
   static String _formatDate(DateTime date) => '${date.month}/${date.day}';
+
+  Future<void> _requestAiEdit() async {
+    if (_isParsingAiEdit || _isRecalculating) {
+      return;
+    }
+
+    final controller = TextEditingController();
+
+    final input = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.auto_awesome),
+              SizedBox(width: 8),
+              Expanded(child: Text('AI 協助修改行程')),
+            ],
+          ),
+          content: SizedBox(
+            width: 520,
+            child: TextField(
+              controller: controller,
+              autofocus: true,
+              minLines: 3,
+              maxLines: 6,
+              textInputAction: TextInputAction.newline,
+              decoration: const InputDecoration(
+                hintText: '例如：把故宮移到第二天下午，並刪除西門町',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+              },
+              child: const Text('取消'),
+            ),
+            FilledButton.icon(
+              onPressed: () {
+                final value = controller.text.trim();
+
+                if (value.isEmpty) {
+                  return;
+                }
+
+                Navigator.of(dialogContext).pop(value);
+              },
+              icon: const Icon(Icons.auto_awesome),
+              label: const Text('分析修改要求'),
+            ),
+          ],
+        );
+      },
+    );
+
+    controller.dispose();
+
+    if (!mounted || input == null || input.trim().isEmpty) {
+      return;
+    }
+
+    setState(() {
+      _isParsingAiEdit = true;
+    });
+
+    try {
+      var requestText = input;
+      ItineraryEditResult? parsedResult;
+
+      for (var attempt = 0; attempt < 3; attempt++) {
+        final currentResult = await _aiEditService.parseEdit(
+          text: requestText,
+          itinerary: _itinerary,
+        );
+
+        if (!mounted) {
+          return;
+        }
+
+        if (!currentResult.needsClarification) {
+          parsedResult = currentResult;
+          break;
+        }
+
+        final answer = await _showAiClarification(currentResult);
+
+        if (!mounted || answer == null || answer.trim().isEmpty) {
+          return;
+        }
+
+        requestText =
+            '''
+原始修改要求：
+$input
+
+AI 詢問：
+${currentResult.clarificationQuestion ?? '請補充修改資訊'}
+
+使用者補充：
+${answer.trim()}
+''';
+      }
+
+      if (parsedResult == null) {
+        _showMessage('補充資訊後仍無法理解修改要求，請重新描述。');
+        return;
+      }
+
+      final result = parsedResult;
+
+      // 先處理 addPlace 指令，把 placeQuery 轉成真正的 Place。
+      final resolvedAddPlaces = await _resolveAddPlaceCommands(result);
+
+      if (!mounted || resolvedAddPlaces == null) {
+        return;
+      }
+
+      // 將選好的景點傳入修改預覽。
+      final confirmed = await _showAiEditPreview(
+        result,
+        resolvedAddPlaces: resolvedAddPlaces,
+      );
+
+      if (!confirmed || !mounted) {
+        return;
+      }
+
+      // 使用者確認後，才將景點交給 Executor 套用。
+      await _applyAiEditResult(result, resolvedAddPlaces: resolvedAddPlaces);
+    } on AiItineraryEditException catch (error) {
+      if (mounted) {
+        _showMessage(error.message);
+      }
+    } catch (error) {
+      if (mounted) {
+        _showMessage('無法理解修改要求：$error');
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isParsingAiEdit = false;
+        });
+      }
+    }
+  }
+
+  Future<String?> _showAiClarification(ItineraryEditResult result) async {
+    final controller = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+
+    final answer = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.help_outline),
+              SizedBox(width: 8),
+              Expanded(child: Text('AI 需要更多資訊')),
+            ],
+          ),
+          content: SizedBox(
+            width: 520,
+            child: Form(
+              key: formKey,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(result.clarificationQuestion ?? '請補充行程修改資訊。'),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: controller,
+                    autofocus: true,
+                    minLines: 1,
+                    maxLines: 4,
+                    decoration: const InputDecoration(
+                      labelText: '你的回答',
+                      hintText: '例如：第二天下午兩點',
+                      border: OutlineInputBorder(),
+                    ),
+                    validator: (value) {
+                      if (value == null || value.trim().isEmpty) {
+                        return '請輸入回答';
+                      }
+
+                      return null;
+                    },
+                    onFieldSubmitted: (_) {
+                      if (formKey.currentState?.validate() == true) {
+                        Navigator.of(dialogContext).pop(controller.text.trim());
+                      }
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+              },
+              child: const Text('取消修改'),
+            ),
+            FilledButton.icon(
+              onPressed: () {
+                if (formKey.currentState?.validate() != true) {
+                  return;
+                }
+
+                Navigator.of(dialogContext).pop(controller.text.trim());
+              },
+              icon: const Icon(Icons.send),
+              label: const Text('送出回答'),
+            ),
+          ],
+        );
+      },
+    );
+
+    controller.dispose();
+    return answer;
+  }
+
+  Future<bool> _showAiEditPreview(
+    ItineraryEditResult result, {
+    required Map<int, Place> resolvedAddPlaces,
+  }) async {
+    final validation = _itineraryEditValidator.validate(
+      result: result,
+      itinerary: _itinerary,
+    );
+
+    final previewErrors = <String>[...validation.errors];
+
+    final relaxDayPlans = <int, RelaxDayPlan>{};
+
+    for (var index = 0; index < result.commands.length; index++) {
+      final command = result.commands[index];
+
+      if (command.action != ItineraryEditAction.relaxDay) {
+        continue;
+      }
+
+      final targetDay = command.targetDay;
+
+      if (targetDay == null) {
+        continue;
+      }
+
+      final plan = _relaxDayPlanner.createPlan(
+        itinerary: _itinerary,
+        day: targetDay,
+      );
+
+      relaxDayPlans[index] = plan;
+
+      if (!plan.canApply) {
+        previewErrors.add(
+          '第 ${index + 1} 項修改：'
+          '${plan.error ?? '無法產生放鬆行程方案。'}',
+        );
+      }
+    }
+
+    final canApply = previewErrors.isEmpty;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: Row(
+            children: [
+              Icon(
+                canApply
+                    ? Icons.fact_check_outlined
+                    : Icons.warning_amber_outlined,
+              ),
+              const SizedBox(width: 8),
+              Expanded(child: Text(canApply ? '確認 AI 理解結果' : '修改要求無法套用')),
+            ],
+          ),
+          content: SizedBox(
+            width: 560,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (result.summary.isNotEmpty) ...[
+                    Text(
+                      result.summary,
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+
+                  if (!canApply) ...[
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.errorContainer,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '發現以下問題：',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onErrorContainer,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+
+                          for (final error in previewErrors)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 4),
+                              child: Text(
+                                '• $error',
+                                style: TextStyle(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onErrorContainer,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+
+                  const Text(
+                    'AI 解析出的修改：',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+
+                  for (var index = 0; index < result.commands.length; index++)
+                    _buildAiCommandPreview(
+                      index: index,
+                      command: result.commands[index],
+                      additionalDetail: relaxDayPlans[index]?.canApply == true
+                          ? relaxDayPlans[index]!.explanation
+                          : resolvedAddPlaces[index] != null
+                          ? _addPlacePreviewText(
+                              result.commands[index],
+                              resolvedAddPlaces[index]!,
+                            )
+                          : null,
+                    ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop(false);
+              },
+              child: const Text('返回'),
+            ),
+
+            if (canApply)
+              FilledButton.icon(
+                onPressed: () {
+                  Navigator.of(dialogContext).pop(true);
+                },
+                icon: const Icon(Icons.check),
+                label: const Text('套用並重新排行程'),
+              ),
+          ],
+        );
+      },
+    );
+
+    return confirmed ?? false;
+  }
+
+  String _addPlacePreviewText(ItineraryEditCommand command, Place place) {
+    final details = <String>['將新增「${place.name}」'];
+
+    final county = PlaceService.countyFor(place);
+
+    if (county.isNotEmpty) {
+      details.add(county);
+    }
+
+    if (place.category.isNotEmpty) {
+      details.add(place.category);
+    }
+
+    if (command.targetDay != null) {
+      details.add('安排至 Day ${command.targetDay}');
+    }
+
+    if (command.targetStartMinutes != null) {
+      details.add(_formatMinutes(command.targetStartMinutes!));
+    }
+
+    if (_isOutsidePreferredLocation(place)) {
+      details.add('提醒：此景點不在預設旅遊範圍內');
+    }
+
+    return details.join('・');
+  }
+
+  String _aiEditActionLabel(String action) {
+    switch (action) {
+      case 'movePlace':
+        return '移動景點';
+
+      case 'removePlace':
+        return '移除景點';
+
+      case 'addPlace':
+        return '新增景點';
+
+      case 'replacePlace':
+        return '替換景點';
+
+      case 'changeDuration':
+        return '修改停留時間';
+
+      case 'lockPlace':
+        return '鎖定景點時間';
+
+      case 'unlockPlace':
+        return '解除景點鎖定';
+
+      case 'relaxDay':
+        return '放鬆單日行程';
+
+      case 'changeTravelMode':
+        return '修改交通方式';
+
+      default:
+        return '無法辨識的修改';
+    }
+  }
+
+  Widget _buildAiCommandPreview({
+    required int index,
+    required ItineraryEditCommand command,
+    String? additionalDetail,
+  }) {
+    final details = <String>[];
+
+    if (command.placeName != null) {
+      details.add('景點：${command.placeName}');
+    }
+
+    if (command.placeQuery != null) {
+      details.add('搜尋：${command.placeQuery}');
+    }
+
+    if (command.targetDay != null) {
+      details.add('Day ${command.targetDay}');
+    }
+
+    if (command.targetStartMinutes != null) {
+      details.add('時間：${_formatMinutes(command.targetStartMinutes!)}');
+    }
+
+    if (command.durationMinutes != null) {
+      details.add('停留：${command.durationMinutes} 分鐘');
+    }
+
+    if (command.destinationPlaceName != null) {
+      details.add('目的地：${command.destinationPlaceName}');
+    }
+
+    if (command.travelMode != null) {
+      details.add('交通：${_travelModeLabel(command.travelMode!)}');
+    }
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ListTile(
+        leading: CircleAvatar(child: Text('${index + 1}')),
+        title: Text(_aiEditActionLabel(command.action.name)),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (details.isNotEmpty) Text(details.join('・')),
+
+            if (command.reason != null) ...[
+              const SizedBox(height: 4),
+              Text(command.reason!),
+            ],
+
+            if (additionalDetail != null &&
+                additionalDetail.trim().isNotEmpty) ...[
+              const SizedBox(height: 8),
+
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.secondaryContainer,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(Icons.lightbulb_outline, size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(additionalDetail)),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _travelModeLabel(String mode) {
+    switch (mode) {
+      case 'walking':
+        return '步行';
+
+      case 'driving':
+        return '開車';
+
+      case 'transit':
+        return '大眾運輸';
+
+      default:
+        return mode;
+    }
+  }
+
+  Future<void> _applyAiEditResult(
+    ItineraryEditResult result, {
+    required Map<int, Place> resolvedAddPlaces,
+  }) async {
+    if (_isRecalculating) {
+      return;
+    }
+
+    final execution = _itineraryEditExecutor.execute(
+      editResult: result,
+      currentConstraints: _constraints,
+      currentTravelModeOverrides: _travelModeOverrides,
+      itinerary: _itinerary,
+      resolvedPlaces: resolvedAddPlaces,
+    );
+
+    if (!execution.isSuccessful) {
+      await _showAiExecutionErrors(execution.errors);
+      return;
+    }
+
+    if (execution.constraints.isEmpty) {
+      _showMessage('行程中至少需要保留一個景點。');
+      return;
+    }
+
+    final constraintsBackup = _copyConstraints(_constraints);
+
+    final travelModeBackup = Map<RouteLegKey, RouteTravelMode>.of(
+      _travelModeOverrides,
+    );
+
+    setState(() {
+      _constraints = _copyConstraints(execution.constraints);
+
+      _travelModeOverrides = Map<RouteLegKey, RouteTravelMode>.of(
+        execution.travelModeOverrides,
+      );
+    });
+
+    final succeeded = await _recalculate();
+
+    if (!succeeded && mounted) {
+      setState(() {
+        _constraints = constraintsBackup;
+        _travelModeOverrides = travelModeBackup;
+      });
+
+      return;
+    }
+
+    if (mounted) {
+      final message = execution.appliedMessages.isEmpty
+          ? '已依照 AI 修改要求重新安排行程。'
+          : execution.appliedMessages.join('\n');
+
+      _showMessage(message);
+    }
+  }
+
+  Future<void> _showAiExecutionErrors(List<String> errors) async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.warning_amber_outlined),
+              SizedBox(width: 8),
+              Expanded(child: Text('暫時無法套用修改')),
+            ],
+          ),
+          content: SizedBox(
+            width: 520,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('修改要求已經理解，但仍需要完成以下處理：'),
+                const SizedBox(height: 12),
+
+                for (final error in errors)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Text('• $error'),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+              },
+              child: const Text('知道了'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<Place?> _showAiPlaceCandidateDialog({
+    required String query,
+    required List<ItineraryPlaceMatch> matches,
+  }) {
+    return showDialog<Place>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: Text('選擇「$query」對應的景點'),
+          content: SizedBox(
+            width: 560,
+            height: 420,
+            child: ListView.separated(
+              itemCount: matches.length,
+              separatorBuilder: (_, _) => const Divider(height: 1),
+              itemBuilder: (context, index) {
+                final match = matches[index];
+                final place = match.place;
+                final county = PlaceService.countyFor(place);
+                final outsidePreferredLocation = _isOutsidePreferredLocation(
+                  place,
+                );
+
+                return ListTile(
+                  leading: CircleAvatar(child: Text('${index + 1}')),
+                  title: Text(place.name),
+                  subtitle: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        [
+                          if (county.isNotEmpty) county,
+                          if (place.category.isNotEmpty) place.category,
+                          match.reason,
+                        ].join('・'),
+                      ),
+                      if (outsidePreferredLocation)
+                        Text(
+                          '此景點不在預設旅遊範圍內',
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.error,
+                            fontSize: 12,
+                          ),
+                        ),
+                    ],
+                  ),
+                  trailing: Text(match.score.toStringAsFixed(0)),
+                  onTap: () {
+                    Navigator.of(dialogContext).pop(place);
+                  },
+                );
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+              },
+              child: const Text('取消'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<Map<int, Place>?> _resolveAddPlaceCommands(
+    ItineraryEditResult result,
+  ) async {
+    final resolvedPlaces = <int, Place>{};
+
+    for (var index = 0; index < result.commands.length; index++) {
+      final command = result.commands[index];
+
+      if (command.action != ItineraryEditAction.addPlace) {
+        continue;
+      }
+
+      final query = command.placeQuery?.trim().isNotEmpty == true
+          ? command.placeQuery!.trim()
+          : command.placeName?.trim();
+
+      if (query == null || query.isEmpty) {
+        _showMessage('第 ${index + 1} 項修改缺少景點名稱。');
+        return null;
+      }
+
+      if (widget.onResolvePlaceQuery == null) {
+        _showMessage('尚未接上 AI 景點搜尋功能。');
+        return null;
+      }
+
+      final excludedIds = {
+        for (final constraint in _constraints) constraint.place.id,
+        for (final place in _pendingPlaces) place.id,
+        for (final place in resolvedPlaces.values) place.id,
+      };
+
+      List<ItineraryPlaceMatch> matches;
+
+      try {
+        matches = await widget.onResolvePlaceQuery!(query, excludedIds);
+      } catch (error) {
+        if (mounted) {
+          _showMessage('搜尋「$query」時發生錯誤：$error');
+        }
+        return null;
+      }
+
+      if (!mounted) {
+        return null;
+      }
+
+      if (matches.isEmpty) {
+        _showMessage('找不到符合「$query」的景點。');
+        return null;
+      }
+
+      final rankedMatches = _itineraryPlaceCandidateRanker
+          .rank(
+            matches: matches,
+            itinerary: _itinerary,
+            targetDay: command.targetDay,
+          )
+          .take(20)
+          .toList();
+
+      Place? selectedPlace;
+
+      // 完全符合且沒有其他同分候選時，
+      // 可以直接採用，仍會在修改預覽中顯示。
+      final exactMatches = rankedMatches.where((match) {
+        return match.reason.contains('景點名稱完全符合');
+      }).toList();
+
+      if (exactMatches.length == 1) {
+        selectedPlace = exactMatches.first.place;
+      } else {
+        selectedPlace = await _showAiPlaceCandidateDialog(
+          query: query,
+          matches: rankedMatches,
+        );
+      }
+
+      if (!mounted || selectedPlace == null) {
+        return null;
+      }
+
+      resolvedPlaces[index] = selectedPlace;
+    }
+
+    return resolvedPlaces;
+  }
+
+  bool _isOutsidePreferredLocation(Place place) {
+    final preferredLocation = _normalizeLocation(_itinerary.request.location);
+
+    if (preferredLocation.isEmpty || preferredLocation == '全台') {
+      return false;
+    }
+
+    final county = _normalizeLocation(PlaceService.countyFor(place));
+    return county.isNotEmpty && county != preferredLocation;
+  }
+
+  String _normalizeLocation(String value) {
+    return value.trim().replaceAll('臺', '台').replaceAll(RegExp(r'\s+'), '');
+  }
 }
 
 class _DragData {

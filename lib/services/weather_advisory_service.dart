@@ -17,6 +17,8 @@ abstract interface class WeatherAdvisoryGateway {
 ///
 /// The CWA key is intentionally supplied at build time, never committed to the
 /// app. See `docs/weather-alerts.md` for production delivery requirements.
+enum WeatherRiskLevel { warning, severe }
+
 class WeatherAdvisoryService implements WeatherAdvisoryGateway {
   static const _endpoint =
       'https://opendata.cwa.gov.tw/api/v1/rest/datastore/F-D0047-093';
@@ -535,32 +537,167 @@ class WeatherAdvisory {
   final String kind;
   final String title;
   final String body;
-  const WeatherAdvisory(this.kind, this.title, this.body);
+  final WeatherRiskLevel level;
+
+  const WeatherAdvisory({
+    required this.kind,
+    required this.title,
+    required this.body,
+    required this.level,
+  });
 
   static List<WeatherAdvisory> evaluate(CwaForecast forecast) {
     final alerts = <WeatherAdvisory>[];
-    if ((forecast.precipitationProbability ?? 0) >= 50) {
+
+    final rain = forecast.precipitationProbability;
+    final uv = forecast.uvIndex;
+    final temperature = forecast.apparentTemperature;
+    final description = forecast.weatherDescription ?? '';
+
+    // 雷雨、豪雨等文字型風險
+    final hasSevereRainDescription = const [
+      '雷雨',
+      '豪雨',
+      '大雨',
+      '暴雨',
+    ].any(description.contains);
+
+    if (hasSevereRainDescription) {
       alerts.add(
-        const WeatherAdvisory('rain', '稍後可能下雨', '未來幾小時降雨機率偏高，出門請攜帶雨具。'),
+        WeatherAdvisory(
+          kind: 'storm',
+          title: '天氣狀況可能影響戶外行程',
+          body: '氣象預報包含雷雨或較強降雨，建議準備室內備案。',
+          level: WeatherRiskLevel.severe,
+        ),
       );
     }
-    if ((forecast.uvIndex ?? 0) >= 8) {
+
+    // 降雨機率
+    if (rain != null && rain >= 80) {
       alerts.add(
-        const WeatherAdvisory('uv', '紫外線很強', '今天紫外線偏強，請做好防曬並避免長時間曝曬。'),
+        WeatherAdvisory(
+          kind: 'rain',
+          title: '降雨機率很高',
+          body: '目前降雨機率為 ${rain.round()}%，建議調整戶外行程。',
+          level: WeatherRiskLevel.severe,
+        ),
+      );
+    } else if (rain != null && rain >= 50) {
+      alerts.add(
+        WeatherAdvisory(
+          kind: 'rain',
+          title: '稍後可能下雨',
+          body: '目前降雨機率為 ${rain.round()}%，建議攜帶雨具並準備備案。',
+          level: WeatherRiskLevel.warning,
+        ),
       );
     }
-    if ((forecast.apparentTemperature ?? -100) >= 33) {
+
+    // 紫外線
+    if (uv != null && uv >= 11) {
       alerts.add(
-        const WeatherAdvisory('heat', '天氣炎熱', '今日體感溫度偏高，請補充水分並留意熱傷害。'),
+        WeatherAdvisory(
+          kind: 'uv',
+          title: '紫外線極強',
+          body: '紫外線指數為 ${uv.toStringAsFixed(0)}，不建議長時間進行戶外活動。',
+          level: WeatherRiskLevel.severe,
+        ),
+      );
+    } else if (uv != null && uv >= 8) {
+      alerts.add(
+        WeatherAdvisory(
+          kind: 'uv',
+          title: '紫外線很強',
+          body: '紫外線指數為 ${uv.toStringAsFixed(0)}，請做好防曬並避免長時間曝曬。',
+          level: WeatherRiskLevel.warning,
+        ),
       );
     }
+
+    // 體感溫度
+    if (temperature != null && temperature >= 36) {
+      alerts.add(
+        WeatherAdvisory(
+          kind: 'heat',
+          title: '體感溫度過高',
+          body: '目前體感溫度約 ${temperature.round()}°C，戶外活動可能有熱傷害風險。',
+          level: WeatherRiskLevel.severe,
+        ),
+      );
+    } else if (temperature != null && temperature >= 33) {
+      alerts.add(
+        WeatherAdvisory(
+          kind: 'heat',
+          title: '天氣炎熱',
+          body: '目前體感溫度約 ${temperature.round()}°C，請補充水分並適度休息。',
+          level: WeatherRiskLevel.warning,
+        ),
+      );
+    }
+
     return alerts;
   }
 
-  /// Rain and strong UV make an outdoor itinerary less suitable.  High heat
-  /// remains an advisory only, so users are not prompted unnecessarily.
-  static bool shouldOfferIndoorAlternative(Iterable<WeatherAdvisory> alerts) =>
-      alerts.any((alert) => alert.kind == 'rain' || alert.kind == 'uv');
+  static bool shouldOfferIndoorAlternative(Iterable<WeatherAdvisory> alerts) {
+    return alerts.any(
+      (alert) =>
+          alert.kind == 'rain' || alert.kind == 'storm' || alert.kind == 'uv',
+    );
+  }
+}
+
+class WeatherItineraryPlace {
+  final String occurrenceId;
+  final String placeId;
+  final String name;
+  final String category;
+  final List<String> tags;
+  final String address;
+  final String county;
+  final int startMinutes;
+  final int endMinutes;
+  final bool locked;
+
+  /// indoor、mixed、outdoor
+  final String exposure;
+
+  final bool affected;
+  final List<String> impactReasons;
+
+  const WeatherItineraryPlace({
+    required this.occurrenceId,
+    required this.placeId,
+    required this.name,
+    required this.category,
+    required this.tags,
+    required this.address,
+    required this.county,
+    required this.startMinutes,
+    required this.endMinutes,
+    required this.locked,
+    required this.exposure,
+    required this.affected,
+    required this.impactReasons,
+  });
+
+  Map<String, dynamic> toJson() {
+    return {
+      'occurrenceId': occurrenceId,
+      'placeId': placeId,
+      'name': name,
+      'category': category,
+      'tags': tags,
+      'address': address,
+      'county': county,
+      'startMinutes': startMinutes,
+      'endMinutes': endMinutes,
+      'locked': locked,
+      'exposure': exposure,
+      'affected': affected,
+      'impactReasons': impactReasons,
+    };
+  }
 }
 
 /// Input passed to the AI/recommendation layer when the traveller asks for an
@@ -570,13 +707,72 @@ class WeatherIndoorItineraryRequest {
   final List<WeatherAdvisory> advisories;
   final DateTime requestedAt;
 
+  final int dayNumber;
+  final DateTime dayDate;
+
+  final String tripLocation;
+  final int people;
+  final int budget_level;
+  final List<String> preferences;
+
+  final double? currentLatitude;
+  final double? currentLongitude;
+
+  final String preferencePrompt;
+
+  /// 今天尚未結束的完整行程，不只是受影響景點。
+  final List<WeatherItineraryPlace> remainingPlaces;
+
   const WeatherIndoorItineraryRequest({
     required this.advisories,
     required this.requestedAt,
+    this.dayNumber = 1,
+    required this.dayDate,
+    this.tripLocation = '',
+    this.people = 1,
+    this.budget_level = 1,
+    this.preferences = const [],
+    this.currentLatitude,
+    this.currentLongitude,
+    this.preferencePrompt = '',
+    this.remainingPlaces = const [],
   });
 
-  List<String> get reasons => advisories
-      .where((alert) => alert.kind == 'rain' || alert.kind == 'uv')
-      .map((alert) => alert.title)
-      .toList(growable: false);
+  List<String> get reasons =>
+      advisories.map((advisory) => advisory.title).toList(growable: false);
+
+  List<WeatherItineraryPlace> get affectedPlaces =>
+      remainingPlaces.where((place) => place.affected).toList(growable: false);
+
+  Map<String, dynamic> toJson() {
+    return {
+      'requestedAt': requestedAt.toIso8601String(),
+      'dayNumber': dayNumber,
+      'dayDate': dayDate.toIso8601String(),
+      'trip': {
+        'location': tripLocation,
+        'people': people,
+        'budget_level': budget_level,
+        'preferences': preferences,
+        'preferencePrompt': preferencePrompt,
+      },
+      'currentLocation': {
+        'latitude': currentLatitude,
+        'longitude': currentLongitude,
+      },
+      'weather': advisories
+          .map(
+            (advisory) => {
+              'kind': advisory.kind,
+              'title': advisory.title,
+              'body': advisory.body,
+              'level': advisory.level.name,
+            },
+          )
+          .toList(growable: false),
+      'remainingPlaces': remainingPlaces
+          .map((place) => place.toJson())
+          .toList(growable: false),
+    };
+  }
 }

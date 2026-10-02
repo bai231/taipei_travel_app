@@ -6,6 +6,8 @@ import '../features/route_planning/models/route_place_input.dart';
 import '../features/route_planning/models/route_travel_mode.dart';
 import '../features/route_planning/pages/itinerary_result_page.dart';
 import '../features/route_planning/services/itinerary_planning_service.dart';
+import '../features/route_planning/services/itinerary_place_resolver.dart';
+import '../models/place.dart';
 import '../models/trip_place_constraint.dart';
 import '../services/itinerary_snapshot_reader.dart';
 import '../services/place_service.dart';
@@ -25,6 +27,10 @@ class SavedItineraryResultPage extends StatefulWidget {
 
 class _SavedItineraryResultPageState extends State<SavedItineraryResultPage> {
   late Future<RouteItinerary> _itinerary;
+  Future<List<Place>>? _catalog;
+
+  Future<List<Place>> _loadCatalog() =>
+      _catalog ??= PlaceService().getTripCatalog();
 
   SavedItineraryService get _service =>
       SavedItineraryService(Supabase.instance.client);
@@ -40,7 +46,7 @@ class _SavedItineraryResultPageState extends State<SavedItineraryResultPage> {
 
   Future<void> _edit(RouteItinerary itinerary) async {
     try {
-      final catalog = await PlaceService().getTripCatalog();
+      final catalog = await _loadCatalog();
       if (!mounted) return;
       await Navigator.of(context).push(
         MaterialPageRoute<void>(
@@ -113,6 +119,15 @@ class _SavedItineraryResultPageState extends State<SavedItineraryResultPage> {
         savedItineraryId: widget.id,
         onEditItinerary: _edit,
         onRecalculate: _recalculate,
+        onResolvePlaceQuery: (query, excludedIds) async {
+          final catalog = await _loadCatalog();
+          return const ItineraryPlaceResolver().search(
+            query: query,
+            places: catalog,
+            excludedPlaceIds: excludedIds,
+            preferredLocation: snapshot.data!.request.location,
+          );
+        },
       );
     },
   );
