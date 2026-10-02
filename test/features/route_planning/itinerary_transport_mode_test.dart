@@ -214,6 +214,22 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(AndroidDayItinerary), findsOneWidget);
   }, variant: TargetPlatformVariant.only(TargetPlatform.android));
+  testWidgets('Android 已儲存行程沒有新增回呼時不顯示無效按鈕', (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ItineraryResultPage(
+          itinerary: _itinerary(RouteTravelMode.transit),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('新增'), findsNothing);
+    expect(tester.takeException(), isNull);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.android));
   testWidgets('Android 多日總覽只壓縮所有日期共同的頭尾空白', (tester) async {
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1;

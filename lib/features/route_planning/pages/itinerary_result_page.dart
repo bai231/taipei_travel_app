@@ -588,11 +588,12 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
     child: Row(
       children: [
-        FilledButton.icon(
-          onPressed: _isRecalculating ? null : _addPlace,
-          icon: const Icon(Icons.add_location_alt_outlined, size: 18),
-          label: const Text('新增'),
-        ),
+        if (widget.onAddPlace != null)
+          FilledButton.icon(
+            onPressed: _isRecalculating ? null : _addPlace,
+            icon: const Icon(Icons.add_location_alt_outlined, size: 18),
+            label: const Text('新增'),
+          ),
         IconButton(
           tooltip: _androidOverview ? '單日課表' : '多日總覽',
           onPressed: () => setState(() => _androidOverview = !_androidOverview),
@@ -744,7 +745,11 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
     context: context,
     builder: (dialogContext) => AlertDialog(
       title: const Text('行程追蹤'),
-      content: const Text('GPS 追蹤中。保母系統會在此行程頁開啟期間檢查延誤與交通風險；備案須由你確認才會套用。'),
+      content: Text(
+        usesAndroidTripLayout
+            ? 'GPS 追蹤中。切換 App、鎖屏或離開此頁仍會持續守護；按「停止追蹤」才結束。備案須由你確認才會套用。'
+            : 'GPS 追蹤中。保母系統會在此行程頁開啟期間檢查延誤與交通風險；備案須由你確認才會套用。',
+      ),
       actions: [
         TextButton(
           onPressed: () => Navigator.of(dialogContext).pop(),
@@ -1828,7 +1833,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
   }
 
   Future<void> _showInitialWeatherOverview() async {
-    final now = DateTime.now();
+    final now = _dependencies.now();
     final day = _itinerary.days
         .where(
           (item) =>
@@ -2192,11 +2197,12 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
     );
     if (shouldSimulate != true || !mounted) return;
 
+    final now = _dependencies.now();
     final hasToday = _itinerary.days.any(
       (day) =>
-          day.date.year == DateTime.now().year &&
-          day.date.month == DateTime.now().month &&
-          day.date.day == DateTime.now().day,
+          day.date.year == now.year &&
+          day.date.month == now.month &&
+          day.date.day == now.day,
     );
     if (!hasToday) {
       _showMessage('請先建立包含今天的行程，才能模擬延誤。');
@@ -2296,7 +2302,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
 
   Future<void> _showWeatherAdvisory(List<WeatherAdvisory> advisories) async {
     if (!mounted || advisories.isEmpty) return;
-    final now = DateTime.now();
+    final now = _dependencies.now();
     final today = _todayRouteDay(now);
     final remainingVisits = _remainingTodayVisits(now);
 
