@@ -67,7 +67,7 @@ class GoogleRoutesNativeClient {
             'X-Android-Package': settings['packageName']!,
             'X-Android-Cert': settings['certificate']!,
             'X-Goog-FieldMask':
-                'routes.duration,routes.distanceMeters,routes.legs.steps.polyline,routes.legs.steps.travelMode,routes.legs.steps.transitDetails.transitLine',
+                'routes.duration,routes.distanceMeters,routes.legs.steps.polyline,routes.legs.steps.travelMode,routes.legs.steps.staticDuration,routes.legs.steps.transitDetails',
           },
           body: jsonEncode({
             'origin': {

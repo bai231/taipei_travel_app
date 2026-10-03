@@ -91,6 +91,7 @@ Map<String, dynamic> itinerarySnapshot(RouteItinerary itinerary) {
                 'destination': _stop(leg.destination),
                 'requestedDeparture': leg.requestedDeparture.toIso8601String(),
                 'travelMode': leg.travelMode.name,
+                'routeProvider': leg.effectiveRouteProvider?.name,
                 'usesEstimatedTravelTime': leg.usesEstimatedTravelTime,
                 'sourceLabel': leg.routeSourceLabel,
                 'errorMessage': leg.errorMessage,

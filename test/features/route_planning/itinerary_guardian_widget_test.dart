@@ -447,12 +447,23 @@ void main() {
 
     await tester.tap(find.byType(Switch));
     await tester.pumpAndSettle();
-    expect(find.textContaining('大眾運輸備案會查真實 TDX'), findsOneWidget);
+    expect(find.textContaining('交通備案會查真實 TDX'), findsOneWidget);
     expect(find.text('模擬時間：2026/09/22 09:50'), findsOneWidget);
     expect(find.text('Day 1・2026/09/22'), findsWidgets);
     expect(find.text('原定停留時段：第一站'), findsOneWidget);
+    await tester.ensureVisible(find.text('+15 分鐘'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('+15 分鐘'));
     await tester.pumpAndSettle();
+    expect(debug.simulatedNow, DateTime(2026, 9, 22, 10, 5));
+    await tester.scrollUntilVisible(
+      find.text('模擬時間：2026/09/22 10:05'),
+      -200,
+      scrollable: find.descendant(
+        of: find.byType(BottomSheet),
+        matching: find.byType(Scrollable),
+      ).first,
+    );
     expect(find.text('模擬時間：2026/09/22 10:05'), findsOneWidget);
     expect(find.text('目前是兩項之間的空白／等待時段'), findsOneWidget);
     expect(
@@ -477,7 +488,7 @@ void main() {
     );
     expect(routing.calls, 2);
     expect(debug.events.first, contains('TDX 回傳 1 條真實備案路線'));
-    final simulatedWalking = await debug.getRoute(
+    final queriedWalking = await debug.getRoute(
       originLatitude: 25.04,
       originLongitude: 121.52,
       destinationLatitude: 25.05,
@@ -485,12 +496,29 @@ void main() {
       requestedDeparture: now,
       travelMode: RouteTravelMode.walking,
     );
-    expect(simulatedWalking?.travelTime, 12 * 60);
-    expect(realGoogle.calls, 0);
+    expect(queriedWalking, isNull);
+    expect(realGoogle.calls, 1);
+    await debug.getRoute(
+      originLatitude: 25.04,
+      originLongitude: 121.52,
+      destinationLatitude: 25.05,
+      destinationLongitude: 121.53,
+      requestedDeparture: now,
+      travelMode: RouteTravelMode.transit,
+    );
+    expect(realGoogle.modes, [RouteTravelMode.walking, RouteTravelMode.transit]);
     await debug.showAlternativeAvailable(lateMinutes: 15, nextStopName: '測試站');
     expect(notifications.testTitles, ['行程可能延誤']);
     expect(notifications.testBodies.single, contains('測試站'));
 
+    await tester.scrollUntilVisible(
+      find.byTooltip('關閉'),
+      -200,
+      scrollable: find.descendant(
+        of: find.byType(BottomSheet),
+        matching: find.byType(Scrollable),
+      ).first,
+    );
     await tester.tap(find.byTooltip('關閉'));
     await tester.pumpAndSettle();
     expect(find.byTooltip('保母測試控制台'), findsOneWidget);
@@ -526,11 +554,13 @@ ItineraryResultDependencies _dependencies({
   required _FakeNotifications notifications,
   required _FakeRealtimeGateway realtime,
   TdxRoutingGateway routing = const _EmptyRoutingGateway(),
+  GoogleRoutePlanningGateway? google,
 }) => ItineraryResultDependencies(
   locationGateway: location,
   now: () => now,
   realtimeGateway: realtime,
   routingGateway: routing,
+  googleRoutingGateway: google ?? _FakeGoogleGateway(),
   weatherGateway: weather,
   notificationGateway: notifications,
 );
@@ -722,6 +752,7 @@ class _EmptyRoutingGateway implements TdxRoutingGateway {
 
 class _FakeGoogleGateway implements GoogleRoutePlanningGateway {
   int calls = 0;
+  final List<RouteTravelMode> modes = [];
 
   @override
   Future<TdxRoute?> getRoute({
@@ -733,6 +764,7 @@ class _FakeGoogleGateway implements GoogleRoutePlanningGateway {
     required RouteTravelMode travelMode,
   }) async {
     calls++;
+    modes.add(travelMode);
     return null;
   }
 }

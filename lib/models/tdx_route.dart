@@ -1,3 +1,5 @@
+enum RouteProvider { tdx, google }
+
 class TdxRoute {
   final int transfers;
   final int travelTime;
@@ -5,6 +7,7 @@ class TdxRoute {
   final DateTime? endTime;
   final int? distanceMeters;
   final List<RouteSection> sections;
+  final RouteProvider? provider;
 
   TdxRoute({
     required this.transfers,
@@ -13,6 +16,7 @@ class TdxRoute {
     this.endTime,
     this.distanceMeters,
     required this.sections,
+    this.provider,
   });
 
   factory TdxRoute.fromJson(Map<String, dynamic> json) {

@@ -38,8 +38,8 @@ enum GuardianWeatherScenario {
 /// Debug-only proxy for exercising the foreground guardian on a phone.
 ///
 /// When disabled every call is delegated to the production service. In
-/// simulation mode, route planning still queries real TDX; location, live
-/// vehicle observations, Google routes and weather remain simulated. Test
+/// simulation mode, route planning still queries real TDX and Google Maps;
+/// location, live vehicle observations and weather remain simulated. Test
 /// notifications are sent to the OS with a visible test label.
 class GuardianDebugController extends ChangeNotifier
     implements
@@ -198,8 +198,9 @@ class GuardianDebugController extends ChangeNotifier
     required DateTime requestedDeparture,
     required RouteTravelMode travelMode,
   }) async {
-    if (!enabled) {
-      return realGoogle.getRoute(
+    if (enabled) _record('正在向 Google Maps 查詢真實${travelMode.label}路線。');
+    try {
+      final route = await realGoogle.getRoute(
         originLatitude: originLatitude,
         originLongitude: originLongitude,
         destinationLatitude: destinationLatitude,
@@ -207,27 +208,18 @@ class GuardianDebugController extends ChangeNotifier
         requestedDeparture: requestedDeparture,
         travelMode: travelMode,
       );
+      if (enabled) {
+        _record(
+          route == null
+              ? 'Google Maps 查無可用路線。'
+              : 'Google Maps 回傳真實${travelMode.label}路線。',
+        );
+      }
+      return route;
+    } catch (_) {
+      if (enabled) _record('Google Maps 路線查詢失敗，未使用假路線替代。');
+      rethrow;
     }
-    if (travelMode == RouteTravelMode.transit) {
-      throw ArgumentError('大眾運輸排程使用 TDX');
-    }
-    final minutes = travelMode == RouteTravelMode.walking ? 12 : 20;
-    _record('產生一條 $minutes 分鐘的模擬${travelMode.label}路線。');
-    return TdxRoute(
-      transfers: 0,
-      travelTime: minutes * 60,
-      startTime: requestedDeparture,
-      endTime: requestedDeparture.add(Duration(minutes: minutes)),
-      sections: [
-        RouteSection(
-          mode: travelMode == RouteTravelMode.walking ? 'pedestrian' : 'car',
-          lineName: 'Debug ${travelMode.label}',
-          travelTime: minutes * 60,
-          stopCount: 0,
-          intermediateStops: const [],
-        ),
-      ],
-    );
   }
 
   @override

@@ -13,6 +13,30 @@ import 'package:taipei_travel_app/services/location_service.dart';
 import 'package:taipei_travel_app/services/tdx_service.dart';
 
 void main() {
+  test('即時重排的 TDX 路線失敗後可用 Google 大眾運輸備援', () async {
+    final day = _dayWithoutFirstLeg();
+    final result =
+        await LiveItineraryAlternativePlanner(
+          transit: _NoTransit(),
+          google: _Google(),
+        ).plan(
+          day: day,
+          currentLocation: const LocationPoint(
+            latitude: 25.1,
+            longitude: 121.1,
+          ),
+          now: DateTime(2026, 9, 22, 11),
+          completedCount: 1,
+          strategy: LiveAlternativeStrategy.preserveOrder,
+        );
+    expect(result.canApply, isTrue);
+    expect(result.warnings, contains(contains('Google Maps 大眾運輸備援')));
+    expect(
+      result.day!.travelLegs.last.effectiveRouteProvider,
+      RouteProvider.google,
+    );
+  });
+
   test('當日首站沒有進站路段時，確認首站完成仍可產生備案', () async {
     final day = _dayWithoutFirstLeg();
     final google = _Google();
@@ -260,6 +284,18 @@ class _Transit implements TdxRoutingGateway {
   }
 }
 
+class _NoTransit extends _Transit {
+  @override
+  Future<List<TdxRoute>> getRoutingOptions({
+    required String origin,
+    required String destination,
+    DateTime? departureTime,
+  }) async {
+    departures.add(departureTime!);
+    return const [];
+  }
+}
+
 class _Google implements GoogleRoutePlanningGateway {
   final bool returnNull;
   final departures = <DateTime>[];
@@ -275,7 +311,14 @@ class _Google implements GoogleRoutePlanningGateway {
     required RouteTravelMode travelMode,
   }) async {
     departures.add(requestedDeparture);
-    return returnNull ? null : _route(60);
+    return returnNull
+        ? null
+        : TdxRoute(
+            transfers: 0,
+            travelTime: 60 * 60,
+            sections: const [],
+            provider: RouteProvider.google,
+          );
   }
 }
 

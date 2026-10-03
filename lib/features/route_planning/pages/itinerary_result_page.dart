@@ -229,6 +229,9 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
     );
     _transitAlternativeService = TransitAlternativeService(
       routingGateway: _dependencies.routingGateway,
+      googleGateway:
+          _dependencies.googleRoutingGateway ??
+          const GoogleRoutePlanningService(),
     );
     _alternativePlanner = LiveItineraryAlternativePlanner(
       transit: _dependencies.routingGateway,
@@ -3028,7 +3031,9 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
                             ? Icons.radio_button_checked
                             : Icons.radio_button_off,
                       ),
-                      title: Text('備案 ${index + 1}'),
+                      title: Text(
+                        '備案 ${index + 1}${options[index].provider == RouteProvider.google ? '・Google Maps 參考路線' : ''}',
+                      ),
                       subtitle: Text(_transitOptionSummary(options[index])),
                       contentPadding: EdgeInsets.zero,
                     ),

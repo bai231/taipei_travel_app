@@ -59,7 +59,7 @@ class GuardianDebugConsole extends StatelessWidget {
                   ],
                 ),
                 const Text(
-                  '僅 Debug 版本可用；GPS、班次即時狀態、Google 路線與天氣使用模擬資料。大眾運輸備案會查真實 TDX（消耗額度）；提醒仍會發送標明「測試」的手機通知。',
+                  '僅 Debug 版本可用；GPS、班次即時狀態與天氣使用模擬資料。交通備案會查真實 TDX，步行、汽車與 TDX 失敗時的大眾運輸備援會查真實 Google Maps（可能消耗額度）；提醒仍會發送標明「測試」的手機通知。',
                 ),
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,

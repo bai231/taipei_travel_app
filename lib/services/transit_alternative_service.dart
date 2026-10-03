@@ -1,5 +1,7 @@
 import '../features/route_planning/models/route_day.dart';
+import '../features/route_planning/models/route_travel_mode.dart';
 import '../models/tdx_route.dart';
+import 'google_route_planning_gateway.dart';
 import 'location_service.dart';
 import 'tdx_service.dart';
 import 'transit_realtime_monitor.dart';
@@ -9,8 +11,12 @@ import 'transit_realtime_monitor.dart';
 /// [LiveItineraryAlternativePlanner].
 class TransitAlternativeService {
   final TdxRoutingGateway routingGateway;
+  final GoogleRoutePlanningGateway? googleGateway;
 
-  const TransitAlternativeService({required this.routingGateway});
+  const TransitAlternativeService({
+    required this.routingGateway,
+    this.googleGateway,
+  });
 
   ({LocationPoint origin, DateTime departure}) startForRisk({
     required RouteDay day,
@@ -77,7 +83,7 @@ class TransitAlternativeService {
     required TransitConnectionRisk risk,
     required LocationPoint currentLocation,
     required DateTime now,
-  }) {
+  }) async {
     final leg = day.travelLegs[risk.affectedSection.legIndex];
     final start = startForRisk(
       day: day,
@@ -85,10 +91,26 @@ class TransitAlternativeService {
       currentLocation: currentLocation,
       now: now,
     );
-    return routingGateway.getRoutingOptions(
-      origin: '${start.origin.latitude},${start.origin.longitude}',
-      destination: '${leg.destination.latitude},${leg.destination.longitude}',
-      departureTime: start.departure,
+    try {
+      final routes = await routingGateway.getRoutingOptions(
+        origin: '${start.origin.latitude},${start.origin.longitude}',
+        destination: '${leg.destination.latitude},${leg.destination.longitude}',
+        departureTime: start.departure,
+      );
+      if (routes.isNotEmpty) return routes;
+    } catch (_) {
+      if (googleGateway == null) rethrow;
+    }
+    final google = googleGateway;
+    if (google == null) return const [];
+    final fallback = await google.getRoute(
+      originLatitude: start.origin.latitude,
+      originLongitude: start.origin.longitude,
+      destinationLatitude: leg.destination.latitude,
+      destinationLongitude: leg.destination.longitude,
+      requestedDeparture: start.departure,
+      travelMode: RouteTravelMode.transit,
     );
+    return fallback == null ? const [] : [fallback];
   }
 }

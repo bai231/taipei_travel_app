@@ -1,17 +1,55 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:taipei_travel_app/algorithm/route_optimizer.dart';
 import 'package:taipei_travel_app/features/route_planning/models/route_day.dart';
+import 'package:taipei_travel_app/features/route_planning/models/route_travel_mode.dart';
 import 'package:taipei_travel_app/features/route_planning/models/route_visit.dart';
 import 'package:taipei_travel_app/features/route_planning/models/travel_leg.dart';
 import 'package:taipei_travel_app/models/place.dart';
 import 'package:taipei_travel_app/models/scheduled_visit.dart';
 import 'package:taipei_travel_app/models/tdx_route.dart';
 import 'package:taipei_travel_app/services/location_service.dart';
+import 'package:taipei_travel_app/services/google_route_planning_gateway.dart';
 import 'package:taipei_travel_app/services/tdx_service.dart';
 import 'package:taipei_travel_app/services/transit_alternative_service.dart';
 import 'package:taipei_travel_app/services/transit_realtime_monitor.dart';
 
 void main() {
+  test('TDX 無候選時改查 Google 大眾運輸並標記來源', () async {
+    final google = _GoogleFallback();
+    final service = TransitAlternativeService(
+      routingGateway: _Gateway(),
+      googleGateway: google,
+    );
+    final day = _day();
+    final risk = TransitConnectionRisk(
+      kind: TransitRiskKind.boarding,
+      affectedSection: TransitSectionIdentity(
+        provider: TransitProvider.bus,
+        legIndex: 0,
+        sectionIndex: 0,
+        serviceDate: day.date,
+        section: RouteSection(
+          mode: 'bus',
+          travelTime: 600,
+          stopCount: 0,
+          intermediateStops: const [],
+        ),
+      ),
+      shortageMinutes: 3,
+      reason: '來不及上車',
+    );
+    final now = DateTime(2026, 9, 23, 10);
+    final options = await service.options(
+      day: day,
+      risk: risk,
+      currentLocation: const LocationPoint(latitude: 25, longitude: 121),
+      now: now,
+    );
+    expect(google.departure, now);
+    expect(google.mode, RouteTravelMode.transit);
+    expect(options.single.provider, RouteProvider.google);
+  });
+
   test('轉乘風險從前段到站位置與可轉乘時間查詢', () async {
     final gateway = _Gateway();
     final service = TransitAlternativeService(routingGateway: gateway);
@@ -200,6 +238,30 @@ void main() {
     expect(gateway.origin, '25.1,121.1');
     expect(gateway.departure, DateTime(2026, 9, 23, 20, 5));
   });
+}
+
+class _GoogleFallback implements GoogleRoutePlanningGateway {
+  DateTime? departure;
+  RouteTravelMode? mode;
+
+  @override
+  Future<TdxRoute?> getRoute({
+    required double originLatitude,
+    required double originLongitude,
+    required double destinationLatitude,
+    required double destinationLongitude,
+    required DateTime requestedDeparture,
+    required RouteTravelMode travelMode,
+  }) async {
+    departure = requestedDeparture;
+    mode = travelMode;
+    return TdxRoute(
+      transfers: 0,
+      travelTime: 1200,
+      provider: RouteProvider.google,
+      sections: const [],
+    );
+  }
 }
 
 class _Gateway implements TdxRoutingGateway {

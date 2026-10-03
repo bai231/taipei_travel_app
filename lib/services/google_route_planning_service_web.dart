@@ -24,10 +24,6 @@ class GoogleRoutePlanningService implements GoogleRoutePlanningGateway {
     required DateTime requestedDeparture,
     required RouteTravelMode travelMode,
   }) async {
-    if (travelMode == RouteTravelMode.transit) {
-      throw ArgumentError.value(travelMode, 'travelMode', '大眾運輸必須使用 TDX 查詢。');
-    }
-
     final request = GoogleRouteRequestCache.request(
       originLatitude: originLatitude,
       originLongitude: originLongitude,

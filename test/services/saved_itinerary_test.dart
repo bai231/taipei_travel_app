@@ -12,6 +12,7 @@ import 'package:taipei_travel_app/features/route_planning/models/travel_leg.dart
 import 'package:taipei_travel_app/features/route_planning/models/route_travel_mode.dart';
 import 'package:taipei_travel_app/models/place.dart';
 import 'package:taipei_travel_app/models/scheduled_visit.dart';
+import 'package:taipei_travel_app/models/tdx_route.dart';
 import 'package:taipei_travel_app/models/trip_request.dart';
 import 'package:taipei_travel_app/models/travel_preference.dart';
 import 'package:taipei_travel_app/models/visit_preferences.dart';
@@ -185,6 +186,58 @@ void main() {
     },
   );
 
+  test('v2 snapshot retains Google transit fallback provenance', () {
+    final base = sample();
+    final firstDay = base.days.first;
+    final oldLeg = firstDay.travelLegs.first;
+    final fallbackLeg = TravelLeg(
+      origin: oldLeg.origin,
+      destination: oldLeg.destination,
+      requestedDeparture: oldLeg.requestedDeparture,
+      schedule: oldLeg.schedule,
+      travelMode: RouteTravelMode.transit,
+      routeProvider: RouteProvider.google,
+      route: TdxRoute(
+        transfers: 0,
+        travelTime: 1200,
+        sections: [
+          RouteSection(
+            mode: 'bus',
+            lineName: '307',
+            travelTime: 1200,
+            stopCount: 3,
+            intermediateStops: const [],
+          ),
+        ],
+      ),
+    );
+    final itinerary = RouteItinerary(
+      request: base.request,
+      origin: base.origin,
+      generatedAt: base.generatedAt,
+      days: [
+        RouteDay(
+          day: firstDay.day,
+          date: firstDay.date,
+          origin: firstDay.origin,
+          isValid: firstDay.isValid,
+          visits: firstDay.visits,
+          travelLegs: [fallbackLeg],
+        ),
+        base.days.last,
+      ],
+    );
+    final snapshot = itinerarySnapshot(itinerary);
+    expect(snapshot['days'][0]['travelLegs'][0]['routeProvider'], 'google');
+    final restored = itineraryFromSnapshot(
+      Map<String, dynamic>.from(jsonDecode(jsonEncode(snapshot)) as Map),
+    );
+    expect(
+      restored.days.first.travelLegs.first.routeSourceLabel,
+      'Google Maps（TDX 備援）',
+    );
+  });
+
   test('v2 keeps parsed monetary daily budget separate from budget level', () {
     final data = jsonDecode(
       jsonEncode(itinerarySnapshot(sample(withPreference: true))),
@@ -322,7 +375,7 @@ void main() {
           body: SaveItineraryButton(
             itinerary: sample(),
             gateway: gateway,
-          savedItineraryId: '0123456789abcdef0123456789abcdef',
+            savedItineraryId: '0123456789abcdef0123456789abcdef',
           ),
         ),
       ),

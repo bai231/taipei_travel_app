@@ -188,14 +188,26 @@ class LiveItineraryAlternativePlanner {
           }
           route = selectedFirstRoute;
         } else if (mode == RouteTravelMode.transit) {
-          final options = await transit.getRoutingOptions(
-            origin: '${origin.latitude},${origin.longitude}',
-            destination: '${destination.latitude},${destination.longitude}',
-            departureTime: cursor,
-          );
-          route = schedule.selectRouteForDeparture(
-            routes: options,
+          try {
+            final options = await transit.getRoutingOptions(
+              origin: '${origin.latitude},${origin.longitude}',
+              destination: '${destination.latitude},${destination.longitude}',
+              departureTime: cursor,
+            );
+            route = schedule.selectRouteForDeparture(
+              routes: options,
+              requestedDeparture: cursor,
+            );
+          } catch (_) {
+            // Google is a reference fallback, not a TDX realtime service.
+          }
+          route ??= await google.getRoute(
+            originLatitude: origin.latitude,
+            originLongitude: origin.longitude,
+            destinationLatitude: destination.latitude,
+            destinationLongitude: destination.longitude,
             requestedDeparture: cursor,
+            travelMode: RouteTravelMode.transit,
           );
         } else {
           route = await google.getRoute(
@@ -215,6 +227,12 @@ class LiveItineraryAlternativePlanner {
       if (route == null && !atDestination) {
         return LiveAlternativePlan.failure(
           '查不到「${origin.name} → ${destination.name}」的${mode.label}路線；原行程未變更。',
+        );
+      }
+      if (mode == RouteTravelMode.transit &&
+          route?.provider == RouteProvider.google) {
+        warnings.add(
+          '「${origin.name} → ${destination.name}」使用 Google Maps 大眾運輸備援；班次未經 TDX 即時資料驗證。',
         );
       }
       final routeStartTime = route?.startTime;
@@ -273,6 +291,7 @@ class LiveItineraryAlternativePlanner {
                 ...originalRoute.sections.take(preservedFirstSections),
                 ...route.sections,
               ],
+              provider: route.provider,
             )
           : route;
       final storedOrigin = preservingSections ? oldLeg!.origin : origin;

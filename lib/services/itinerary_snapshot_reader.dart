@@ -153,6 +153,11 @@ TravelLeg _leg(Map<String, dynamic> data) {
       data['travelMode'],
       RouteTravelMode.transit,
     ),
+    routeProvider:
+        _optionalNamed(RouteProvider.values, data['routeProvider']) ??
+        (data['sourceLabel'] == 'Google Maps（TDX 備援）'
+            ? RouteProvider.google
+            : null),
     errorMessage: _optionalString(data['errorMessage']),
     schedule: ScheduledVisit(
       departureMinutes: _int(schedule['departureMinutes'], 0),

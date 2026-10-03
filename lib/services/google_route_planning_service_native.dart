@@ -16,9 +16,6 @@ class GoogleRoutePlanningService implements GoogleRoutePlanningGateway {
     required DateTime requestedDeparture,
     required RouteTravelMode travelMode,
   }) async {
-    if (travelMode == RouteTravelMode.transit) {
-      throw ArgumentError('大眾運輸排程使用 TDX');
-    }
     final response = await GoogleRoutesNativeClient.shared.route(
       GoogleRouteRequestCache.request(
         originLatitude: originLatitude,
@@ -42,6 +39,12 @@ class GoogleRoutePlanningService implements GoogleRoutePlanningGateway {
       response: {
         'durationMillis': seconds * 1000,
         'distanceMeters': response['distanceMeters'],
+        'steps': travelMode == RouteTravelMode.transit
+            ? [
+                for (final leg in response['legs'] as List? ?? const [])
+                  ...((leg as Map)['steps'] as List? ?? const []),
+              ]
+            : null,
       },
       requestedDeparture: requestedDeparture,
       travelMode: travelMode,

@@ -272,7 +272,11 @@ class TransitRealtimeMonitor {
   List<TransitSectionIdentity> _sections(RouteDay day) {
     final result = <TransitSectionIdentity>[];
     for (var legIndex = 0; legIndex < day.travelLegs.length; legIndex++) {
-      final route = day.travelLegs[legIndex].route;
+      final leg = day.travelLegs[legIndex];
+      // Google transit suggestions do not carry TDX route/stop identifiers.
+      // Never treat them as verified bus or TRA services in realtime checks.
+      if (leg.effectiveRouteProvider != RouteProvider.tdx) continue;
+      final route = leg.route;
       if (route == null) continue;
       for (
         var sectionIndex = 0;
