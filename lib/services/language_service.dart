@@ -81,6 +81,12 @@ class LanguageService {
 
       // 設定頁 (SettingsPage)
       'settings_title': '設定',
+      'logged_out_safe': '已安全登出',
+      'logged_out_safe_leaf': '已安全登出 🌿',
+      'logout_account': '登出帳號',
+      'traveler': '旅人',
+      'login_sync_hint': '登入以同步自訂行程與收藏',
+      'login_action': '登入',
       'account_settings': '個人帳號設置',
       'edit_profile': '編輯個人資料',
       'edit_profile_sub': '修改頭像、暱稱與個人簡介',
@@ -151,6 +157,12 @@ class LanguageService {
 
       // SettingsPage
       'settings_title': 'Settings',
+      'logged_out_safe': 'Logged out safely',
+      'logged_out_safe_leaf': 'Logged out safely 🌿',
+      'logout_account': 'Log Out',
+      'traveler': 'Traveler',
+      'login_sync_hint': 'Sign in to sync custom trips and favorites',
+      'login_action': 'Log In',
       'account_settings': 'Account Settings',
       'edit_profile': 'Edit Profile',
       'edit_profile_sub': 'Change avatar, nickname & bio',

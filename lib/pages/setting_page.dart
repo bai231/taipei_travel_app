@@ -45,8 +45,6 @@ class _SettingsPageState extends State<SettingsPage> {
 
   // 開關與設定狀態變數
   bool _isNotificationEnabled = true;
-  bool _isDarkMode = false;
-  String _currentLanguage = '繁體中文';
   bool _isLoggedIn = false; // 模擬是否已登入
 
   // 彈出半透明磨砂選擇視窗（以語言選擇為例）
@@ -252,8 +250,8 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),*/
                 _buildSwitchTile(
                   icon: Icons.notifications_none_rounded,
-                  title: LanguageService.tr(context, 'notification'),
-                  subtitle: LanguageService.tr(context, 'notification_sub') ,
+                  title: LanguageService.tr(context, 'notifications'),
+                  subtitle: LanguageService.tr(context, 'notifications_sub') ,
                   value: _isNotificationEnabled,
                   onChanged: (val) => setState(() => _isNotificationEnabled = val),
                 ),
@@ -283,7 +281,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
                 _buildSettingTile(
                   icon: Icons.help_outline_rounded,
-                  title: LanguageService.tr(context, 'user_guide'),
+                  title: LanguageService.tr(context, 'review_guide'),
                   onTap: () => showUserGuide(context),
                 ),
                 _buildSettingTile(
@@ -502,21 +500,6 @@ class _SettingsPageState extends State<SettingsPage> {
         value: value,
         activeColor: cardColor,
         onChanged: onChanged,
-      ),
-    );
-  }
-
-  // 居中淡色分隔線
-  Widget _buildSectionDivider() {
-    return Center(
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 20),
-        height: 3,
-        width: 180,
-        decoration: BoxDecoration(
-          color: dividerColor,
-          borderRadius: BorderRadius.circular(2),
-        ),
       ),
     );
   }
