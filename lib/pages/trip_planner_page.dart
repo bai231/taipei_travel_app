@@ -53,7 +53,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
   final ItineraryPlanningService _planningService = ItineraryPlanningService();
   late final Set<String> _mustVisitPlaceIds;
   late final Set<String> _conflictingMustVisitPlaceIds;
-  late final Map<String, num> _candidateScoresByPlaceId;
+  Map<String, num> _candidateScoresByPlaceId = {};
   final TripAutoFillService _autoFillService = const TripAutoFillService();
   final Set<String> _autoRecommendedPlaceIds = {};
   final Map<String, List<String>> _autoRecommendationReasonsByPlaceId = {};
@@ -79,6 +79,8 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
   ItineraryPlanningControl? _planningControl;
 
   void _showPlacePicker() {
+    _refreshCandidateScores();
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -193,6 +195,44 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
         );
       }
     }
+  }
+
+  void _refreshCandidateScores() {
+    // 只拿使用者手動選擇的景點當距離基準
+    final manuallySelectedAttractions = _selectedPlaces
+        .where(
+          (constraint) =>
+              constraint.place.type == PlaceType.attraction &&
+              !_autoRecommendedPlaceIds.contains(constraint.place.id),
+        )
+        .map((constraint) => constraint.place)
+        .toList();
+
+    final allAttractions = widget.places
+        .where((place) => place.type == PlaceType.attraction)
+        .toList();
+
+    // 景點列表原本允許跨縣市，所以維持 applyLocation: false
+    final rankingCandidates = RecommendationCandidateFilter.filter(
+      places: allAttractions,
+      criteria: _recommendationCriteria,
+      applyLocation: false,
+    );
+
+    final rankedRecommendations = PlaceRecommendationService().rank(
+      candidates: rankingCandidates,
+      criteria: _recommendationCriteria,
+      manuallySelectedPlaces: manuallySelectedAttractions,
+    );
+
+    _candidateScoresByPlaceId = {
+      // 保留原本餐廳、住宿等外部提供的分數
+      ...widget.candidateScoresByPlaceId,
+
+      // 景點改成最新的距離感知推薦分數
+      for (final recommendation in rankedRecommendations)
+        recommendation.place.id: recommendation.totalScore,
+    };
   }
 
   Future<void> _showRecommendationConflictDialog() async {
@@ -1863,11 +1903,28 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
         .map((constraint) => constraint.place)
         .toList();
 
+    // 只抓使用者手動加入的景點
+    final manuallySelectedAttractions = _selectedPlaces
+        .where(
+          (constraint) =>
+              constraint.place.type == PlaceType.attraction &&
+              !_autoRecommendedPlaceIds.contains(constraint.place.id),
+        )
+        .map((constraint) => constraint.place)
+        .toList();
+
+    // 依照目前手選景點重新計算推薦分數
+    final rankedRecommendations = PlaceRecommendationService().rank(
+      candidates: _candidatePlaces,
+      criteria: _recommendationCriteria,
+      manuallySelectedPlaces: manuallySelectedAttractions,
+    );
+
     final plan = _autoFillService.createPlan(
       days: widget.request.days,
       pace: _recommendationCriteria.pace,
       selectedAttractions: selectedAttractions,
-      rankedRecommendations: _recommendations,
+      rankedRecommendations: rankedRecommendations,
     );
 
     if (plan.alreadyEnough) {
@@ -1900,7 +1957,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
         .toSet();
 
     final recommendationsByPlaceId = {
-      for (final recommendation in _recommendations)
+      for (final recommendation in rankedRecommendations)
         recommendation.place.id: recommendation,
     };
 
