@@ -11,7 +11,11 @@ import '../models/trip_request.dart';
 import '../services/place_service.dart';
 import 'trip_planner_page.dart';
 import '../services/ai_preference_service.dart';
+import '../services/language_service.dart';
+import '../theme/app_typography.dart';
 import '../models/travel_preference.dart';
+import '../models/travel_clarification.dart';
+import '../services/recommendation/travel_clarification_service.dart';
 
 class TripPage extends StatefulWidget {
   const TripPage({super.key});
@@ -24,6 +28,9 @@ class _TripPageState extends State<TripPage> {
   final PlaceService _placeService = PlaceService();
 
   final AiPreferenceService _aiPreferenceService = AiPreferenceService();
+
+  final TravelClarificationService _clarificationService =
+      const TravelClarificationService();
 
   bool _isSubmitting = false;
   final TextEditingController _tripNameController = TextEditingController();
@@ -61,11 +68,135 @@ class _TripPageState extends State<TripPage> {
     });
   }
 
+  Future<TravelPreference> _clarifyPreference(
+    TravelPreference preference,
+  ) async {
+    final questions = _clarificationService.createQuestions(preference);
+
+    if (questions.isEmpty || !mounted) {
+      return preference;
+    }
+
+    final answers = <TravelClarificationType, String>{
+      for (final question in questions) question.type: question.defaultValue,
+    };
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              icon: const Icon(Icons.help_outline),
+              title: const Text('再確認一些旅遊需求'),
+              content: ConstrainedBox(
+                constraints: const BoxConstraints(
+                  maxWidth: 520,
+                  maxHeight: 520,
+                ),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        '以下資訊沒有出現在你的文字需求中，'
+                        '確認後可以讓推薦結果更符合你的習慣。',
+                      ),
+                      const SizedBox(height: 16),
+
+                      for (final question in questions) ...[
+                        Text(
+                          question.question,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+
+                        for (final option in question.options)
+                          RadioListTile<String>(
+                            value: option.value,
+                            groupValue: answers[question.type],
+                            contentPadding: EdgeInsets.zero,
+                            title: Text(option.label),
+                            subtitle: Text(option.description),
+                            onChanged: (value) {
+                              if (value == null) {
+                                return;
+                              }
+
+                              setDialogState(() {
+                                answers[question.type] = value;
+                              });
+                            },
+                          ),
+
+                        const SizedBox(height: 12),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(dialogContext).pop(false);
+                  },
+                  child: const Text('使用預設值'),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    Navigator.of(dialogContext).pop(true);
+                  },
+                  child: const Text('套用選擇'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    // 使用者選擇使用預設值時，保留 Gemini 原本結果。
+    if (confirmed != true) {
+      return preference;
+    }
+
+    var updatedPreference = preference;
+
+    for (final question in questions) {
+      final answer = answers[question.type];
+
+      if (answer == null) {
+        continue;
+      }
+
+      switch (question.type) {
+        case TravelClarificationType.pace:
+          updatedPreference = updatedPreference.copyWith(
+            pace: answer,
+            paceSpecified: true,
+          );
+
+        case TravelClarificationType.walkingPreference:
+          updatedPreference = updatedPreference.copyWith(
+            walkingPreference: answer,
+            walkingPreferenceSpecified: true,
+          );
+      }
+    }
+
+    return updatedPreference;
+  }
+
   Future<void> _generateTrip() async {
     if (_startDate == null || _endDate == null) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text("請先選擇旅遊日期")));
+      ).showSnackBar(SnackBar(content: Text(LanguageService.tr(context, 'trip_select_date_first'))));
 
       return;
     }
@@ -73,7 +204,7 @@ class _TripPageState extends State<TripPage> {
     if (_budgetLevel == null) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text("請選擇預算等級")));
+      ).showSnackBar(SnackBar(content: Text(LanguageService.tr(context, 'trip_select_budget'))));
       return;
     }
 
@@ -89,6 +220,16 @@ class _TripPageState extends State<TripPage> {
       // 使用者有輸入其他需求時，才呼叫 Gemini。
       if (aiPrompt.isNotEmpty) {
         parsedPreference = await _aiPreferenceService.parsePreference(aiPrompt);
+
+        if (!mounted) {
+          return;
+        }
+
+        parsedPreference = await _clarifyPreference(parsedPreference);
+
+        if (!mounted) {
+          return;
+        }
       }
 
       final request = TripRequest(
@@ -112,7 +253,7 @@ class _TripPageState extends State<TripPage> {
       if (places.isEmpty) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(const SnackBar(content: Text('目前沒有可讀取的行程資料')));
+        ).showSnackBar(SnackBar(content: Text(LanguageService.tr(context, 'trip_catalog_empty'))));
         return;
       }
 
@@ -130,7 +271,7 @@ class _TripPageState extends State<TripPage> {
 
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('AI 偏好解析失敗：${error.message}')));
+        ).showSnackBar(SnackBar(content: Text('${LanguageService.tr(context, 'trip_preference_parse_failed')}: ${error.message}')));
     } catch (error) {
       if (!mounted) {
         return;
@@ -138,7 +279,7 @@ class _TripPageState extends State<TripPage> {
 
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('建立行程失敗：$error')));
+        ).showSnackBar(SnackBar(content: Text('${LanguageService.tr(context, 'trip_create_failed')}: $error')));
     } finally {
       if (mounted) {
         setState(() {
@@ -151,7 +292,7 @@ class _TripPageState extends State<TripPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("建立新行程")),
+      appBar: AppBar(title: Text(LanguageService.tr(context, 'create_trip'))),
 
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
@@ -160,10 +301,10 @@ class _TripPageState extends State<TripPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
 
           children: [
-            const Text(
-              "旅遊基本資訊",
+            Text(
+              LanguageService.tr(context, 'trip_basic_info'),
 
-              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+              style: AppTypography.headline(),
             ),
 
             const SizedBox(height: 20),

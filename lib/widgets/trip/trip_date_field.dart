@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../services/language_service.dart';
 
 class TripDateField extends StatelessWidget {
   final DateTime? startDate;
@@ -13,9 +14,9 @@ class TripDateField extends StatelessWidget {
     required this.onSelectDate,
   });
 
-  String _formatDate(DateTime? date) {
+  String _formatDate(BuildContext context, DateTime? date) {
     if (date == null) {
-      return '尚未選擇';
+      return LanguageService.tr(context, 'trip_date_not_selected');
     }
 
     return '${date.year}/${date.month}/${date.day}';
@@ -26,8 +27,8 @@ class TripDateField extends StatelessWidget {
     return InkWell(
       onTap: onSelectDate,
       child: InputDecorator(
-        decoration: const InputDecoration(
-          labelText: '旅遊日期',
+        decoration: InputDecoration(
+          labelText: LanguageService.tr(context, 'trip_date'),
           border: OutlineInputBorder(),
         ),
         child: Row(
@@ -39,9 +40,9 @@ class TripDateField extends StatelessWidget {
             Expanded(
               child: Text(
                 startDate == null || endDate == null
-                    ? '請選擇旅遊日期'
-                    : '${_formatDate(startDate)} ～ '
-                          '${_formatDate(endDate)}',
+                    ? LanguageService.tr(context, 'trip_date_select_prompt')
+                    : '${_formatDate(context, startDate)} ～ '
+                          '${_formatDate(context, endDate)}',
                 overflow: TextOverflow.ellipsis,
                 maxLines: 1,
               ),

@@ -6,7 +6,7 @@ class PlaceRecommendation {
   final double totalScore;
   final double categoryScore;
   final double tagScore;
-  final double ratingScore;
+  //final double ratingScore;
   final double priceScore;
 
   final Set<String> matchedTags;
@@ -17,7 +17,7 @@ class PlaceRecommendation {
     required this.totalScore,
     required this.categoryScore,
     required this.tagScore,
-    required this.ratingScore,
+    //required this.ratingScore,
     required this.priceScore,
     required this.matchedTags,
     required this.reasons,

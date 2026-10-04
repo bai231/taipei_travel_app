@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../services/language_service.dart';
 
 class TripNameField extends StatelessWidget {
   final TextEditingController controller;
@@ -10,8 +11,8 @@ class TripNameField extends StatelessWidget {
     return TextField(
       controller: controller,
       decoration: InputDecoration(
-        labelText: "行程名稱",
-        hintText: "例如：台北兩天一夜",
+        labelText: LanguageService.tr(context, 'trip_name'),
+        hintText: LanguageService.tr(context, 'trip_name_example'),
 
         prefixIcon: const Icon(Icons.luggage),
 

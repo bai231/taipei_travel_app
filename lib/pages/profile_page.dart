@@ -10,10 +10,12 @@ import '../services/favorite_service.dart';
 import '../services/saved_itinerary_service.dart';
 import '../models/place.dart';
 import 'itinerary_result_page.dart';
+import 'place_detail_page.dart';
 import '../services/user_data_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/saved_itinerary_service.dart';
 import '../services/language_service.dart';
+import '../widgets/place_image.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -93,7 +95,7 @@ Future<void> _loadCloudFolders() async {
 }
 
 // 🌟 4. 確保 _loadExportedTrips 撈完後一定有呼叫 setState 刷新畫面！
-Future<void> _loadExportedTrips() async {
+  Future<void> _loadExportedTrips() async {
   if (mounted) setState(() => _isLoadingExportedTrips = true);
   try {
     final trips = await _savedItineraryService.list(offset: 0, limit: 50);
@@ -107,6 +109,81 @@ Future<void> _loadExportedTrips() async {
     debugPrint("❌ [ProfilePage] 抓取行程失敗: $e");
   } finally {
     if (mounted) setState(() => _isLoadingExportedTrips = false);
+  }
+}
+
+Future<bool> _confirmDelete({required String title, required String name}) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: Text(title),
+      content: Text(
+        LanguageService.tr(context, 'delete_item_confirm')
+            .replaceAll('{name}', name),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(dialogContext, false),
+          child: Text(LanguageService.tr(context, 'dialog_cancel')),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(dialogContext, true),
+          child: Text(
+            LanguageService.tr(context, 'delete_action'),
+            style: TextStyle(color: AppColors.textSecondary),
+          ),
+        ),
+      ],
+    ),
+  );
+  return confirmed == true;
+}
+
+Future<bool> _deleteSavedTrip(String id, String title) async {
+  if (!await _confirmDelete(
+    title: LanguageService.tr(context, 'delete_trip'),
+    name: title,
+  )) return false;
+  try {
+    await _savedItineraryService.delete(id);
+    await _loadExportedTrips();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${LanguageService.tr(context, 'delete_success')}「$title」')),
+      );
+    }
+    return true;
+  } catch (_) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(LanguageService.tr(context, 'delete_failed'))),
+      );
+    }
+    return false;
+  }
+}
+
+Future<bool> _deleteSavedFolder(Map<String, dynamic> folder) async {
+  final id = (folder['id'] as num?)?.toInt();
+  if (id == null) return false;
+  final title = folder['title']?.toString() ?? '';
+  if (!await _confirmDelete(
+    title: LanguageService.tr(context, 'delete_folder'),
+    name: title,
+  )) return false;
+  final deleted = await _userDataService.deleteFolder(id);
+  if (!mounted) return false;
+  if (deleted) {
+    await _loadCloudFolders();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('${LanguageService.tr(context, 'delete_success')}「$title」')),
+    );
+    return true;
+  } else {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(LanguageService.tr(context, 'delete_failed'))),
+    );
+    return false;
   }
 }
 
@@ -156,7 +233,7 @@ Future<void> _loadExportedTrips() async {
                       // 1. 加入行程
                       _buildDialogOption(
                         icon: Icons.add_circle_outline_rounded,
-                        label: '加入行程',
+                        label: LanguageService.tr(parentContext, 'add_to_trip'),
                         onTap: () {
                           Navigator.pop(dialogCtx);
                           _showAddToTripDialog(parentContext, place);
@@ -166,7 +243,7 @@ Future<void> _loadExportedTrips() async {
                       // 2. 加入資料夾
                       _buildDialogOption(
                         icon: Icons.folder_open_rounded,
-                        label: '加入資料夾',
+                        label: LanguageService.tr(parentContext, 'add_to_folder'),
                         onTap: () {
                           Navigator.pop(dialogCtx);
                           _showSelectFolderDialog(parentContext, place);
@@ -176,7 +253,7 @@ Future<void> _loadExportedTrips() async {
                       // 3. 取消收藏（安全呼叫 toggleFavorite）
                       _buildDialogOption(
                         icon: Icons.favorite_border_rounded,
-                        label: '取消收藏',
+                        label: LanguageService.tr(parentContext, 'cancel_fav'),
                         textColor: Colors.redAccent,
                         iconColor: Colors.redAccent,
                         onTap: () async {
@@ -184,7 +261,7 @@ Future<void> _loadExportedTrips() async {
                           await _favoriteService.toggleFavorite(place);
                           if (parentContext.mounted) {
                             ScaffoldMessenger.of(parentContext).showSnackBar(
-                              SnackBar(content: Text('已取消收藏「${place.name}」')),
+                              SnackBar(content: Text(LanguageService.tr(parentContext, 'place_favorite_removed').replaceAll('{place}', place.name))),
                             );
                           }
                         },
@@ -193,11 +270,14 @@ Future<void> _loadExportedTrips() async {
                       // 4. 查看資訊
                       _buildDialogOption(
                         icon: Icons.info_outline_rounded,
-                        label: '查看資訊',
+                        label: LanguageService.tr(parentContext, 'profile_view_info'),
                         onTap: () {
                           Navigator.pop(dialogCtx);
-                          ScaffoldMessenger.of(parentContext).showSnackBar(
-                            SnackBar(content: Text('查看「${place.name}」詳細資訊')),
+                          Navigator.push(
+                            parentContext,
+                            MaterialPageRoute(
+                              builder: (_) => PlaceDetailPage(place: place),
+                            ),
                           );
                         },
                       ),
@@ -272,6 +352,16 @@ Future<void> _loadExportedTrips() async {
                     "(${places.length})",
                     style: TextStyle(fontSize: 14, color: AppColors.textSecondary, fontWeight: FontWeight.normal),
                   ),
+                  IconButton(
+                    tooltip: LanguageService.tr(context, 'delete_folder'),
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () async {
+                      if (await _deleteSavedFolder(folder) && dialogCtx.mounted) {
+                        Navigator.pop(dialogCtx);
+                      }
+                    },
+                    icon: Icon(Icons.delete_outline, color: AppColors.textSecondary),
+                  ),
                 ],
               ),
               content: SizedBox(
@@ -292,7 +382,7 @@ Future<void> _loadExportedTrips() async {
                         child: ListView.separated(
                           shrinkWrap: true,
                           itemCount: places.length,
-                          separatorBuilder: (_, __) => const Divider(height: 1, color: Colors.black12),
+                          separatorBuilder: (_, _) => const Divider(height: 1, color: Colors.black12),
                           itemBuilder: (context, index) {
                             final place = places[index];
                             return ListTile(
@@ -503,12 +593,14 @@ Future<void> _loadExportedTrips() async {
         backgroundColor: AppColors.surface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text(
-          "加入行程",
+          LanguageService.tr(ctx, 'add_to_trip_dialog_title'),
           style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimary),
         ),
         content: SizedBox(
           width: double.maxFinite,
-          child: ListView.builder(
+          child: _itineraries.isEmpty
+              ? Center(child: Text(LanguageService.tr(ctx, 'add_to_trip_empty')))
+              : ListView.builder(
             shrinkWrap: true,
             itemCount: _itineraries.length,
             itemBuilder: (context, index) {
@@ -522,7 +614,9 @@ Future<void> _loadExportedTrips() async {
                 onTap: () async{
                   Navigator.pop(ctx);
                   ScaffoldMessenger.of(parentContext).showSnackBar(
-                    SnackBar(content: Text("已將「${place.name}」加入「$trip」！")),
+                    SnackBar(content: Text(LanguageService.tr(parentContext, 'add_to_trip_success')
+                        .replaceAll('{place}', place.name)
+                        .replaceAll('{trip}', trip))),
                   );
                 },
               );
@@ -601,13 +695,13 @@ Future<void> _loadExportedTrips() async {
               ),
               const SizedBox(height: 12),
               SizedBox(
-                height: 130,
+                height: 125,
                 child: favorites.isEmpty
                     ? _buildEmptyState(LanguageService.tr(context, 'empty_spots'))
                     : ListView.separated(
                         scrollDirection: Axis.horizontal,
                         itemCount: favorites.length,
-                        separatorBuilder: (_, __) => const SizedBox(width: 14),
+                        separatorBuilder: (_, _) => const SizedBox(width: 14),
                         itemBuilder: (context, index) {
                           final place = favorites[index];
                           return _buildPlaceCard(place);
@@ -624,11 +718,11 @@ Future<void> _loadExportedTrips() async {
               ),
               const SizedBox(height: 12),
               SizedBox(
-                height: 130,
+                height: 125,
                 child: ListView.separated(
                   scrollDirection: Axis.horizontal,
                   itemCount: _itineraries.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 14),
+                  separatorBuilder: (_, _) => const SizedBox(width: 14),
                   itemBuilder: (context, index) {
                     return _buildTripCard(_itineraries[index]);
                   },
@@ -640,17 +734,17 @@ Future<void> _loadExportedTrips() async {
               // 我的資料夾區塊
               Text(
                 LanguageService.tr(context, 'saved_folders'),
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                style: AppTypography.sectionTitle(),
               ),
               const SizedBox(height: 12),
               SizedBox(
-                height: 130,
+                height: 125,
                 child: _folders.isEmpty
                     ? _buildEmptyState(LanguageService.tr(context, 'empty_folders'))
                     : ListView.separated(
                         scrollDirection: Axis.horizontal,
                         itemCount: _folders.length,
-                        separatorBuilder: (_, __) => const SizedBox(width: 14),
+                        separatorBuilder: (_, _) => const SizedBox(width: 14),
                         itemBuilder: (context, index) {
                           final folder = _folders[index];
                           return _buildFolderCard(folder);
@@ -668,55 +762,57 @@ Future<void> _loadExportedTrips() async {
 
   // 景點卡片
   Widget _buildPlaceCard(Place place) {
-    return Container(
-      width: 110,
-      decoration: BoxDecoration(
-        color: AppColors.primary,
-        borderRadius: BorderRadius.circular(20),
+    return InkWell(
+      borderRadius: BorderRadius.circular(20),
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => PlaceDetailPage(place: place)),
       ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Padding(
-            padding: EdgeInsets.only(top: 28),
-            child: Text(
-              '圖片',
-              style: TextStyle(
-                color: AppColors.textPrimary,
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
+      child: Container(
+        width: 120,
+        decoration: BoxDecoration(
+          color: AppColors.primary,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          children: [
+            SizedBox(
+              height: 76,
+              width: double.infinity,
+              child: PlaceImage(place: place),
+            ),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        place.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: AppColors.textPrimary,
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => _showFrostedMenu(context, place),
+                      child: Padding(
+                        padding: const EdgeInsets.all(4),
+                        child: Icon(Icons.more_vert, size: 18, color: AppColors.textPrimary),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                  child: Text(
-                    place.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: AppColors.textPrimary,
-                      fontSize: 13,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-                GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () => _showFrostedMenu(context, place),
-                  child: Padding(
-                    padding: EdgeInsets.all(4.0),
-                    child: Icon(Icons.more_vert, size: 18, color: AppColors.textPrimary),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -746,15 +842,19 @@ Future<void> _loadExportedTrips() async {
           if (!mounted) return;
 
           // 打開行程結果頁，灌入真快照資料
-          Navigator.push(
+          await Navigator.push<void>(
             context,
             MaterialPageRoute(
               builder: (_) => ItineraryResultPage(
                 tripTitle: title,
                 initialSnapshot: snapshot,
+                savedItineraryId: tripId,
+                savedItineraryUserId: user.id,
+                onDelete: () => _deleteSavedTrip(tripId, title),
               ),
             ),
           );
+          if (mounted) await _loadExportedTrips();
         } catch (e) {
           if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
@@ -777,24 +877,27 @@ Future<void> _loadExportedTrips() async {
         ),
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
         alignment: Alignment.center,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+        child: Stack(
           children: [
-           Icon(
-              Icons.map_outlined,
-              size: 28,
-              color: AppColors.textPrimary,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              title,
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: AppColors.textPrimary,
-                fontSize: 13,
-                fontWeight: FontWeight.bold,
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.map_outlined, size: 28, color: AppColors.textPrimary),
+                  const SizedBox(height: 8),
+                  Text(
+                    title,
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
@@ -816,7 +919,7 @@ Future<void> _loadExportedTrips() async {
       );
     },
     child: Container(
-      width: 110,
+      width: 120,
       decoration: BoxDecoration(
         color: AppColors.primary,
         borderRadius: BorderRadius.circular(20),
@@ -854,19 +957,21 @@ Future<void> _loadExportedTrips() async {
       behavior: HitTestBehavior.opaque,
       onTap: () => _showFolderContentDialog(context, folder),
       child: Container(
-        width: 110,
+        width: 120,
         decoration: BoxDecoration(
           color: AppColors.primary,
           borderRadius: BorderRadius.circular(20),
         ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        child: Stack(
           children: [
-            Padding(
-              padding: const EdgeInsets.only(top: 24),
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
+            Column(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(top: 24),
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
                   Icon(Icons.folder_open_rounded, size: 30, color: AppColors.textPrimary),
                   if (places.isNotEmpty)
                     Positioned(
@@ -884,23 +989,25 @@ Future<void> _loadExportedTrips() async {
                         ),
                       ),
                     ),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-              child: Center(
-                child: Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: 13,
-                    fontWeight: FontWeight.bold,
+                    ],
                   ),
                 ),
-              ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                  child: Center(
+                    child: Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ],
         ),

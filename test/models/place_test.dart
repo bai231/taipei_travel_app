@@ -39,6 +39,7 @@ void main() {
       'category': '餐廳',
       'placeType': 'restaurant',
       'county': '台北市',
+      'district': '信義區',
       'description': '台北餐廳',
       'address': '台北市信義區市府路45號',
       'latitude': 25.033964,
@@ -56,12 +57,43 @@ void main() {
     expect(place.id, '1');
     expect(place.type, PlaceType.restaurant);
     expect(place.county, '台北市');
+    expect(place.district, '信義區');
     expect(place.longitude, 121.564468);
     expect(place.stayTime, 120);
     expect(place.price_level, 2);
     //expect(place.estimatedCost, 600.0);
     expect(place.openMinutes, 660);
     expect(place.closeMinutes, 1260);
+  });
+
+  test('解析 Google Places 詳細資訊與營業時間', () {
+    final place = Place.fromJson({
+      'id': 2,
+      'name': '旺萊山',
+      'nationalPhoneNumber': '05 272 0696',
+      'websiteUri': 'https://www.pineapplehill.com.tw',
+      'regularOpeningHours': {
+        'weekdayDescriptions': ['星期一: 09:00–17:30', '星期二: 09:00–17:30'],
+      },
+    });
+
+    expect(place.phone, '05 272 0696');
+    expect(place.website, 'https://www.pineapplehill.com.tw');
+    expect(place.openingHours, ['星期一: 09:00–17:30', '星期二: 09:00–17:30']);
+    expect(place.openingHoursRaw, contains('星期一'));
+  });
+
+  test('解析 Supabase JSON 字串格式的 Google 營業時間', () {
+    final place = Place.fromJson({
+      'opening_hours':
+          '{"weekday_text":["Monday: 9:00 AM – 5:30 PM","Tuesday: Closed"]}',
+      'formatted_phone_number': '(02) 1234-5678',
+      'website_url': 'example.com',
+    });
+
+    expect(place.openingHours, hasLength(2));
+    expect(place.phone, '(02) 1234-5678');
+    expect(place.website, 'example.com');
   });
 
   test('解析 TDX 餐廳巢狀座標並強制指定資料類型', () {
@@ -108,6 +140,7 @@ void main() {
     expect(place.description, '住宿說明');
     expect(place.address, '臺中市和平區中坑路1號');
     expect(place.county, '臺中市');
+    expect(place.district, '和平區');
     expect(place.latitude, 0);
     expect(place.longitude, 0);
   });
@@ -124,7 +157,12 @@ void main() {
         'address': '',
         'latitude': 25.046,
         'longitude': 121.514,
-        'tags': {'amenity': 'restaurant', 'takeaway': 'yes'},
+        'tags': {
+          'amenity': 'restaurant',
+          'takeaway': 'yes',
+          'addr:city': '臺北市',
+          'addr:district': '中正區',
+        },
       },
       forcedType: PlaceType.restaurant,
       idPrefix: 'osm_restaurants',
@@ -134,6 +172,8 @@ void main() {
     expect(place.name, '福州世祖胡椒餅');
     expect(place.latitude, 25.046);
     expect(place.longitude, 121.514);
+    expect(place.county, '臺北市');
+    expect(place.district, '中正區');
     expect(place.tags, contains('amenity:restaurant'));
   });
 

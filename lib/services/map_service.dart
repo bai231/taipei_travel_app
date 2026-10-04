@@ -1,8 +1,9 @@
-import 'package:flutter/material.dart' show Color;
+import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../models/place.dart';
 import '../models/route_geometry_segment.dart';
+import '../theme/app_colors.dart';
 
 class MapService {
   static const LatLng taipeiCenter = LatLng(25.0330, 121.5654);
@@ -45,7 +46,7 @@ class MapService {
     return Polyline(
       polylineId: const PolylineId('trip-route'),
       points: coordinates.toList(),
-      color: const Color(0xFF1976D2),
+      color: AppColors.primary,
       width: 5,
       startCap: Cap.roundCap,
       endCap: Cap.roundCap,
@@ -92,14 +93,14 @@ class MapService {
       return const Color(0xFFC2185B);
     }
     if (vehicleType.contains('RAIL') || vehicleType.contains('TRAIN')) {
-      return const Color(0xFF7B1FA2);
+      return AppColors.primary;
     }
     if (vehicleType.contains('BUS')) {
       return const Color(0xFFF57C00);
     }
     final googleColor = _parseHexColor(segment.lineColor);
     if (googleColor != null) return googleColor;
-    return const Color(0xFF1976D2);
+    return AppColors.primary;
   }
 
   Color? _parseHexColor(String? value) {

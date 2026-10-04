@@ -22,7 +22,45 @@ class AppTheme {
   static ThemeData get lightTheme {
     return ThemeData(
       useMaterial3: true,
+      colorScheme: ColorScheme.fromSeed(seedColor: AppColors.primary),
+      fontFamily: 'NotoSansTC',
+      fontFamilyFallback: const ['NotoSansTC'],
       scaffoldBackgroundColor: AppColors.background,
+      appBarTheme: AppBarTheme(
+        titleTextStyle: TextStyle(
+          fontFamily: 'Nunito',
+          fontFamilyFallback: ['jf-openhunround', 'NotoSansTC'],
+          fontSize: 22,
+          fontWeight: FontWeight.w700,
+          color: AppColors.textPrimary,
+        ),
+      ),
+      textTheme: const TextTheme(
+        headlineLarge: TextStyle(
+          fontFamily: 'Nunito',
+          fontFamilyFallback: ['jf-openhunround', 'NotoSansTC'],
+        ),
+        headlineMedium: TextStyle(
+          fontFamily: 'Nunito',
+          fontFamilyFallback: ['jf-openhunround', 'NotoSansTC'],
+        ),
+        headlineSmall: TextStyle(
+          fontFamily: 'Nunito',
+          fontFamilyFallback: ['jf-openhunround', 'NotoSansTC'],
+        ),
+        titleLarge: TextStyle(
+          fontFamily: 'Nunito',
+          fontFamilyFallback: ['jf-openhunround', 'NotoSansTC'],
+        ),
+        titleMedium: TextStyle(
+          fontFamily: 'Nunito',
+          fontFamilyFallback: ['jf-openhunround', 'NotoSansTC'],
+        ),
+        titleSmall: TextStyle(
+          fontFamily: 'Nunito',
+          fontFamilyFallback: ['jf-openhunround', 'NotoSansTC'],
+        ),
+      ),
 
       // 全域按鈕：膠囊造型、綠色調重點按鈕
       elevatedButtonTheme: ElevatedButtonThemeData(

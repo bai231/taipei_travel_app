@@ -3,9 +3,9 @@ import '../models/place.dart';
 import '../services/place_service.dart';
 import '../services/location_service.dart';
 import '../widgets/place_card.dart';
-import '../pages/place_detail_page.dart';
 import '../pages/itinerary_result_page.dart';
 import '../services/language_service.dart';
+import '../theme/app_typography.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -108,11 +108,7 @@ class _HomePageState extends State<HomePage> {
                 padding: EdgeInsets.fromLTRB(16, 16, 16, 10),
                 child: Text(
                   LanguageService.tr(context, 'popular_trips'),
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 0.5,
-                  ),
+                  style: AppTypography.headline(),
                 ),
               ),
 
@@ -260,11 +256,7 @@ class _HomePageState extends State<HomePage> {
                   children: [
                     Text(
                       LanguageService.tr(context, 'spot_recommendations'),
-                      style: const TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 0.5,
-                      ),
+                      style: AppTypography.headline(),
                     ),
                     const SizedBox(width: 8),
                     if (_currentUserLocation != null)
@@ -280,7 +272,7 @@ class _HomePageState extends State<HomePage> {
                             Icon(Icons.near_me_rounded, size: 12, color: Color(0xFF1E3A2F)),
                             SizedBox(width: 3),
                             Text(
-                              LanguageService.tr(context, 'distance_sort'),
+                              LanguageService.tr(context, 'home_distance_sort'),
                               style: TextStyle(
                                 fontSize: 11,
                                 color: Color(0xFF1E3A2F),
@@ -307,7 +299,7 @@ class _HomePageState extends State<HomePage> {
                     child: Padding(
                       padding: const EdgeInsets.all(16.0),
                       child: Text(
-                        LanguageService.tr(context, 'load_places_failed') + ": $errorMessage",
+                        LanguageService.tr(context, 'home_load_places_failed') + ": $errorMessage",
                         textAlign: TextAlign.center,
                       ),
                     ),
@@ -316,7 +308,7 @@ class _HomePageState extends State<HomePage> {
               else if (places.isEmpty)
                 SizedBox(
                   height: 210,
-                  child: Center(child: Text(LanguageService.tr(context, 'no_places_available'))),
+                  child: Center(child: Text(LanguageService.tr(context, 'home_no_places'))),
                 )
               else
                 SizedBox(
@@ -351,13 +343,13 @@ class _HomePageState extends State<HomePage> {
       return Image.network(
         path,
         fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => _buildPlaceholder(),
+        errorBuilder: (_, _, _) => _buildPlaceholder(),
       );
     } else {
       return Image.asset(
         path,
         fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => _buildPlaceholder(),
+        errorBuilder: (_, _, _) => _buildPlaceholder(),
       );
     }
   }

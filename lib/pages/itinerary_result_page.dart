@@ -1,32 +1,38 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/saved_itinerary_service.dart';
+import '../services/language_service.dart';
 import '../features/route_planning/pages/itinerary_result_page.dart' as planner;
 import '../features/route_planning/models/route_itinerary.dart';
 import '../features/route_planning/services/itinerary_planning_service.dart';
+import '../features/route_planning/services/itinerary_place_resolver.dart';
+import '../services/place_service.dart';
 import '../widgets/trip/planner_item_picker.dart';
 import '../widgets/trip/planner_favorite_picker_dialog.dart';
 import '../models/place.dart';
-import '../algorithm/route_optimizer.dart';
 
 
 import '../features/route_planning/models/route_itinerary.dart';
-import '../features/route_planning/models/route_day.dart';
-import '../features/route_planning/models/route_visit.dart';
-import '../features/route_planning/models/route_travel_mode.dart';
-import '../features/route_planning/models/travel_leg.dart';
+import '../features/route_planning/models/route_place_input.dart';
+import '../theme/app_typography.dart';
+import '../theme/app_colors.dart';
 
-import '../models/trip_place_constraint.dart';
 
 
 class ItineraryResultPage extends StatefulWidget {
   final String tripTitle;
   final Map<String, dynamic>? initialSnapshot;
+  final String? savedItineraryId;
+  final String? savedItineraryUserId;
+  final Future<bool> Function()? onDelete;
 
   const ItineraryResultPage({
     super.key,
     required this.tripTitle,
     this.initialSnapshot,
+    this.savedItineraryId,
+    this.savedItineraryUserId,
+    this.onDelete,
   });
 
   @override
@@ -35,12 +41,12 @@ class ItineraryResultPage extends StatefulWidget {
 
 class _ItineraryResultPageState extends State<ItineraryResultPage> {
   // 色彩配置
-  static const Color primaryBg = Color(0xFFC7DEC8);
+  static Color get primaryBg => AppColors.background;
   static const Color dayColumnBg = Colors.white; // 珍珠白大底欄
-  static const Color cardColor = Color(0xFFF4F8F5);
-  static const Color textDark = Color(0xFF1E3A2F);
-  static const Color textSub = Color(0xFF5A7265);
-  static const Color accentBrown = Color(0xFF8C7355);
+  static Color get cardColor => AppColors.surface;
+  static Color get textDark => AppColors.textPrimary;
+  static Color get textSub => AppColors.textSecondary;
+  static Color get accentColor => AppColors.primary;
 
   List<Map<String, dynamic>> _daysData = [];
   final Set<String> _expandedReasons = {};
@@ -127,109 +133,56 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
     }
 
     try {
-      // 1. 還原強型別 RouteItinerary 物件
-      final itineraryObj = RouteItinerary.fromSnapshot(widget.initialSnapshot!);
+      final itinerary = RouteItinerary.fromSnapshot(widget.initialSnapshot!);
+      final planningService = ItineraryPlanningService();
+      final placeService = PlaceService();
+      const placeResolver = ItineraryPlaceResolver();
 
-      // 2. 開啟編輯器，並補上隊友要求的回呼功能
       Navigator.push(
         context,
         MaterialPageRoute(
           builder: (_) => planner.ItineraryResultPage(
-            itinerary: itineraryObj,
-            // 🎯 1. 精確對齊 RecalculateItinerary 簽名 (3 個參數)
-          onRecalculate: (
-            List<TripPlaceConstraint> constraints,
-            Map<RouteLegKey, RouteTravelMode> travelModeOverrides,
-            RouteItinerary previousItinerary,
-          ) async {
-          debugPrint("排程重算：約束條件數 = ${constraints.length}");
-
-          try {
-            final updatedDays = previousItinerary.days.map((day) {
-            final newVisits = <RouteVisit>[];
-            int currentSeq = 1;
-            int currentMinutes = 540; // 預設早上 09:00
-
-            // 篩選屬於當天的約束站點（若 c.day 為 null 則預設排入當前天數）
-            final dayConstraints = constraints.where(
-              (c) => c.day == null || c.day == day.day,
-            );
-
-            for (final c in dayConstraints) {
-            // 🌟 1. 取得開始時間：優先使用使用者鎖定/指定的 c.startMinutes
-            final start = c.startMinutes ?? currentMinutes;
-        
-            // 🌟 2. 取得停留時長：直接呼叫 c.stayMinutes (由 preferences.durationFor 計算)
-            final stay = c.stayMinutes > 0 ? c.stayMinutes : (c.place.stayTime > 0 ? c.place.stayTime : 60);
-            final end = start + stay;
-
-            newVisits.add(
-              RouteVisit(
-                place: c.place,
-                sequence: currentSeq++,
-                arrivalMinutes: start,
-                startMinutes: start,
-                endMinutes: end,
-                waitingMinutes: 0,
-                stayMinutes: stay,
-                requestedStartMinutes: c.startMinutes,
-                locked: c.locked, // 🌟 3. 使用真實的 c.locked 屬性
-                information: const [],
-              ),
-            );
-
-            // 如果該站點不是手動鎖定固定時間，自動為下一站推遲（加上 30 分鐘交通緩衝）
-            currentMinutes = end + 30;
-          }
-
-          return RouteDay(
-            day: day.day,
-            date: day.date,
-            origin: day.origin,
-            visits: newVisits.isNotEmpty ? newVisits : day.visits,
-            travelLegs: day.travelLegs,
-            isValid: true,
-            warnings: day.warnings,
-          );
-        }).toList();
-
-        return RouteItinerary(
-          request: previousItinerary.request,
-          origin: previousItinerary.origin,
-          days: updatedDays,
-          generatedAt: DateTime.now(),
-          warnings: previousItinerary.warnings,
-          travelModeOverrides: travelModeOverrides,
-        );
-      } catch (e) {
-      debugPrint("重算處理失敗: $e");
-      return previousItinerary;
-    }
-  },
-            onAddPlace: (BuildContext ctx, Set<String> selectedPlaceIds) async {
-  List<Place> pickedPlaces = <Place>[];
-
-  // 彈出「從收藏 / 資料夾加入景點」的磨砂彈窗
-  await showDialog<void>(
-    context: ctx,
-    builder: (dialogCtx) => PlannerFavoritePickerDialog(
-      onPlacesConfirmed: (List<Place> selected) {
-        pickedPlaces = selected; // 取得使用者勾選的景點物件清單
-      },
-    ),
-  );
-
-  // 🌟 必須將選到的 List<Place> 回傳給編輯器
-  return pickedPlaces;
-},
-            // 🌟 3. 頂部編輯筆按鈕
-            onEdit: () {
-              debugPrint("點擊了編輯行程資訊");
+            itinerary: itinerary,
+            savedItineraryId: widget.savedItineraryId,
+            savedItineraryUserId: widget.savedItineraryUserId,
+            initialMapVisible: true,
+            onRecalculate: (constraints, travelModeOverrides, previous) {
+              final inputs = constraints
+                  .map((constraint) => RoutePlaceInput(
+                        place: constraint.place,
+                        day: constraint.day,
+                        startMinutes: constraint.startMinutes,
+                        locked: constraint.locked,
+                        kind: constraint.kind,
+                        suggestedMealType: constraint.suggestedMealType,
+                        preferences: constraint.preferences,
+                      ))
+                  .toList();
+              return planningService.generate(
+                request: previous.request,
+                places: inputs,
+                travelModeOverrides: travelModeOverrides,
+                reusableItinerary: previous,
+              );
             },
-
-            // 🌟 4. 頂部匯出按鈕（可直接連動原有的儲存/匯出功能）
-            onExport: () {
-              _exportItinerary();
+            onResolvePlaceQuery: (query, excludedPlaceIds) async {
+              final catalog = await placeService.getTripCatalog();
+              return placeResolver.search(
+                query: query,
+                places: catalog,
+                excludedPlaceIds: excludedPlaceIds,
+                preferredLocation: itinerary.request.location,
+              );
+            },
+            onAddPlace: (ctx, selectedPlaceIds) async {
+              var pickedPlaces = <Place>[];
+              await showDialog<void>(
+                context: ctx,
+                builder: (dialogCtx) => PlannerFavoritePickerDialog(
+                  onPlacesConfirmed: (selected) => pickedPlaces = selected,
+                ),
+              );
+              return pickedPlaces;
             },
           ),
         ),
@@ -241,7 +194,6 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
       );
     }
   }
-
   // ☁️ 匯出行程至 Supabase
   Future<void> _exportItinerary() async {
     final user = Supabase.instance.client.auth.currentUser;
@@ -255,7 +207,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
     setState(() => _isExporting = true);
     try {
       final savedService = SavedItineraryService(Supabase.instance.client);
-      final String snapshotId = DateTime.now()
+      final String snapshotId = widget.savedItineraryId ?? DateTime.now()
           .millisecondsSinceEpoch
           .toRadixString(16)
           .padLeft(32, '0');
@@ -294,13 +246,13 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
               child: Row(
                 children: [
                   IconButton(
-                    icon: const Icon(Icons.arrow_back_ios_new_rounded, color: textDark),
+                    icon: Icon(Icons.arrow_back_ios_new_rounded, color: textDark),
                     onPressed: () => Navigator.pop(context),
                   ),
                   Expanded(
                     child: Text(
                       widget.tripTitle,
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: textDark,
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
@@ -312,14 +264,14 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
                   _buildCapsuleButton(
                     label: "編輯",
                     icon: Icons.edit_note_rounded,
-                    bgColor: const Color(0xFF8C7355).withValues(alpha: 0.15),
+                    bgColor: AppColors.primary.withValues(alpha: 0.15),
                     textColor: textDark,
                     onTap: _backToEditPage,
                   ),
                   const SizedBox(width: 8),
                   // 🌟 匯出儲存按鈕
                   _isExporting
-                      ? const SizedBox(
+                      ? SizedBox(
                           width: 20,
                           height: 20,
                           child: CircularProgressIndicator(strokeWidth: 2, color: textDark),
@@ -327,10 +279,20 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
                       : _buildCapsuleButton(
                           label: "匯出",
                           icon: Icons.bookmark_add_outlined,
-                          bgColor: const Color(0xFF70B19B),
+                          bgColor: AppColors.primary,
                           textColor: Colors.white,
                           onTap: _exportItinerary,
                         ),
+                  if (widget.onDelete != null)
+                    IconButton(
+                      tooltip: LanguageService.tr(context, 'delete_trip'),
+                      onPressed: () async {
+                        if (await widget.onDelete!() && mounted) {
+                          Navigator.pop(context);
+                        }
+                      },
+                      icon: Icon(Icons.delete_outline, color: textSub),
+                    ),
                 ],
               ),
             ),
@@ -338,7 +300,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
             // 橫向滑動多日行程（純瀏覽）
             Expanded(
               child: _daysData.isEmpty
-                  ? const Center(
+                  ? Center(
                       child: Text(
                         "查無行程內容",
                         style: TextStyle(color: textSub, fontSize: 16),
@@ -384,7 +346,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
         children: [
           Text(
             day["dayTitle"],
-            style: const TextStyle(
+            style: TextStyle(
               color: textDark,
               fontSize: 18,
               fontWeight: FontWeight.bold,
@@ -429,8 +391,8 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
                   // 時間標籤（純文字展示）
                   Text(
                     spot["time"] ?? "",
-                    style: const TextStyle(
-                      color: accentBrown,
+                    style: TextStyle(
+                      color: accentColor,
                       fontWeight: FontWeight.bold,
                       fontSize: 14,
                     ),
@@ -443,7 +405,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
                       children: [
                         Text(
                           spot["name"] ?? "",
-                          style: const TextStyle(
+                          style: TextStyle(
                             color: textDark,
                             fontSize: 15,
                             fontWeight: FontWeight.bold,
@@ -452,7 +414,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
                         const SizedBox(height: 2),
                         Text(
                           "建議停留 ${spot["stayTime"]} 分鐘",
-                          style: const TextStyle(color: textSub, fontSize: 12),
+                          style: TextStyle(color: textSub, fontSize: 13),
                         ),
                       ],
                     ),
@@ -476,12 +438,12 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
                     children: [
                       Text(
                         isExpanded ? "收起推薦理由" : "查看推薦理由",
-                        style: const TextStyle(color: accentBrown, fontSize: 12),
+                        style: TextStyle(color: accentColor, fontSize: 13),
                       ),
                       Icon(
                         isExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
                         size: 16,
-                        color: accentBrown,
+                        color: accentColor,
                       ),
                     ],
                   ),
@@ -490,7 +452,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
                   const SizedBox(height: 6),
                   Text(
                     spot["reason"],
-                    style: const TextStyle(color: textDark, fontSize: 12, height: 1.4),
+                    style: TextStyle(color: textDark, fontSize: 13, height: 1.4),
                   ),
                 ],
               ],
@@ -504,12 +466,12 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
             child: Row(
               children: [
                 const SizedBox(width: 16),
-                const Icon(Icons.directions_bus_rounded, size: 15, color: accentBrown),
+                Icon(Icons.directions_bus_rounded, size: 15, color: accentColor),
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
                     transit,
-                    style: const TextStyle(color: textSub, fontSize: 11),
+                    style: TextStyle(color: textSub, fontSize: 12),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),

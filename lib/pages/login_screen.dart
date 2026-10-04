@@ -4,8 +4,8 @@ import '../services/auth_service.dart';                  // 引入會員驗證�
 import '../services/favorite_service.dart';              // 引入收藏雲端同步服務
 import '../services/user_data_service.dart';     
 import '../services/saved_itinerary_service.dart';   
+import '../services/language_service.dart';
 import 'register_screen.dart';
-import '../theme/app_theme.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -75,8 +75,8 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!mounted) return;
 
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('登入成功！歡迎回來 🌿'),
+      SnackBar(
+        content: Text(LanguageService.tr(context, 'login_success')),
         duration: Duration(seconds: 1),
       ),
     );
@@ -90,14 +90,14 @@ class _LoginScreenState extends State<LoginScreen> {
     debugPrint("❌ [AuthException 帳密驗證失敗]: ${e.message} (StatusCode: ${e.statusCode})");
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('帳號或密碼錯誤: ${e.message}')),
+      SnackBar(content: Text('${LanguageService.tr(context, 'login_invalid')}: ${e.message}')),
     );
   } catch (e, stackTrace) {
     debugPrint("❌ [未預期的系統錯誤]: $e");
     debugPrint("堆疊追蹤: $stackTrace");
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('登入過程發生錯誤: $e')),
+      SnackBar(content: Text('${LanguageService.tr(context, 'login_error')}: $e')),
     );
   } finally {
     if (mounted) {
@@ -196,7 +196,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   decoration: _buildCapsuleInputDecoration(hint: 'Email'),
                   validator: (value) {
                     if (value == null || value.trim().isEmpty) {
-                      return '請輸入電子信箱';
+                      return LanguageService.tr(context, 'login_email_required');
                     }
                     return null;
                   },
@@ -216,7 +216,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   decoration: _buildCapsuleInputDecoration(hint: 'Password'),
                   validator: (value) {
                     if (value == null || value.isEmpty) {
-                      return '請輸入密碼';
+                      return LanguageService.tr(context, 'login_password_required');
                     }
                     return null;
                   },
@@ -268,8 +268,8 @@ class _LoginScreenState extends State<LoginScreen> {
                           MaterialPageRoute(builder: (context) => const RegisterScreen()),
                         );
                       },
-                      child: const Text(
-                        '註冊帳號',
+                      child: Text(
+                        LanguageService.tr(context, 'register_action'),
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.bold,
@@ -294,10 +294,10 @@ class _LoginScreenState extends State<LoginScreen> {
                     GestureDetector(
                       onTap: () {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('請聯繫管理員重設密碼')),
+                          SnackBar(content: Text(LanguageService.tr(context, 'login_contact_admin'))),
                         );
                       },
-                      child: const Text(
+                      child: Text(
                         'Forgot Password',
                         style: TextStyle(
                           fontSize: 14,

@@ -107,4 +107,17 @@ class SavedItineraryService implements SavedItineraryGateway {
     final snapshot = Map<String, dynamic>.from(row['snapshot'] as Map);
     return decodeItinerarySnapshot(snapshot);
   }
+
+  Future<void> delete(String id) async {
+    final uid = currentUserId;
+    if (uid == null) throw StateError('請先登入');
+
+    await client
+        .from('saved_itineraries')
+        .delete()
+        .eq('user_id', uid)
+        .eq('id', id);
+
+    if (currentUserId != uid) throw StateError('帳號已變更');
+  }
 }

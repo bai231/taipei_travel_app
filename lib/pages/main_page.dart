@@ -75,29 +75,28 @@ class _MainPageState extends State<MainPage> {
 
     if (guideRect != null) {
       steps.add(GuideStep(
-        title: '使用指南與設定',
-        desc: '點擊這裡可以隨時再次開啟這份按鍵使用導引說明。',
+        title: LanguageService.tr(context, 'guide_settings_title'),
+        desc: LanguageService.tr(context, 'guide_settings_desc'),
         targetRect: guideRect,
         isUpwards: false,
       ));
     }
 
     if (navRect != null) {
-      steps.add(GuideStep(
-        title: '底部切換導航',
-        desc: '隨時在「首頁」、「行程安排」、「個人空間」與「靈感搜尋」之間切換。',
-        targetRect: navRect,
-        isUpwards: true,
-      ));
+    steps.add(GuideStep(
+      title: LanguageService.tr(context, 'guide_nav_title'),
+      desc: LanguageService.tr(context, 'guide_nav_desc'),
+      targetRect: navRect,
+      isUpwards: true,
+    ));
     }
-
     if (steps.isEmpty) return;
 
     Navigator.of(context).push(
       PageRouteBuilder(
         opaque: false,
         barrierDismissible: false,
-        pageBuilder: (context, _, __) => GuideOverlayScreen(steps: steps),
+        pageBuilder: (context, _, _) => GuideOverlayScreen(steps: steps),
       ),
     );
   }

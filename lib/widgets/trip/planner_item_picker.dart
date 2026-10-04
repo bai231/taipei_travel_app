@@ -5,6 +5,7 @@ import '../../models/planner_favorites.dart';
 import '../../services/place_service.dart';
 import '../../services/favorite_service.dart';
 import '../../services/user_data_service.dart';
+import '../../services/language_service.dart';
 
 class PlannerItemPicker extends StatefulWidget {
   final PlaceType type;
@@ -156,12 +157,12 @@ Widget build(BuildContext context) {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  '選擇${_typeName(widget.type)}',
+                  LanguageService.tr(context, 'picker_choose_type').replaceAll('{type}', _typeName(widget.type)),
                   style: Theme.of(context).textTheme.titleLarge,
                 ),
               ),
               IconButton(
-                tooltip: '關閉',
+                tooltip: LanguageService.tr(context, 'picker_close'),
                 onPressed: () => Navigator.pop(context),
                 icon: const Icon(Icons.close),
               ),
@@ -177,7 +178,7 @@ Widget build(BuildContext context) {
               spacing: 8,
               children: [
                 ChoiceChip(
-                  label: const Text('全部'),
+                  label: Text(LanguageService.tr(context, 'picker_all')),
                   selected: !_favoritesOnly,
                   onSelected: (_) => setState(() => _favoritesOnly = false),
                 ),
@@ -188,7 +189,7 @@ Widget build(BuildContext context) {
                     size: 18,
                     color: _favoritesOnly ? Colors.redAccent : null, // 👈 選中時切換為亮紅色實心愛心
                   ),
-                  label: const Text('我的收藏',),
+                  label: Text(LanguageService.tr(context, 'picker_favorites')),
                   selected: _favoritesOnly,
                   onSelected: (_) => setState(() => _favoritesOnly = true),
                 ),
@@ -207,14 +208,14 @@ Widget build(BuildContext context) {
                 child: TextField(
                   controller: _searchController,
                   decoration: InputDecoration(
-                    hintText: '搜尋名稱、分類或地址',
+                    hintText: LanguageService.tr(context, 'picker_search_hint'),
                     prefixIcon: const Icon(Icons.search),
                     border: const OutlineInputBorder(),
                     isDense: true,
                     suffixIcon: _searchController.text.isEmpty
                         ? null
                         : IconButton(
-                            tooltip: '清除搜尋',
+                            tooltip: LanguageService.tr(context, 'picker_clear_search'),
                             onPressed: () {
                               _searchController.clear();
                               setState(() {});
@@ -232,8 +233,8 @@ Widget build(BuildContext context) {
                 child: (widget.type == PlaceType.attraction && _favoritesOnly)
                     ? DropdownButtonFormField<String>(
                         value: _selectedFolderKey,
-                        decoration: const InputDecoration(
-                          labelText: '資料夾',
+                        decoration: InputDecoration(
+                          labelText: LanguageService.tr(context, 'picker_folders'),
                           border: OutlineInputBorder(),
                           isDense: true,
                         ),
@@ -241,13 +242,13 @@ Widget build(BuildContext context) {
                           DropdownMenuItem(
                             value: 'all',
                             child: Text(
-                              '全部收藏 (${typePlaces.where((p) => _favoriteService.isFavorite(p)).length})',
+                              LanguageService.tr(context, 'picker_all_favorites').replaceAll('{count}', '${typePlaces.where((p) => _favoriteService.isFavorite(p)).length}'),
                             ),
                           ),
                           DropdownMenuItem(
                             value: 'uncategorized',
                             child: Text(
-                              '未分類景點 (${_getUncategorizedPlaces(typePlaces.where((p) => _favoriteService.isFavorite(p)).toList()).length})',
+                              LanguageService.tr(context, 'picker_uncategorized').replaceAll('{count}', '${_getUncategorizedPlaces(typePlaces.where((p) => _favoriteService.isFavorite(p)).toList()).length}'),
                             ),
                           ),
                           ..._folders.map((folder) {
@@ -266,15 +267,15 @@ Widget build(BuildContext context) {
                       )
                     : DropdownButtonFormField<String?>(
                         value: _selectedCounty,
-                        decoration: const InputDecoration(
-                          labelText: '縣市',
+                        decoration: InputDecoration(
+                          labelText: LanguageService.tr(context, 'picker_counties'),
                           border: OutlineInputBorder(),
                           isDense: true,
                         ),
                         items: [
-                          const DropdownMenuItem<String?>(
+                          DropdownMenuItem<String?>(
                             value: null,
-                            child: Text('全部縣市'),
+                            child: Text(LanguageService.tr(context, 'picker_all_counties')),
                           ),
                           ...counties.map(
                             (county) => DropdownMenuItem<String?>(
@@ -301,8 +302,8 @@ Widget build(BuildContext context) {
                       favoritesMode && widget.favoritePlaceIds == null
                           ? widget.favoritesUnavailableMessage
                           : favoritesMode
-                          ? '目前沒有符合條件的收藏${_typeName(widget.type)}'
-                          : '目前沒有符合條件的${_typeName(widget.type)}',
+                          ? LanguageService.tr(context, 'picker_no_favorites').replaceAll('{type}', _typeName(widget.type))
+                          : LanguageService.tr(context, 'picker_no_places').replaceAll('{type}', _typeName(widget.type)),
                       style: TextStyle(color: Colors.grey.shade600),
                     ),
                   )
@@ -329,9 +330,9 @@ Widget build(BuildContext context) {
                           [
                             if (county.isNotEmpty) county,
                             if (place.category.isNotEmpty) place.category,
-                            if (!isRoutable) '缺少座標，暫不可排入行程',
+                            if (!isRoutable) LanguageService.tr(context, 'picker_no_coordinates'),
                             '⭐ ${place.rating}',
-                            '停留 ${place.stayTime} 分鐘',
+                            LanguageService.tr(context, 'picker_stay').replaceAll('{minutes}', '${place.stayTime}'),
                           ].join('・'),
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
@@ -350,13 +351,13 @@ Widget build(BuildContext context) {
               children: [
                 Expanded(
                   child: Text(
-                    '已選 ${_selectedPlaceIds.length} 個${_typeName(widget.type)}',
+                    LanguageService.tr(context, 'picker_selected').replaceAll('{count}', '${_selectedPlaceIds.length}').replaceAll('{type}', _typeName(widget.type)),
                   ),
                 ),
                 FilledButton.icon(
                   onPressed: _confirmSelection,
                   icon: const Icon(Icons.check),
-                  label: const Text('套用選擇'),
+                  label: Text(LanguageService.tr(context, 'picker_apply')),
                 ),
               ],
             ),
@@ -389,9 +390,9 @@ Widget build(BuildContext context) {
 
   String _typeName(PlaceType type) {
     return switch (type) {
-      PlaceType.attraction => '景點',
-      PlaceType.restaurant => '餐廳',
-      PlaceType.accommodation => '住宿',
+      PlaceType.attraction => LanguageService.trCurrent('place_category_attraction'),
+      PlaceType.restaurant => LanguageService.trCurrent('place_category_restaurant'),
+      PlaceType.accommodation => LanguageService.trCurrent('place_category_accommodation'),
     };
   }
 

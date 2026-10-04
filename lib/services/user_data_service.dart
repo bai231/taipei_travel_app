@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
 import '../models/place.dart';
 
 // 🌟 1. 最外層改為 extends ChangeNotifier，具備全域廣播能力
@@ -240,11 +241,23 @@ class UserDataService extends ChangeNotifier {
     if (uid == null) return false;
 
     try {
+      final ownedFolder = await _supabase
+          .from('folders')
+          .select('id')
+          .eq('id', folderId)
+          .eq('user_id', uid)
+          .maybeSingle();
+      if (ownedFolder == null) return false;
+      await _supabase
+          .from('folder_places')
+          .delete()
+          .eq('folder_id', folderId);
       await _supabase
           .from('folders')
           .delete()
           .eq('id', folderId)
           .eq('user_id', uid);
+      if (currentUserId != uid) return false;
 
       print('🗑️ [UserDataService] 成功刪除資料夾: $folderId');
       await fetchFolders(); // 重新拉取並更新清單[cite: 3, 6]

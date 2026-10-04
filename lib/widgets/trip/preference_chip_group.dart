@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../services/language_service.dart';
 
 class PreferenceChipGroup extends StatelessWidget {
   final List<String> selectedPreferences;
@@ -22,14 +23,27 @@ class PreferenceChipGroup extends StatelessWidget {
     "藝術",
   ];
 
+  String _preferenceKey(String preference) => switch (preference) {
+    '美食' => 'pref_food',
+    '購物' => 'pref_shopping',
+    '文化' => 'pref_culture',
+    '自然' => 'pref_nature',
+    '攝影' => 'pref_photography',
+    '夜景' => 'pref_night_view',
+    '親子' => 'pref_family',
+    '歷史' => 'pref_history',
+    '藝術' => 'pref_art',
+    _ => preference,
+  };
+
   @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
 
       children: [
-        const Text(
-          "旅遊偏好",
+        Text(
+          LanguageService.tr(context, 'travel_pref_trip'),
           style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
         ),
 
@@ -43,7 +57,7 @@ class PreferenceChipGroup extends StatelessWidget {
             final isSelected = selectedPreferences.contains(preference);
 
             return FilterChip(
-              label: Text(preference),
+              label: Text(LanguageService.tr(context, _preferenceKey(preference))),
 
               selected: isSelected,
 

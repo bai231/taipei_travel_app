@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
+import '../services/language_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart'; 
 import '../services/auth_service.dart';
 import 'guide_overlay_screen.dart';
-import '../theme/app_theme.dart'; // 引入色彩系統
+// 引入色彩系統
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -54,7 +55,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('註冊成功！準備開始你的旅程 ✈️')),
+        SnackBar(content: Text(LanguageService.tr(context, 'register_success'))),
       );
 
       // 2. 註冊成功後關閉註冊頁並開啟使用指南
@@ -71,7 +72,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       // 捕捉其他網路或資料庫錯誤
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('註冊失敗，請稍後再試：$e')),
+        SnackBar(content: Text('${LanguageService.tr(context, 'register_failed')}: $e')),
       );
     } finally {
       if (mounted) {
@@ -136,8 +137,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 const Spacer(flex: 1),
 
                 // 3. 標題區
-                const Text(
-                  'Create Account',
+                Text(
+                  LanguageService.tr(context, 'register_title'),
                   style: TextStyle(
                     fontSize: 30,
                     fontWeight: FontWeight.w900,
@@ -145,8 +146,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   ),
                 ),
                 const SizedBox(height: 6),
-                const Text(
-                  '加入我們，開啟你的下一趟探索',
+                Text(
+                  LanguageService.tr(context, 'register_subtitle'),
                   style: TextStyle(
                     fontSize: 14,
                     color: textSecondary,
@@ -160,7 +161,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   textAlign: TextAlign.center,
                   style: const TextStyle(color: inputTextColor, fontSize: 15),
                   decoration: _buildInputDeco(hint: 'Name'),
-                  validator: (v) => (v == null || v.trim().isEmpty) ? '請輸入姓名' : null,
+                  validator: (v) => (v == null || v.trim().isEmpty) ? LanguageService.tr(context, 'register_name_required') : null,
                 ),
                 const SizedBox(height: 14),
 
@@ -172,13 +173,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
   decoration: _buildInputDeco(hint: 'Email'),
   validator: (v) {
     if (v == null || v.trim().isEmpty) {
-      return '請輸入電子郵件';
+      return LanguageService.tr(context, 'register_email_required');
     }
     final email = v.trim();
     // 只要有字元 + @ + 網域名稱 + 小數點 就判定通過，不再刁難格式
     final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,}$');
     if (!emailRegex.hasMatch(email)) {
-      return '請輸入有效的電子信箱格式';
+      return LanguageService.tr(context, 'register_email_invalid');
     }
     return null;
   },
@@ -191,7 +192,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   textAlign: TextAlign.center,
                   style: const TextStyle(color: inputTextColor, fontSize: 15),
                   decoration: _buildInputDeco(hint: 'Password'),
-                  validator: (v) => (v == null || v.length < 6) ? '密碼至少需 6 碼' : null,
+                  validator: (v) => (v == null || v.length < 6) ? LanguageService.tr(context, 'register_password_short') : null,
                 ),
                 const SizedBox(height: 14),
 
@@ -202,7 +203,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   style: const TextStyle(color: inputTextColor, fontSize: 15),
                   decoration: _buildInputDeco(hint: 'Confirm Password'),
                   validator: (v) {
-                    if (v != _passwordController.text) return '兩次密碼輸入不一致';
+                    if (v != _passwordController.text) return LanguageService.tr(context, 'register_password_mismatch');
                     return null;
                   },
                 ),
@@ -229,8 +230,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           strokeWidth: 2.5,
                         ),
                       )
-                    : const Text(
-                      'Sign Up',
+                    : Text(
+                      LanguageService.tr(context, 'register_title'),
                       style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
                     ),
                   ),
@@ -242,14 +243,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Text(
-                      '已經有帳號了嗎？',
+                    Text(
+                      LanguageService.tr(context, 'register_have_account'),
                       style: TextStyle(color: textSecondary, fontSize: 13),
                     ),
                     GestureDetector(
                       onTap: () => Navigator.pop(context),
-                      child: const Text(
-                        ' 立即登入',
+                      child: Text(
+                        LanguageService.tr(context, 'register_login'),
                         style: TextStyle(
                           color: primaryDark,
                           fontSize: 13,

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import '../services/language_service.dart';
 import '../models/tdx_route.dart';
+import '../theme/app_colors.dart';
 
 class RouteDetailPage extends StatefulWidget {
   final TdxRoute route;
@@ -19,7 +21,7 @@ class _RouteDetailPageState extends State<RouteDetailPage> {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text('路線詳細資訊'),
+        title: Text(LanguageService.tr(context, 'route_detail_title')),
         backgroundColor: Colors.white,
         foregroundColor: Colors.black,
         elevation: 0.5,
@@ -59,14 +61,14 @@ class _RouteDetailPageState extends State<RouteDetailPage> {
           widgets.add(Icon(
             section.mode.contains('METRO') ? Icons.subway : Icons.directions_bus,
             size: 18,
-            color: Colors.blue.shade700,
+            color: AppColors.primary,
           ));
           if (section.lineName != null) {
             widgets.add(
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
-                  color: Colors.blue.shade700,
+                  color: AppColors.primary,
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
@@ -96,7 +98,7 @@ class _RouteDetailPageState extends State<RouteDetailPage> {
       // 1. 出發站 / 起始點點位
       timelineItems.add(
         _buildStationNode(
-          title: section.departureTitle ?? (i == 0 ? '出發點' : '乘車點'),
+          title: section.departureTitle ?? LanguageService.tr(context, i == 0 ? 'route_departure' : 'route_boarding'),
           time: section.departureTime,
           isOrigin: i == 0,
         ),
@@ -113,7 +115,7 @@ class _RouteDetailPageState extends State<RouteDetailPage> {
       if (i == route.sections.length - 1) {
         timelineItems.add(
           _buildStationNode(
-            title: section.arrivalTitle ?? '目的地',
+            title: section.arrivalTitle ?? LanguageService.tr(context, 'route_destination'),
             time: section.arrivalTime,
             isDestination: true,
           ),
@@ -181,7 +183,9 @@ class _RouteDetailPageState extends State<RouteDetailPage> {
   // 步行路段 (左側虛線 + 右側時間獨立計算)
   Widget _buildWalkingSegment(RouteSection section) {
     final int minutes = (section.travelTime / 60).round();
-    final String walkDuration = minutes > 0 ? '$minutes 分鐘' : '1 分鐘內';
+    final String walkDuration = minutes > 0
+        ? '$minutes ${LanguageService.tr(context, 'route_minutes')}'
+        : LanguageService.tr(context, 'route_under_minute');
 
     return IntrinsicHeight(
       child: Row(
@@ -208,7 +212,7 @@ class _RouteDetailPageState extends State<RouteDetailPage> {
                 children: [
                   const Icon(Icons.directions_walk, size: 18, color: Colors.grey),
                   const SizedBox(width: 8),
-                  const Text('步行', style: TextStyle(fontSize: 15, color: Colors.black87)),
+                  Text(LanguageService.tr(context, 'route_walk'), style: const TextStyle(fontSize: 15, color: Colors.black87)),
                 ],
               ),
             ),
@@ -226,7 +230,9 @@ class _RouteDetailPageState extends State<RouteDetailPage> {
   // 大眾運輸路段 (公車/捷運/火車/高鐵 + 點擊可收合/展開)
   Widget _buildTransitSegment(int index, RouteSection section, bool isExpanded) {
     final int minutes = (section.travelTime / 60).round();
-    final String transitDuration = minutes > 0 ? '$minutes 分鐘' : '1 分鐘內';
+    final String transitDuration = minutes > 0
+        ? '$minutes ${LanguageService.tr(context, 'route_minutes')}'
+        : LanguageService.tr(context, 'route_under_minute');
 
     return IntrinsicHeight(
       child: Row(
@@ -265,7 +271,7 @@ class _RouteDetailPageState extends State<RouteDetailPage> {
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: Text(
-                          section.lineName ?? '公車',
+                          section.lineName ?? LanguageService.tr(context, 'route_bus'),
                           style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
                         ),
                       ),
@@ -301,7 +307,9 @@ class _RouteDetailPageState extends State<RouteDetailPage> {
                           ),
                           const SizedBox(width: 4),
                           Text(
-                            '$transitDuration (${section.stopCount} 站)',
+                            LanguageService.tr(context, 'route_stop_count')
+                                .replaceAll('{duration}', transitDuration)
+                                .replaceAll('{count}', '${section.stopCount}'),
                             style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
                           ),
                         ],
@@ -383,7 +391,8 @@ class _RouteDetailPageState extends State<RouteDetailPage> {
                   const Icon(Icons.access_time, size: 18, color: Colors.black54),
                   const SizedBox(width: 8),
                   Text(
-                    '等候 $waitMinutes 分鐘',
+                    LanguageService.tr(context, 'route_wait')
+                        .replaceAll('{minutes}', '$waitMinutes'),
                     style: const TextStyle(fontSize: 15, color: Colors.black87, fontWeight: FontWeight.w500),
                   ),
                 ],

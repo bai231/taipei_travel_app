@@ -3,6 +3,7 @@ import '../models/place.dart';
 import '../services/favorite_service.dart';
 import '../theme/app_colors.dart';
 import '../pages/place_detail_page.dart';
+import 'place_image.dart';
 
 class PlaceCard extends StatefulWidget {
   final Place place;
@@ -69,13 +70,7 @@ class _PlaceCardState extends State<PlaceCard> {
                     height: 100,
                     width: double.infinity,
                     color: AppColors.primaryLight.withValues(alpha: 0.35),
-                    child: widget.place.image != null && widget.place.image!.isNotEmpty
-                        ? Image.network(
-                            widget.place.image!,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => _buildPlaceholder(),
-                          )
-                        : _buildPlaceholder(),
+                    child: PlaceImage(place: widget.place),
                   ),
                 ),
                 // 愛心點擊
@@ -207,13 +202,4 @@ class _PlaceCardState extends State<PlaceCard> {
     );
   }
 
-  Widget _buildPlaceholder() {
-    return Center(
-      child: Icon(
-        Icons.landscape_rounded,
-        size: 36,
-        color: AppColors.primaryDark.withValues(alpha: 0.5),
-      ),
-    );
-  }
 }

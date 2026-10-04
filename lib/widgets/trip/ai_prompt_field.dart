@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../services/language_service.dart';
 
 class AIPromptField extends StatelessWidget {
   final TextEditingController controller;
@@ -13,8 +14,8 @@ class AIPromptField extends StatelessWidget {
       maxLines: 4,
 
       decoration: InputDecoration(
-        labelText: "其他需求",
-        hintText: "例如：希望行程悠閒一點，不要安排太多景點",
+        labelText: LanguageService.tr(context, 'other_requirements'),
+        hintText: LanguageService.tr(context, 'trip_other_requirements_hint'),
         alignLabelWithHint: true,
 
         prefixIcon: const Padding(

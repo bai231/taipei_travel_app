@@ -37,7 +37,11 @@ dependencies:
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
   geolocator: ^14.0.2
+  # Linux implementations must be direct dependencies so Flutter registers
+  # them in linux/flutter/generated_plugin_registrant.cc.
+  geolocator_linux: ^0.2.6
   flutter_local_notifications: ^19.5.0
+  flutter_local_notifications_linux: ^6.0.0
   google_maps_flutter: ^2.14.0
   http: ^1.6.0
   supabase_flutter: ^2.17.2
@@ -58,6 +62,7 @@ dev_dependencies:
 # following page: https://dart.dev/tools/pub/pubspec
 
 # The following section is specific to Flutter packages.
+  google_maps_flutter_platform_interface: any
 flutter:
 
   # The following line ensures that the Material Icons font is
@@ -71,6 +76,16 @@ flutter:
     - assets/test3.jpg
     - assets/geo/taiwan_counties.geojson
   fonts:
+    - family: NotoSansTC
+      fonts:
+        - asset: assets/fonts/NotoSansTC-VF.ttf
+          weight: 100
+          # The variable font covers the complete 100–900 weight range.
+    - family: Nunito
+      fonts:
+        - asset: assets/fonts/Nunito-Variable.ttf
+          weight: 200
+          # The variable font covers weights 200–1000.
     - family: jf-openhunround # 粉圓字體
       fonts:
         - asset: assets/fonts/jf-openhuninn-2.1.ttf

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../models/generated_trip.dart';
 import '../models/trip_item.dart';
+import '../services/language_service.dart';
+import '../theme/app_typography.dart';
 
 class TripResultPage extends StatelessWidget {
   final GeneratedTrip trip;
@@ -16,11 +18,11 @@ class TripResultPage extends StatelessWidget {
         : trip.items.map((item) => item.day).reduce((a, b) => a > b ? a : b);
 
     return Scaffold(
-      appBar: AppBar(title: const Text("你的行程")),
+      appBar: AppBar(title: Text(LanguageService.tr(context, 'trip_result_title'))),
 
       body: trip.items.isEmpty
-          ? const Center(
-              child: Text("目前沒有可以安排的景點", style: TextStyle(fontSize: 18)),
+          ? Center(
+              child: Text(LanguageService.tr(context, 'trip_no_spots'), style: const TextStyle(fontSize: 18)),
             )
           : ListView.builder(
               padding: const EdgeInsets.all(16),
@@ -46,15 +48,15 @@ class TripResultPage extends StatelessWidget {
 
         Text(
           "Day $day",
-          style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+          style: AppTypography.headline(),
         ),
 
         const SizedBox(height: 12),
 
         if (items.isEmpty)
-          const Padding(
+          Padding(
             padding: EdgeInsets.only(bottom: 20),
-            child: Text("這一天目前沒有安排景點"),
+            child: Text(LanguageService.tr(context, 'trip_day_no_spots')),
           ),
 
         ...items.map((item) => _buildTripItem(context, item)),

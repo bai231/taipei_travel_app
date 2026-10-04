@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../services/language_service.dart';
 
 // 1. 定義 GuideStep 類別
 class GuideStep {
@@ -138,7 +139,7 @@ class _GuideOverlayScreenState extends State<GuideOverlayScreen> {
                   ),
                   const SizedBox(height: 10),
                   Text(
-                    _currentStep == widget.steps.length - 1 ? '點擊完成 ❯' : '點擊下一步 ❯',
+                    LanguageService.tr(context, _currentStep == widget.steps.length - 1 ? 'guide_finish' : 'guide_next'),
                     style: const TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
@@ -170,8 +171,8 @@ class _GuideOverlayScreenState extends State<GuideOverlayScreen> {
                         color: Colors.black.withValues(alpha: 0.25),
                         borderRadius: BorderRadius.circular(20),
                       ),
-                      child: const Text(
-                        '略過導引',
+                      child: Text(
+                        LanguageService.tr(context, 'guide_skip'),
                         style: TextStyle(color: Colors.white, fontSize: 13),
                       ),
                     ),
@@ -233,14 +234,14 @@ void showUserGuide(BuildContext context) {
   final screenSize = MediaQuery.of(context).size;
   final defaultSteps = [
     GuideStep(
-      title: '歡迎來到旅行旅伴！',
-      desc: '點擊任意處開始探索你的專屬行程，右上角可隨時再次開啟導引。',
+      title: LanguageService.tr(context, 'welcome_title'),
+      desc: LanguageService.tr(context, 'welcome_hint'),
       targetRect: Rect.fromLTWH(screenSize.width - 110, 40, 95, 40),
       isUpwards: false,
     ),
     GuideStep(
-      title: '底部切換導航',
-      desc: '隨時在「首頁」、「行程安排」、「我的收藏」與「靈感搜尋」之間切換。',
+      title: LanguageService.tr(context, 'navigation_hint_title'),
+      desc: LanguageService.tr(context, 'navigation_hint_desc'),
       targetRect: Rect.fromLTWH(20, screenSize.height - 70, screenSize.width - 40, 50),
       isUpwards: true,
     ),
@@ -250,7 +251,7 @@ void showUserGuide(BuildContext context) {
     PageRouteBuilder(
       opaque: false,
       barrierDismissible: false,
-      pageBuilder: (context, _, __) => GuideOverlayScreen(steps: defaultSteps),
+      pageBuilder: (context, _, _) => GuideOverlayScreen(steps: defaultSteps),
     ),
   );
 }
