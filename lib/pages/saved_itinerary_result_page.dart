@@ -125,7 +125,7 @@ class _SavedItineraryResultPageState extends State<SavedItineraryResultPage> {
             query: query,
             places: catalog,
             excludedPlaceIds: excludedIds,
-            preferredLocation: snapshot.data!.request.location,
+            preferredLocations: snapshot.data!.request.locations,
           );
         },
       );
