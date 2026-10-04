@@ -40,6 +40,18 @@ class FakeSaveGateway implements SavedItineraryGateway {
     if (pending != null) await pending!.future;
     if (fail) throw StateError('test failure');
   }
+  // 不知道為什麼的錯誤就先修了
+  // 🌟 將 list 簽名修正為接受可選具名參數 limit 與 offset，並回傳明確的 Map 型別
+  @override
+  Future<List<Map<String, dynamic>>> list({int? limit, int? offset}) async {
+    return []; // 測試預設回傳空列表，或回傳你的 mock 資料
+  }
+
+  // 順便確認 read 方法的簽名（如果是需要 id 的話）：
+  @override
+  Future<Map<String, dynamic>> read(String id) async {
+    return <String, dynamic>{}; 
+  }
 }
 
 RouteItinerary sample({bool withPreference = false}) {

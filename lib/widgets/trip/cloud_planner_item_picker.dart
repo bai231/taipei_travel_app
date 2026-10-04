@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import '../../services/language_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../models/place.dart';
@@ -74,17 +75,17 @@ class _CloudPlannerItemPickerState extends State<CloudPlannerItemPicker> {
           ? snapshot.data
           : null;
       final message = _userId == null
-          ? '請先登入以查看收藏'
+          ? LanguageService.tr(context, 'cloud_favorites_login')
           : snapshot.hasError
-          ? '收藏載入失敗，請重試'
-          : '正在載入收藏與資料夾…';
+          ? LanguageService.tr(context, 'cloud_favorites_failed')
+          : LanguageService.tr(context, 'cloud_favorites_loading');
       return Column(
         children: [
           if (snapshot.hasError && _userId != null)
             TextButton.icon(
               onPressed: () => setState(_refresh),
               icon: const Icon(Icons.refresh),
-              label: const Text('收藏載入失敗，重新載入'),
+              label: Text(LanguageService.tr(context, 'cloud_favorites_reload')),
             ),
           Expanded(
             child: PlannerItemPicker(

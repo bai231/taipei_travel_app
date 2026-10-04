@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
+import '../services/language_service.dart';
 // 引入你的 AppColors
 
 class EditProfileScreen extends StatefulWidget {
@@ -55,7 +56,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         setState(() {
           _emailController.text = user?.email ?? '';
           _nameController.text = profile?['username'] ?? user?.email?.split('@').first ?? '';
-          _bioController.text = profile?['bio'] ?? '熱愛探索世界的旅伴 🌿';
+          _bioController.text = profile?['bio'] ?? LanguageService.tr(context, 'edit_profile_default_bio');
           _avatarUrl = profile?['avatar_url'] ?? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150';
           _isLoading = false;
         });
@@ -64,7 +65,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       if (mounted) {
         setState(() => _isLoading = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('載入資料失敗: $e')),
+          SnackBar(content: Text('${LanguageService.tr(context, 'edit_profile_load_failed')}: $e')),
         );
       }
     }
@@ -84,13 +85,13 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('個人資料已同步更新 ✨')),
+        SnackBar(content: Text(LanguageService.tr(context, 'edit_profile_saved'))),
       );
       Navigator.pop(context, true); // 回傳 true 讓前頁知道有更新
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('儲存失敗: $e')),
+        SnackBar(content: Text('${LanguageService.tr(context, 'edit_profile_save_failed')}: $e')),
       );
     } finally {
       if (mounted) setState(() => _isSaving = false);
@@ -109,8 +110,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           onPressed: () => Navigator.pop(context),
         ),
         centerTitle: true,
-        title: const Text(
-          "編輯個人資料",
+        title: Text(
+          LanguageService.tr(context, 'edit_profile_title'),
           style: TextStyle(
             color: primaryNavy,
             fontSize: 18,
@@ -161,7 +162,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                               child: GestureDetector(
                                 onTap: () {
                                   ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text('更換大頭貼功能（可串接圖片上傳）')),
+                                    SnackBar(content: Text(LanguageService.tr(context, 'edit_profile_avatar_notice'))),
                                   );
                                 },
                                 child: Container(
@@ -178,33 +179,33 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                         ),
                       ),
                       const SizedBox(height: 10),
-                      const Text(
-                        "點擊相機更換頭像",
+                      Text(
+                        LanguageService.tr(context, 'edit_profile_change_avatar'),
                         style: TextStyle(fontSize: 12, color: textMuted),
                       ),
                       const SizedBox(height: 32),
 
                       // 2. 暱稱欄位
-                      _buildFieldLabel("使用者暱稱"),
+                      _buildFieldLabel(LanguageService.tr(context, 'edit_profile_nickname')),
                       TextFormField(
                         controller: _nameController,
                         style: const TextStyle(color: primaryNavy, fontSize: 15),
                         decoration: _buildInputDeco(
-                          hint: "請輸入你的暱稱",
+                          hint: LanguageService.tr(context, 'edit_profile_nickname_hint'),
                           prefixIcon: Icons.person_outline_rounded,
                         ),
-                        validator: (val) => (val == null || val.trim().isEmpty) ? '暱稱不能為空' : null,
+                        validator: (val) => (val == null || val.trim().isEmpty) ? LanguageService.tr(context, 'edit_profile_nickname_required') : null,
                       ),
                       const SizedBox(height: 20),
 
                       // 3. 信箱（唯讀）
-                      _buildFieldLabel("綁定信箱 (不可修改)"),
+                      _buildFieldLabel(LanguageService.tr(context, 'edit_profile_email')),
                       TextFormField(
                         controller: _emailController,
                         readOnly: true,
                         style: const TextStyle(color: textMuted, fontSize: 15),
                         decoration: _buildInputDeco(
-                          hint: "電子信箱",
+                          hint: LanguageService.tr(context, 'edit_profile_email_hint'),
                           prefixIcon: Icons.email_outlined,
                         ).copyWith(
                           fillColor: inputFill.withValues(alpha: 0.5),
@@ -213,13 +214,13 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       const SizedBox(height: 20),
 
                       // 4. 個人簡介 / 旅遊標語
-                      _buildFieldLabel("個人簡介 / 旅伴名言"),
+                      _buildFieldLabel(LanguageService.tr(context, 'edit_profile_bio')),
                       TextFormField(
                         controller: _bioController,
                         maxLines: 3,
                         style: const TextStyle(color: primaryNavy, fontSize: 15),
                         decoration: InputDecoration(
-                          hintText: "寫下一兩句你的旅遊風格，例如：熱愛戶外探險...",
+                          hintText: LanguageService.tr(context, 'edit_profile_bio_hint'),
                           hintStyle: const TextStyle(color: textMuted, fontSize: 14),
                           filled: true,
                           fillColor: inputFill,
@@ -254,8 +255,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                                   height: 20,
                                   child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
                                 )
-                              : const Text(
-                                  "儲存變更",
+                              : Text(
+                                  LanguageService.tr(context, 'edit_profile_save'),
                                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                                 ),
                         ),

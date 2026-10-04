@@ -1,16 +1,17 @@
 import 'package:flutter/material.dart';
+import '../../services/language_service.dart';
 
 class TripLocationField extends StatelessWidget {
-  final String location;
-  final ValueChanged<String?> onChanged;
+  final List<String> selectedLocations;
+  final ValueChanged<List<String>> onChanged;
 
   const TripLocationField({
     super.key,
-    required this.location,
+    required this.selectedLocations,
     required this.onChanged,
   });
 
-  final List<String> locations = const [
+  static const List<String> locations = [
     "台北市",
     "新北市",
     "桃園市",
@@ -37,20 +38,37 @@ class TripLocationField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DropdownButtonFormField<String>(
-      initialValue: location,
-
+    return InputDecorator(
       decoration: InputDecoration(
-        labelText: "旅遊地點",
+        labelText: LanguageService.tr(context, 'trip_location_multi'),
         prefixIcon: const Icon(Icons.location_on),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
       ),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: locations.map((location) {
+          final isSelected = selectedLocations.contains(location);
 
-      items: locations.map((item) {
-        return DropdownMenuItem<String>(value: item, child: Text(item));
-      }).toList(),
+          return FilterChip(
+            label: Text(location),
+            selected: isSelected,
+            onSelected: (selected) {
+              final updatedLocations = List<String>.from(selectedLocations);
 
-      onChanged: onChanged,
+              if (selected) {
+                if (!updatedLocations.contains(location)) {
+                  updatedLocations.add(location);
+                }
+              } else {
+                updatedLocations.remove(location);
+              }
+
+              onChanged(updatedLocations);
+            },
+          );
+        }).toList(),
+      ),
     );
   }
 }

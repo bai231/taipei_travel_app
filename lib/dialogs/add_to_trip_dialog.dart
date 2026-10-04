@@ -3,6 +3,7 @@ import '../services/trip_service.dart';
 import '../models/trip.dart';
 import 'create_trip_dialog.dart';
 import '../models/place.dart';
+import '../services/language_service.dart';
 
 Future<void> showAddToTripDialog({
   required BuildContext context,
@@ -17,13 +18,13 @@ Future<void> showAddToTripDialog({
       final trips = tripService.getTrips();
 
       return AlertDialog(
-        title: const Text("加入行程"),
+        title: Text(LanguageService.tr(context, 'add_to_trip_dialog_title')),
 
         content: SizedBox(
           width: double.maxFinite,
 
           child: trips.isEmpty
-              ? const Text("目前沒有任何行程")
+              ? Text(LanguageService.tr(context, 'add_to_trip_empty'))
               : ListView.builder(
                   shrinkWrap: true,
 
@@ -33,7 +34,7 @@ Future<void> showAddToTripDialog({
                     return ListTile(
                       title: Text(trips[index].name),
 
-                      subtitle: Text("${trips[index].places.length} 個景點"),
+                      subtitle: Text(LanguageService.tr(context, 'add_to_trip_spot_count').replaceAll('{count}', '${trips[index].places.length}')),
 
                       onTap: () {
                         final success = tripService.addPlaceToTrip(
@@ -47,9 +48,7 @@ Future<void> showAddToTripDialog({
                         if (success) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
-                              content: Text(
-                                "${place.name} 已加入 ${trips[index].name}",
-                              ),
+                              content: Text(LanguageService.tr(context, 'add_to_trip_success').replaceAll('{place}', place.name).replaceAll('{trip}', trips[index].name)),
                             ),
                           );
                         }
@@ -90,7 +89,7 @@ Future<void> showAddToTripDialog({
 
             icon: const Icon(Icons.add),
 
-            label: const Text("建立新行程"),
+            label: Text(LanguageService.tr(context, 'create_trip')),
           ),
         ],
       );

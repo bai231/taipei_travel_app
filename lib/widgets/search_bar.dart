@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../services/language_service.dart';
 
 class SearchBarWidget extends StatelessWidget {
   final ValueChanged<String>? onChanged;
@@ -14,7 +15,7 @@ class SearchBarWidget extends StatelessWidget {
       onChanged: onChanged,
 
       decoration: InputDecoration(
-        hintText: '搜尋景點、美食、地點...',
+        hintText: LanguageService.tr(context, 'search_places_hint'),
 
         prefixIcon: const Icon(
           Icons.search,

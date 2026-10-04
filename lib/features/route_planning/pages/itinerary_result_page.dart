@@ -43,6 +43,7 @@ import '../services/itinerary_place_resolver.dart';
 import '../../../services/place_service.dart';
 import '../services/itinerary_place_candidate_ranker.dart';
 import '../../../services/weather_itinerary_impact_analyzer.dart';
+import '../../../services/language_service.dart';
 
 import '../../../models/weather_alternative_strategy.dart';
 import '../../../services/weather_alternative_service.dart';
@@ -78,8 +79,10 @@ typedef _ComparisonEntry = ({
 
 class ItineraryResultPage extends StatefulWidget {
   final RouteItinerary itinerary;
-  final VoidCallback? onEdit;
   final String? savedItineraryId;
+  final String? savedItineraryUserId;
+  final VoidCallback? onEdit;
+  final Future<bool> Function()? onDelete;
   final ValueChanged<String>? onSavedItinerary;
   final ValueChanged<RouteItinerary>? onEditItinerary;
   final bool initiallyUnsaved;
@@ -88,6 +91,7 @@ class ItineraryResultPage extends StatefulWidget {
   final RecalculateItinerary? onRecalculate;
   final ItineraryResultDependencies? dependencies;
   final ResolveItineraryPlaceQuery? onResolvePlaceQuery;
+  final bool initialMapVisible;
 
   /// Integration point for an AI-powered indoor itinerary recommendation.
   /// This page asks for consent but deliberately does not change the itinerary.
@@ -97,8 +101,10 @@ class ItineraryResultPage extends StatefulWidget {
   const ItineraryResultPage({
     super.key,
     required this.itinerary,
-    this.onEdit,
     this.savedItineraryId,
+    this.savedItineraryUserId,
+    this.onEdit,
+    this.onDelete,
     this.onSavedItinerary,
     this.onEditItinerary,
     this.initiallyUnsaved = false,
@@ -106,6 +112,7 @@ class ItineraryResultPage extends StatefulWidget {
     this.onAddPlace,
     this.onRecalculate,
     this.onResolvePlaceQuery,
+    this.initialMapVisible = false,
     this.onRequestIndoorItineraryAlternatives,
     this.dependencies,
   });
@@ -164,7 +171,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
   late Map<RouteLegKey, RouteTravelMode> _travelModeOverrides;
   int _selectedDayIndex = 0;
   int? _mapDayIndex;
-  bool _isMapVisible = false;
+  late bool _isMapVisible;
   bool _androidOverview = false;
   bool _expandAllHours = false;
   final Set<int> _expandedHours = {};
@@ -204,6 +211,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
     _guardianSession = resumeSession ? existingSession : null;
 
     _itinerary = widget.itinerary;
+    _isMapVisible = widget.initialMapVisible;
     _savedItineraryId = widget.savedItineraryId;
     _hasUnsavedChanges = widget.initiallyUnsaved;
     _constraints = _constraintsFromItinerary(_itinerary);
@@ -261,6 +269,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.itinerary, widget.itinerary)) {
       _itinerary = widget.itinerary;
+      _savedItineraryId = widget.savedItineraryId;
       _hasUnsavedChanges = widget.initiallyUnsaved;
       _mapDayIndex = _validMapDayIndex;
       _constraints = _constraintsFromItinerary(_itinerary);
@@ -296,23 +305,23 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
       appBar: AppBar(
         title: Text(
           _itinerary.request.title.trim().isEmpty
-              ? '行程規劃結果'
+              ? LanguageService.tr(context, 'itinerary_result_title')
               : _itinerary.request.title,
         ),
         actions: [
           SaveItineraryButton(
             itinerary: _itinerary,
             savedItineraryId: _savedItineraryId,
+            savedItineraryUserId: widget.savedItineraryUserId,
             onSaved: (id) {
-              if (mounted) {
-                setState(() {
-                  _savedItineraryId = id;
-                  _hasUnsavedChanges = false;
-                  if (_weatherBackupItinerary != null) {
-                    _weatherBackupUnsavedChanges = true;
-                  }
-                });
-              }
+              if (!mounted) return;
+              setState(() {
+                _savedItineraryId = id;
+                _hasUnsavedChanges = false;
+                if (_weatherBackupItinerary != null) {
+                  _weatherBackupUnsavedChanges = true;
+                }
+              });
               widget.onSavedItinerary?.call(id);
             },
             enabled:
@@ -325,7 +334,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
                 ? null
                 : () => setState(() => _isMapVisible = !_isMapVisible),
             icon: Icon(_isMapVisible ? Icons.map_outlined : Icons.map),
-            label: Text(_isMapVisible ? '隱藏地圖' : '顯示地圖'),
+            label: Text(LanguageService.tr(context, _isMapVisible ? 'itinerary_map_hide' : 'itinerary_map_show')),
           ),
           if (usesAndroidTripLayout)
             IconButton(
@@ -351,25 +360,40 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
                     ? Icons.stop_circle_outlined
                     : Icons.play_circle_outline,
               ),
-              label: Text(_isTracking ? '停止追蹤' : '開始行程'),
+              label: Text(LanguageService.tr(
+                context,
+                _isTracking ? 'itinerary_tracking_stop' : 'itinerary_tracking_start',
+              )),
             ),
-          IconButton(
-            tooltip: '編輯行程',
-            onPressed: widget.onEditItinerary == null
-                ? widget.onEdit
-                : () => widget.onEditItinerary!(_itinerary),
-            icon: const Icon(Icons.edit_outlined),
-          ),
+
+          if (widget.onEdit != null || widget.onEditItinerary != null)
+            IconButton(
+              tooltip: LanguageService.tr(context, 'itinerary_edit'),
+              onPressed: widget.onEditItinerary == null
+                  ? widget.onEdit
+                  : () => widget.onEditItinerary!(_itinerary),
+              icon: const Icon(Icons.edit_outlined),
+            ),
+          if (widget.onDelete != null)
+            IconButton(
+              tooltip: LanguageService.tr(context, 'delete_trip'),
+              onPressed: () async {
+                if (await widget.onDelete!() && mounted) {
+                  Navigator.pop(context);
+                }
+              },
+              icon: Icon(Icons.delete_outline, color: Theme.of(context).colorScheme.onSurfaceVariant),
+            ),
           if (!usesAndroidTripLayout || widget.onExport != null)
             IconButton(
-              tooltip: '匯出行程',
+            tooltip: LanguageService.tr(context, 'itinerary_export'),
               onPressed: widget.onExport,
               icon: const Icon(Icons.ios_share_outlined),
             ),
         ],
       ),
       body: _itinerary.days.isEmpty
-          ? const Center(child: Text('目前沒有可顯示的行程。'))
+          ? Center(child: Text(LanguageService.tr(context, 'itinerary_empty')))
           : LayoutBuilder(
               builder: (context, constraints) => Column(
                 children: [
@@ -398,7 +422,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
                         children: [
                           const Icon(Icons.calendar_today_outlined, size: 18),
                           const SizedBox(width: 8),
-                          const Text('地圖日期：'),
+                          Text(LanguageService.tr(context, 'itinerary_map_date')),
                           Expanded(
                             child: DropdownButton<int>(
                               key: const ValueKey('map-day-selector'),
@@ -408,7 +432,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
                                 DropdownMenuItem(
                                   value: -1,
                                   child: Text(
-                                    '跟隨行程（Day ${_itinerary.days[_selectedDayIndex].day}）',
+                                    LanguageService.tr(context, 'itinerary_follow_trip').replaceAll('{day}', '${_itinerary.days[_selectedDayIndex].day}'),
                                   ),
                                 ),
                                 for (
@@ -481,13 +505,13 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
     if (usesAndroidTripLayout) return _buildAndroidToolbar();
     final zoomControls = <Widget>[
       IconButton(
-        tooltip: '縮小行程表',
+        tooltip: LanguageService.tr(context, 'itinerary_zoom_out'),
         onPressed: _timetableZoom <= 0.6 ? null : () => _setZoom(-0.2),
         icon: const Icon(Icons.zoom_out),
       ),
       Text('${(_timetableZoom * 100).round()}%'),
       IconButton(
-        tooltip: '放大行程表',
+        tooltip: LanguageService.tr(context, 'itinerary_zoom_in'),
         onPressed: _timetableZoom >= 1.8 ? null : () => _setZoom(0.2),
         icon: const Icon(Icons.zoom_in),
       ),
@@ -502,8 +526,9 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
             FilledButton.icon(
               onPressed: _isRecalculating ? null : _addPlace,
               icon: const Icon(Icons.add_location_alt_outlined),
-              label: const Text('新增景點'),
+              label: Text(LanguageService.tr(context, 'itinerary_add_place')),
             ),
+
           OutlinedButton.icon(
             onPressed: _isRecalculating || _isParsingAiEdit
                 ? null
@@ -514,7 +539,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Icons.auto_awesome),
-            label: Text(_isParsingAiEdit ? '正在理解修改要求...' : 'AI 協助修改'),
+            label: Text(LanguageService.tr(context, _isParsingAiEdit ? 'itinerary_ai_understanding' : 'itinerary_ai_edit')),
           ),
           if (kDebugMode)
             TextButton.icon(
@@ -528,13 +553,13 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
             TextButton(
               onPressed: () =>
                   setState(() => _androidOverview = !_androidOverview),
-              child: Text(_androidOverview ? '單日課表' : '多日總覽'),
+              child: Text(LanguageService.tr(context, _androidOverview ? 'itinerary_single_day' : 'itinerary_multi_day')),
             ),
           const SizedBox(width: 12),
           if (_isTracking) ...[
             const Icon(Icons.gps_fixed, size: 18),
             const SizedBox(width: 6),
-            const Text('GPS 追蹤中'),
+            Text(LanguageService.tr(context, 'itinerary_gps_tracking')),
             const SizedBox(width: 12),
             TextButton.icon(
               onPressed: () async {
@@ -561,7 +586,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
             ),
           ],
           if (!usesAndroidTripLayout)
-            const Text('長按景點後拖到新的 Day 與時間；鎖定時段不接受放置。'),
+            Text(LanguageService.tr(context, 'itinerary_drag_hint')),
           if (usesAndroidTripLayout && _androidOverview)
             SizedBox(
               width: double.infinity,
@@ -581,7 +606,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
               child: CircularProgressIndicator(strokeWidth: 2.5),
             ),
             const SizedBox(width: 8),
-            const Text('正在重排…'),
+            Text(LanguageService.tr(context, 'itinerary_reordering')),
           ],
         ],
       ),
@@ -788,8 +813,8 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            '暫定區｜請把新增的景點拖到課表',
+          Text(
+            LanguageService.tr(context, 'itinerary_pending_drag'),
             style: TextStyle(fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 8),
@@ -953,7 +978,9 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
                                               context,
                                             ).colorScheme.surfaceContainerLow,
                                             child: Text(
-                                              '${band.startHour.toString().padLeft(2, '0')}:00–${band.endHour.toString().padLeft(2, '0')}:00 空白 · 點開／拖曳停留',
+                                              LanguageService.tr(context, 'itinerary_collapsed_interval')
+                                                  .replaceAll('{start}', band.startHour.toString().padLeft(2, '0'))
+                                                  .replaceAll('{end}', band.endHour.toString().padLeft(2, '0')),
                                               maxLines: 2,
                                               overflow: TextOverflow.ellipsis,
                                             ),
@@ -1078,7 +1105,9 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
                               context,
                             ).colorScheme.surfaceContainerLow,
                             child: Text(
-                              '${band.startHour.toString().padLeft(2, '0')}:00–${band.endHour.toString().padLeft(2, '0')}:00 空白 · 點開／拖曳停留',
+                              LanguageService.tr(context, 'itinerary_collapsed_interval')
+                                  .replaceAll('{start}', band.startHour.toString().padLeft(2, '0'))
+                                  .replaceAll('{end}', band.endHour.toString().padLeft(2, '0')),
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
                             ),
@@ -1125,9 +1154,9 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
       height: max(64, MediaQuery.textScalerOf(context).scale(40) + 16),
       child: Row(
         children: [
-          const SizedBox(
+          SizedBox(
             width: _timeWidth,
-            child: Center(child: Text('時間')),
+            child: Center(child: Text(LanguageService.tr(context, 'itinerary_time_axis'))),
           ),
           for (var i = 0; i < _itinerary.days.length; i++)
             InkWell(
@@ -1242,11 +1271,12 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
             ),
           ),
           child: rejected.isNotEmpty
-              ? Text(isPastTime ? '此時間已經過去' : '此時段已鎖定')
+              ? Text(LanguageService.tr(context, isPastTime ? 'itinerary_past_time' : 'itinerary_slot_locked'))
               : candidate.isNotEmpty
               ? Text(
-                  '放到 Day ${day.day} '
-                  '${_formatMinutes(startMinutes)}',
+                  LanguageService.tr(context, 'itinerary_drop_to_slot')
+                      .replaceAll('{day}', '${day.day}')
+                      .replaceAll('{time}', _formatMinutes(startMinutes)),
                 )
               : null,
         );
@@ -1364,16 +1394,17 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
       alignment: Alignment.centerLeft,
       child: TextButton.icon(
         icon: const Icon(Icons.info_outline, size: 18),
-        label: Text('${warnings.length} 項行程提醒 · 查看'),
+        label: Text(LanguageService.tr(context, 'itinerary_warning_count')
+            .replaceAll('{count}', '${warnings.length}')),
         onPressed: () => showDialog<void>(
           context: context,
           builder: (context) => AlertDialog(
-            title: const Text('行程提醒'),
+            title: Text(LanguageService.tr(context, 'itinerary_warning_title')),
             content: SingleChildScrollView(child: Text(warnings.join('\n\n'))),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context),
-                child: const Text('關閉'),
+                child: Text(LanguageService.tr(context, 'dialog_close')),
               ),
             ],
           ),
@@ -1988,6 +2019,8 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
 
         // 保留使用者原本設定的停留偏好。
         preferences: originalConstraint.preferences,
+        kind: originalConstraint.kind,
+        suggestedMealType: originalConstraint.suggestedMealType,
       );
 
       appliedMessages.add(
@@ -2391,7 +2424,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
       requestedAt: now,
       dayNumber: today?.day ?? 1,
       dayDate: today?.date ?? now,
-      tripLocation: _itinerary.request.location,
+      tripLocation: _itinerary.request.locationLabel,
       people: _itinerary.request.people,
       budget_level: _itinerary.request.budget_level,
       preferences: List<String>.from(_itinerary.request.preferences),
@@ -3491,32 +3524,34 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
       return [
         for (final input in itinerary.inputs)
           if (input.kind != VisitKind.hotelStay)
-            TripPlaceConstraint(
-              place: input.place,
-              day: input.day,
-              startMinutes: input.startMinutes,
-              locked: input.locked,
-              preferences: input.preferences,
-              kind: input.kind,
-              suggestedMealType: input.suggestedMealType,
-            ),
+          TripPlaceConstraint(
+            place: input.place,
+            day: input.day,
+            startMinutes: input.startMinutes,
+            locked: input.locked,
+            preferences: input.preferences,
+            kind: input.kind,
+            suggestedMealType: input.suggestedMealType,
+          ),
       ];
     }
     return [
       for (final day in itinerary.days)
         for (final visit in day.visits)
           if (visit.kind != VisitKind.hotelStay)
-            TripPlaceConstraint(
-              place: visit.place,
-              day: visit.locked ? day.day : null,
-              startMinutes: visit.locked
-                  ? visit.requestedStartMinutes ?? visit.startMinutes
-                  : null,
-              locked: visit.locked,
-              preferences: visit.preferences,
-              kind: visit.kind,
-              suggestedMealType: visit.mealType,
-            ),
+          TripPlaceConstraint(
+            place: visit.place,
+            day: visit.locked ? day.day : null,
+            startMinutes: visit.locked
+                ? visit.requestedStartMinutes ?? visit.startMinutes
+                : null,
+            locked: visit.locked,
+            preferences: visit.preferences,
+            kind: visit.kind,
+            suggestedMealType: visit.mealType == MealType.unspecified
+                ? null
+                : visit.mealType,
+          ),
     ];
   }
 
@@ -4363,14 +4398,19 @@ ${answer.trim()}
   }
 
   bool _isOutsidePreferredLocation(Place place) {
-    final preferredLocation = _normalizeLocation(_itinerary.request.location);
+    final preferredLocations = _itinerary.request.locations
+        .map(_normalizeLocation)
+        .where((location) => location.isNotEmpty)
+        .toSet();
 
-    if (preferredLocation.isEmpty || preferredLocation == '全台') {
+    if (preferredLocations.isEmpty ||
+        preferredLocations.contains('全台') ||
+        preferredLocations.contains('台灣')) {
       return false;
     }
 
     final county = _normalizeLocation(PlaceService.countyFor(place));
-    return county.isNotEmpty && county != preferredLocation;
+    return county.isNotEmpty && !preferredLocations.contains(county);
   }
 
   String _normalizeLocation(String value) {
