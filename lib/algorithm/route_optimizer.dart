@@ -25,10 +25,12 @@ class RouteStop {
 
   factory RouteStop.fromPlace(
     Place place, {
-    required DateTime date,
+    DateTime? date,
     double priorityScore = 1,
   }) {
-    final periods = place.getOpeningPeriodsForDate(date);
+    final periods = date == null
+        ? const <OpeningPeriod>[]
+        : place.getOpeningPeriodsForDate(date);
 
     int? earliestTimeMinutes;
     int? latestTimeMinutes;
@@ -41,6 +43,9 @@ class RouteStop {
       latestTimeMinutes = periods
           .map((period) => period.closeMinutes)
           .reduce((a, b) => a > b ? a : b);
+    } else if (place.hasKnownOpeningHours) {
+      earliestTimeMinutes = place.openMinutes;
+      latestTimeMinutes = place.closeMinutes;
     }
 
     return RouteStop(
