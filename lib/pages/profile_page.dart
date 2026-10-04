@@ -1,10 +1,10 @@
-import 'dart:ui';
+import 'dart:ui' show ImageFilter;
 import 'dart:async';
 import 'package:flutter/material.dart';
 
+
+import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
-import '../theme/app_colors.dart';
-import '../theme/app_colors.dart';
 import '../theme/app_typography.dart';
 import '../services/favorite_service.dart';
 import '../services/saved_itinerary_service.dart';
@@ -13,9 +13,9 @@ import 'itinerary_result_page.dart';
 import 'place_detail_page.dart';
 import '../services/user_data_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../services/saved_itinerary_service.dart';
 import '../services/language_service.dart';
 import '../widgets/place_image.dart';
+import 'saved_itinerary_result_page.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -28,6 +28,7 @@ class _ProfilePageState extends State<ProfilePage> {
   final FavoriteService _favoriteService = FavoriteService();
   final UserDataService _userDataService = UserDataService();
   late final SavedItineraryService _savedItineraryService;
+  Future<List<Map<String, dynamic>>>? _savedItineraries;
 
   // 模擬行程與資料夾資料（指定明確型別避免轉型錯誤）[cite: 1]
   final List<String> _itineraries = ["台北一日遊", "九份文化之旅"];
@@ -35,8 +36,6 @@ class _ProfilePageState extends State<ProfilePage> {
   bool _isLoadingFolders = true;
 
   StreamSubscription<AuthState>? _authSub; // 統一使用 _authSub 變數名稱
-  List<Map<String, dynamic>> _exportedTrips = [];
-  bool _isLoadingExportedTrips = false;
 
   @override
 void initState() {
@@ -44,6 +43,7 @@ void initState() {
 
   _savedItineraryService = SavedItineraryService(Supabase.instance.client);
   _favoriteService.addListener(_onFavoritesChanged);
+  SavedItineraryService.changes.addListener(_onSavedItinerariesChanged);
 
   // 🌟 1. 全域監聽登入狀態改變
   _authSub = Supabase.instance.client.auth.onAuthStateChange.listen((data) async {
@@ -56,15 +56,14 @@ void initState() {
       if (mounted) {
         _favoriteService.fetchFavoritesFromCloud();
         await _loadCloudFolders();
-        await _loadExportedTrips();
+        _loadSavedItineraries();
       }
     } else if (event == AuthChangeEvent.signedOut) {
       if (mounted) {
         setState(() {
-          _exportedTrips.clear();
+          _savedItineraries = Future.value([]);
           _folders.clear();
           _isLoadingFolders = false;
-          _isLoadingExportedTrips = false;
         });
       }
     }
@@ -73,7 +72,21 @@ void initState() {
   // 🌟 2. 初始進入頁面時載入
   _favoriteService.fetchFavoritesFromCloud();
   _loadCloudFolders();
-  _loadExportedTrips();
+  _loadSavedItineraries();
+}
+
+void _onSavedItinerariesChanged() {
+  _loadSavedItineraries();
+}
+
+void _loadSavedItineraries() {
+  if (!mounted) return;
+  final userId = _savedItineraryService.currentUserId;
+  setState(() {
+    _savedItineraries = userId == null
+        ? Future.value([])
+        : _savedItineraryService.list(offset: 0, limit: 50);
+  });
 }
 
 // 🌟 3. 確保 _loadCloudFolders 撈完後一定有呼叫 setState 刷新畫面！
@@ -91,24 +104,6 @@ Future<void> _loadCloudFolders() async {
     debugPrint("❌ [ProfilePage] 抓取資料夾失敗: $e");
   } finally {
     if (mounted) setState(() => _isLoadingFolders = false);
-  }
-}
-
-// 🌟 4. 確保 _loadExportedTrips 撈完後一定有呼叫 setState 刷新畫面！
-  Future<void> _loadExportedTrips() async {
-  if (mounted) setState(() => _isLoadingExportedTrips = true);
-  try {
-    final trips = await _savedItineraryService.list(offset: 0, limit: 50);
-    debugPrint("🗓️ [ProfilePage] 自動抓取行程成功: ${trips.length} 個");
-    if (mounted) {
-      setState(() {
-        _exportedTrips = trips;
-      });
-    }
-  } catch (e) {
-    debugPrint("❌ [ProfilePage] 抓取行程失敗: $e");
-  } finally {
-    if (mounted) setState(() => _isLoadingExportedTrips = false);
   }
 }
 
@@ -146,7 +141,6 @@ Future<bool> _deleteSavedTrip(String id, String title) async {
   )) return false;
   try {
     await _savedItineraryService.delete(id);
-    await _loadExportedTrips();
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('${LanguageService.tr(context, 'delete_success')}「$title」')),
@@ -190,6 +184,13 @@ Future<bool> _deleteSavedFolder(Map<String, dynamic> folder) async {
  
 
   @override
+  void dispose() {
+    _authSub?.cancel();
+    SavedItineraryService.changes.removeListener(_onSavedItinerariesChanged);
+    _favoriteService.removeListener(_onFavoritesChanged);
+    super.dispose();
+  }
+
   void _onFavoritesChanged() {
     if (mounted) {
       setState(() {});
@@ -211,7 +212,10 @@ Future<bool> _deleteSavedFolder(Map<String, dynamic> folder) async {
                 filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
                 child: Container(
                   width: 190,
-                  padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 10,
+                    horizontal: 8,
+                  ),
                   decoration: BoxDecoration(
                     color: AppColors.surface.withValues(alpha: 0.9),
                     borderRadius: BorderRadius.circular(20),
@@ -256,14 +260,11 @@ Future<bool> _deleteSavedFolder(Map<String, dynamic> folder) async {
                         label: LanguageService.tr(parentContext, 'cancel_fav'),
                         textColor: Colors.redAccent,
                         iconColor: Colors.redAccent,
-                        onTap: () async {
+                        onTap: () {
                           Navigator.pop(dialogCtx);
-                          await _favoriteService.toggleFavorite(place);
-                          if (parentContext.mounted) {
-                            ScaffoldMessenger.of(parentContext).showSnackBar(
-                              SnackBar(content: Text(LanguageService.tr(parentContext, 'place_favorite_removed').replaceAll('{place}', place.name))),
-                            );
-                          }
+                          unawaited(
+                            _removeFavoriteAndShowMessage(parentContext, place),
+                          );
                         },
                       ),
 
@@ -289,6 +290,20 @@ Future<bool> _deleteSavedFolder(Map<String, dynamic> folder) async {
           ),
         );
       },
+    );
+  }
+
+  Future<void> _removeFavoriteAndShowMessage(
+    BuildContext context,
+    Place place,
+  ) async {
+    await _favoriteService.toggleFavorite(place);
+    if (!context.mounted) return;
+
+    final message = LanguageService.tr(context, 'place_favorite_removed')
+        .replaceAll('{place}', place.name);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
     );
   }
 
@@ -326,17 +341,24 @@ Future<bool> _deleteSavedFolder(Map<String, dynamic> folder) async {
   }
 
   // 2. 點開查看「資料夾內容」的彈窗視窗
-  void _showFolderContentDialog(BuildContext parentContext, Map<String, dynamic> folder) {
+  void _showFolderContentDialog(
+    BuildContext parentContext,
+    Map<String, dynamic> folder,
+  ) {
     showDialog(
       context: parentContext,
       builder: (ctx) {
         return StatefulBuilder(
           builder: (dialogCtx, setModalState) {
-            final List<Place> places = List<Place>.from(folder["places"] as Iterable);
+            final List<Place> places = List<Place>.from(
+              folder["places"] as Iterable,
+            );
 
             return AlertDialog(
               backgroundColor: AppColors.surface,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(24),
+              ),
               title: Row(
                 children: [
                   Icon(Icons.folder_open_rounded, color: AppColors.primaryDark, size: 24),
@@ -373,25 +395,37 @@ Future<bool> _deleteSavedFolder(Map<String, dynamic> folder) async {
                           child: Text(
                             "資料夾內尚無景點\n可在景點右下角選單選擇「加入資料夾」",
                             textAlign: TextAlign.center,
-                            style: TextStyle(color: AppColors.textSecondary, height: 1.5, fontSize: 13),
+                            style: TextStyle(
+                              color: AppColors.textSecondary,
+                              height: 1.5,
+                              fontSize: 13,
+                            ),
                           ),
                         ),
                       )
                     : ConstrainedBox(
-                        constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.45),
+                        constraints: BoxConstraints(
+                          maxHeight: MediaQuery.of(context).size.height * 0.45,
+                        ),
                         child: ListView.separated(
                           shrinkWrap: true,
                           itemCount: places.length,
-                          separatorBuilder: (_, _) => const Divider(height: 1, color: Colors.black12),
+                          separatorBuilder: (_, _) =>
+                              const Divider(height: 1, color: Colors.black12),
                           itemBuilder: (context, index) {
                             final place = places[index];
                             return ListTile(
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 4,
+                                vertical: 2,
+                              ),
                               leading: Container(
                                 width: 40,
                                 height: 40,
                                 decoration: BoxDecoration(
-                                  color: AppColors.primary.withValues(alpha: 0.25),
+                                  color: AppColors.primary.withValues(
+                                    alpha: 0.25,
+                                  ),
                                   borderRadius: BorderRadius.circular(10),
                                 ),
                                 child: Icon(Icons.place_outlined, color: AppColors.textPrimary, size: 20),
@@ -401,7 +435,11 @@ Future<bool> _deleteSavedFolder(Map<String, dynamic> folder) async {
                                 style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.bold, fontSize: 14),
                               ),
                               trailing: IconButton(
-                                icon: const Icon(Icons.remove_circle_outline, color: Colors.redAccent, size: 20),
+                                icon: const Icon(
+                                  Icons.remove_circle_outline,
+                                  color: Colors.redAccent,
+                                  size: 20,
+                                ),
                                 tooltip: "移出資料夾",
                                 onPressed: () {
                                   setModalState(() {
@@ -438,7 +476,10 @@ Future<bool> _deleteSavedFolder(Map<String, dynamic> folder) async {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text(
           "加入資料夾",
-          style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            color: AppColors.textPrimary,
+          ),
         ),
         content: SizedBox(
           width: double.maxFinite,
@@ -471,28 +512,33 @@ Future<bool> _deleteSavedFolder(Map<String, dynamic> folder) async {
                         ),
                         trailing: Icon(Icons.add, color: AppColors.textPrimary),
                         onTap: () async {
-  final int folderId = (folder["id"] as num).toInt();
-  Navigator.pop(ctx); // 先關閉彈窗
+                          final int folderId = (folder["id"] as num).toInt();
+                          Navigator.pop(ctx); // 先關閉彈窗
 
-  // 1. 同步寫入雲端關聯表
-  final success = await _userDataService.addPlaceToFolder(folderId, place);
+                          // 1. 同步寫入雲端關聯表
+                          final success = await _userDataService
+                              .addPlaceToFolder(folderId, place);
 
-  // 2. 重新從雲端載入最新狀態並強制 setState 刷新畫面
-  if (success) {
-    await _loadCloudFolders();
-    if (parentContext.mounted) {
-      ScaffoldMessenger.of(parentContext).showSnackBar(
-        SnackBar(content: Text("已將「${place.name}」加入「${folder["title"]}」！")),
-      );
-    }
-  } else {
-    if (parentContext.mounted) {
-      ScaffoldMessenger.of(parentContext).showSnackBar(
-        const SnackBar(content: Text("加入失敗，請稍後再試")),
-      );
-    }
-  }
-},
+                          // 2. 重新從雲端載入最新狀態並強制 setState 刷新畫面
+                          if (success) {
+                            await _loadCloudFolders();
+                            if (parentContext.mounted) {
+                              ScaffoldMessenger.of(parentContext).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    "已將「${place.name}」加入「${folder["title"]}」！",
+                                  ),
+                                ),
+                              );
+                            }
+                          } else {
+                            if (parentContext.mounted) {
+                              ScaffoldMessenger.of(parentContext).showSnackBar(
+                                const SnackBar(content: Text("加入失敗，請稍後再試")),
+                              );
+                            }
+                          }
+                        },
                       );
                     },
                   ),
@@ -529,7 +575,10 @@ Future<bool> _deleteSavedFolder(Map<String, dynamic> folder) async {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text(
           "建立資料夾",
-          style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            color: AppColors.textPrimary,
+          ),
         ),
         content: TextField(
           controller: folderController,
@@ -553,32 +602,37 @@ Future<bool> _deleteSavedFolder(Map<String, dynamic> folder) async {
               shape: StadiumBorder(),
             ),
             onPressed: () async {
-            final folderName = folderController.text.trim();
-            if (folderName.isEmpty) return;
+              final folderName = folderController.text.trim();
+              if (folderName.isEmpty) return;
 
-            Navigator.pop(ctx);
+              Navigator.pop(ctx);
 
-            final newFolder = await _userDataService.createFolder(
-              folderName,
-              initialPlace: place,
-            );
+              final newFolder = await _userDataService.createFolder(
+                folderName,
+                initialPlace: place,
+              );
 
-            if (newFolder != null) {
-              await _loadCloudFolders();
-              if (parentContext.mounted) {
-                ScaffoldMessenger.of(parentContext).showSnackBar(
-                  SnackBar(content: Text("已在雲端建立「$folderName」並將「${place.name}」移入！")),
-                );
+              if (newFolder != null) {
+                await _loadCloudFolders();
+                if (parentContext.mounted) {
+                  ScaffoldMessenger.of(parentContext).showSnackBar(
+                    SnackBar(
+                      content: Text("已在雲端建立「$folderName」並將「${place.name}」移入！"),
+                    ),
+                  );
+                }
+              } else {
+                if (parentContext.mounted) {
+                  ScaffoldMessenger.of(parentContext).showSnackBar(
+                    const SnackBar(content: Text("建立資料夾失敗，請確認是否已登入")),
+                  );
+                }
               }
-            } else {
-              if (parentContext.mounted) {
-                ScaffoldMessenger.of(parentContext).showSnackBar(
-                  const SnackBar(content: Text("建立資料夾失敗，請確認是否已登入")),
-                );
-              }
-            }
-          },
-            child: const Text("建立", style: TextStyle(fontWeight: FontWeight.bold)),
+            },
+            child: const Text(
+              "建立",
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
           ),
         ],
       ),
@@ -642,7 +696,11 @@ Future<bool> _deleteSavedFolder(Map<String, dynamic> folder) async {
               // 個人空間：自己的行程與收藏分開呈現。
               Row(
                 children: [
-                  Icon(Icons.person_outline_rounded, size: 28, color: AppColors.textPrimary),
+                  Icon(
+                    Icons.person_outline_rounded,
+                    size: 28,
+                    color: AppColors.textPrimary,
+                  ),
                   SizedBox(width: 8),
                   Text(
                     LanguageService.tr(context, 'personal_space'),
@@ -665,28 +723,63 @@ Future<bool> _deleteSavedFolder(Map<String, dynamic> folder) async {
               ),
               const SizedBox(height: 12),
 
-              // ✅ 移除原本的「暫時無法在此顯示」，改用真實資料渲染列表！
-              SizedBox(
-                height: 125,
-                child: _isLoadingExportedTrips
-                    ? Center(
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: AppColors.primary,
-                        ),
-                      )
-                    : _exportedTrips.isEmpty
-                        ? _buildEmptyState("尚未有儲存的行程，完成規劃後點擊「匯出」即可存入 🌿")
-                        : ListView.separated(
-                            scrollDirection: Axis.horizontal,
-                            itemCount: _exportedTrips.length,
-                            separatorBuilder: (_, __) => const SizedBox(width: 14),
-                            itemBuilder: (context, index) {
-                              return _buildSavedTripCard(_exportedTrips[index]);
+              FutureBuilder<List<Map<String, dynamic>>>(
+                future: _savedItineraries,
+                builder: (context, snapshot) {
+                  if (!snapshot.hasData) {
+                    return SizedBox(
+                      height: 100,
+                      child: Center(
+                        child: snapshot.hasError
+                            ? TextButton(
+                                onPressed: _loadSavedItineraries,
+                                child: Text(LanguageService.tr(context, 'load_trips_failed')),
+                              )
+                            : CircularProgressIndicator(color: AppColors.primary),
+                      ),
+                    );
+                  }
+                  final trips = snapshot.data!;
+                  if (trips.isEmpty) {
+                    return SizedBox(
+                      height: 100,
+                      child: _buildEmptyState(LanguageService.tr(context, 'empty_trips')),
+                    );
+                  }
+                  return Column(
+                    children: [
+                      for (final trip in trips)
+                        Card(
+                          color: AppColors.surface,
+                          child: ListTile(
+                            leading: Icon(Icons.route_outlined, color: AppColors.textPrimary),
+                            title: Text(
+                              (trip['title'] ?? LanguageService.tr(context, 'my_trips')).toString(),
+                              style: TextStyle(color: AppColors.textPrimary),
+                            ),
+                            trailing: Icon(Icons.chevron_right, color: AppColors.textSecondary),
+                            onTap: () async {
+                              final tripId = trip['id']?.toString() ?? '';
+                              if (tripId.isEmpty) return;
+                              await Navigator.of(context).push(
+                                MaterialPageRoute<void>(
+                                  builder: (_) => SavedItineraryResultPage(
+                                    id: tripId,
+                                    onDelete: () => _deleteSavedTrip(
+                                      tripId,
+                                      (trip['title'] ?? LanguageService.tr(context, 'my_trips')).toString(),
+                                    ),
+                                  ),
+                                ),
+                              );
+                              if (mounted) _loadSavedItineraries();
                             },
                           ),
-              ),
-              const SizedBox(height: 28),
+                        ),
+                    ],
+                  );
+                },
+              ),              const SizedBox(height: 28),
 
               // 收藏景點區塊
               Text(
@@ -817,95 +910,6 @@ Future<bool> _deleteSavedFolder(Map<String, dynamic> folder) async {
     );
   }
 
-  // 🌟 渲染每一筆真實儲存的行程卡片
-  Widget _buildSavedTripCard(Map<String, dynamic> trip) {
-    final String title = trip['title']?.toString() ?? '未命名行程';
-    final String tripId = trip['id']?.toString() ?? '';
-
-    return InkWell(
-      borderRadius: BorderRadius.circular(20),
-      onTap: () async {
-        if (tripId.isEmpty) return;
-
-        final user = Supabase.instance.client.auth.currentUser;
-        if (user == null) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(LanguageService.tr(context, 'please_login_first'))),
-          );
-          return;
-        }
-
-        try {
-          // 依據 userId 與 id 讀取真實快照
-          final snapshot = await _savedItineraryService.read(tripId);
-
-          if (!mounted) return;
-
-          // 打開行程結果頁，灌入真快照資料
-          await Navigator.push<void>(
-            context,
-            MaterialPageRoute(
-              builder: (_) => ItineraryResultPage(
-                tripTitle: title,
-                initialSnapshot: snapshot,
-                savedItineraryId: tripId,
-                savedItineraryUserId: user.id,
-                onDelete: () => _deleteSavedTrip(tripId, title),
-              ),
-            ),
-          );
-          if (mounted) await _loadExportedTrips();
-        } catch (e) {
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(LanguageService.tr(context, 'load_trips_failed'))),
-          );
-        }
-      },
-      child: Container(
-        width: 120,
-        decoration: BoxDecoration(
-          color: AppColors.primary,
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.textPrimary.withValues(alpha: 0.08),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-        alignment: Alignment.center,
-        child: Stack(
-          children: [
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.map_outlined, size: 28, color: AppColors.textPrimary),
-                  const SizedBox(height: 8),
-                  Text(
-                    title,
-                    textAlign: TextAlign.center,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: AppColors.textPrimary,
-                      fontSize: 13,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   // 行程卡片
   Widget _buildTripCard(String title) {
   return GestureDetector(
@@ -920,6 +924,8 @@ Future<bool> _deleteSavedFolder(Map<String, dynamic> folder) async {
     },
     child: Container(
       width: 120,
+      alignment: Alignment.center,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
       decoration: BoxDecoration(
         color: AppColors.primary,
         borderRadius: BorderRadius.circular(20),
@@ -931,8 +937,6 @@ Future<bool> _deleteSavedFolder(Map<String, dynamic> folder) async {
           ),
         ],
       ),
-      alignment: Alignment.center,
-      padding: const EdgeInsets.symmetric(horizontal: 8),
       child: Text(
         title,
         textAlign: TextAlign.center,
@@ -985,7 +989,11 @@ Future<bool> _deleteSavedFolder(Map<String, dynamic> folder) async {
                         ),
                         child: Text(
                           "${places.length}",
-                          style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
                     ),

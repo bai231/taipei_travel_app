@@ -54,10 +54,15 @@ void main() {
         client: MockClient((r) async {
           final body = jsonDecode(r.body);
           expect(body.containsKey('routingPreference'), isFalse);
-          if (body['travelMode'] == 'TRANSIT')
+          if (body['travelMode'] == 'TRANSIT') {
             expect(body['departureTime'], date);
-          else
+            expect(
+              r.headers['X-Goog-FieldMask'],
+              contains('routes.legs.steps.transitDetails'),
+            );
+          } else {
             expect(body['travelMode'], 'WALK');
+          }
           return http.Response('{"routes":[]}', 200);
         }),
       );

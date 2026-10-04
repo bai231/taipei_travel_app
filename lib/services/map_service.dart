@@ -8,6 +8,18 @@ import '../theme/app_colors.dart';
 class MapService {
   static const LatLng taipeiCenter = LatLng(25.0330, 121.5654);
 
+  static double markerHueForPlace(PlaceType type) => switch (type) {
+    PlaceType.attraction => BitmapDescriptor.hueRose,
+    PlaceType.restaurant => BitmapDescriptor.hueOrange,
+    PlaceType.accommodation => BitmapDescriptor.hueGreen,
+  };
+
+  static String markerLabelForPlace(PlaceType type) => switch (type) {
+    PlaceType.attraction => '景點',
+    PlaceType.restaurant => '餐廳',
+    PlaceType.accommodation => '住宿',
+  };
+
   const MapService();
 
   CameraPosition initialCameraPosition({LatLng? target}) =>
@@ -19,7 +31,13 @@ class MapService {
           (place) => Marker(
             markerId: MarkerId(place.id),
             position: LatLng(place.latitude, place.longitude),
-            infoWindow: InfoWindow(title: place.name, snippet: place.address),
+            infoWindow: InfoWindow(
+              title: '${markerLabelForPlace(place.type)}：${place.name}',
+              snippet: place.address,
+            ),
+            icon: BitmapDescriptor.defaultMarkerWithHue(
+              markerHueForPlace(place.type),
+            ),
           ),
         )
         .toSet();
@@ -32,7 +50,9 @@ class MapService {
     return Marker(
       markerId: const MarkerId('current-location'),
       position: LatLng(latitude, longitude),
-      infoWindow: const InfoWindow(title: '目前位置'),
+      infoWindow: const InfoWindow(title: '目前 GPS 位置'),
+      icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+      zIndexInt: 10,
     );
   }
 

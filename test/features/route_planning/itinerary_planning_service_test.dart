@@ -443,6 +443,73 @@ void main() {
     expect(itinerary.days.single.travelLegs.single.route, isNull);
   });
 
+  test('TDX 查無路線後以相同日期查 Google 大眾運輸，標記資料來源', () async {
+    final google = _FakeGoogleRoutePlanningGateway();
+    final service = ItineraryPlanningService(
+      timedRouteService: _EmptyTimedTdxRouteService(),
+      googleRouteService: google,
+      requestInterval: Duration.zero,
+      now: _beforeTrip,
+    );
+    final itinerary = await service.generate(
+      request: _request(days: 1),
+      places: [
+        RoutePlaceInput(place: _place('first', stayMinutes: 60), day: 1),
+        RoutePlaceInput(place: _place('second', stayMinutes: 60), day: 1),
+      ],
+    );
+    final leg = itinerary.days.single.travelLegs.single;
+    expect(google.travelModes, [RouteTravelMode.transit]);
+    expect(leg.route, isNotNull);
+    expect(leg.effectiveRouteProvider, RouteProvider.google);
+    expect(leg.routeSourceLabel, 'Google Maps（TDX 備援）');
+    expect(leg.errorMessage, contains('班次未經 TDX 驗證'));
+  });
+
+  test('TDX 成功時不呼叫 Google 大眾運輸備援', () async {
+    final google = _FakeGoogleRoutePlanningGateway();
+    final service = ItineraryPlanningService(
+      timedRouteService: _FakeTimedTdxRouteService(),
+      googleRouteService: google,
+      requestInterval: Duration.zero,
+      now: _beforeTrip,
+    );
+    final itinerary = await service.generate(
+      request: _request(days: 1),
+      places: [
+        RoutePlaceInput(place: _place('first', stayMinutes: 60), day: 1),
+        RoutePlaceInput(place: _place('second', stayMinutes: 60), day: 1),
+      ],
+    );
+    expect(google.travelModes, isEmpty);
+    expect(
+      itinerary.days.single.travelLegs.single.effectiveRouteProvider,
+      RouteProvider.tdx,
+    );
+  });
+
+  test('TDX 與 Google 都查不到路線時仍明確標示估計時間', () async {
+    final google = _FakeGoogleRoutePlanningGateway(returnNull: true);
+    final service = ItineraryPlanningService(
+      timedRouteService: _EmptyTimedTdxRouteService(),
+      googleRouteService: google,
+      requestInterval: Duration.zero,
+      now: _beforeTrip,
+    );
+    final itinerary = await service.generate(
+      request: _request(days: 1),
+      places: [
+        RoutePlaceInput(place: _place('first', stayMinutes: 60), day: 1),
+        RoutePlaceInput(place: _place('second', stayMinutes: 60), day: 1),
+      ],
+    );
+    final leg = itinerary.days.single.travelLegs.single;
+    expect(google.travelModes, [RouteTravelMode.transit]);
+    expect(leg.route, isNull);
+    expect(leg.routeSourceLabel, '估計');
+    expect(leg.errorMessage, contains('已使用估計時間'));
+  });
+
   test('收到 429 後等待指定時間並重試同一路段一次', () async {
     final fakeTdx = _RateLimitThenSuccessTimedTdxRouteService();
     final delays = <Duration>[];
@@ -738,6 +805,9 @@ class _AlwaysRateLimitedTimedTdxRouteService extends TimedTdxRouteService {
 
 class _FakeGoogleRoutePlanningGateway implements GoogleRoutePlanningGateway {
   final List<RouteTravelMode> travelModes = [];
+  final bool returnNull;
+
+  _FakeGoogleRoutePlanningGateway({this.returnNull = false});
 
   @override
   Future<TdxRoute?> getRoute({
@@ -749,6 +819,7 @@ class _FakeGoogleRoutePlanningGateway implements GoogleRoutePlanningGateway {
     required RouteTravelMode travelMode,
   }) async {
     travelModes.add(travelMode);
+    if (returnNull) return null;
     return TdxRoute(
       transfers: 0,
       travelTime: 15 * 60,

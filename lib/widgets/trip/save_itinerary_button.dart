@@ -14,6 +14,7 @@ class SaveItineraryButton extends StatefulWidget {
   final SavedItineraryGateway? gateway;
   final String? savedItineraryId;
   final String? savedItineraryUserId;
+  final ValueChanged<String>? onSaved;
   const SaveItineraryButton({
     super.key,
     required this.itinerary,
@@ -21,6 +22,7 @@ class SaveItineraryButton extends StatefulWidget {
     this.gateway,
     this.savedItineraryId,
     this.savedItineraryUserId,
+    this.onSaved,
   });
   @override
   State<SaveItineraryButton> createState() => _SaveItineraryButtonState();
@@ -76,8 +78,10 @@ class _SaveItineraryButtonState extends State<SaveItineraryButton> {
       if (gateway.currentUserId != userId) {
         message('帳號已變更，請在原帳號確認儲存結果');
       } else if (canOverwriteSavedTrip) {
+        widget.onSaved?.call(id);
         message('已更新原行程');
       } else {
+        widget.onSaved?.call(id);
         message('已儲存行程；後續修改請再次儲存');
       }
     } catch (_) {

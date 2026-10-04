@@ -1,7 +1,12 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:taipei_travel_app/services/cwa_query_limiter.dart';
 import 'package:taipei_travel_app/services/location_service.dart';
+import 'package:taipei_travel_app/services/trip_notification_service.dart';
+
 import 'package:taipei_travel_app/services/weather_advisory_service.dart';
 
 void main() {
@@ -203,4 +208,295 @@ void main() {
       'F-D0047-061,F-D0047-063',
     );
   });
+
+  test('景點綜覽與同縣市 GPS 共用快取，跨縣市仍受一小時節流', () async {
+    var requests = 0;
+    final service = WeatherAdvisoryService(
+      apiKey: 'test-key',
+      queryLimiter: CwaQueryLimiter(store: _MemoryQueryTimeStore()),
+      notifications: _WeatherNotifications(),
+      client: MockClient((_) async {
+        requests++;
+        return http.Response('{"records":{"Locations":[]}}', 200);
+      }),
+    );
+    addTearDown(service.dispose);
+    final start = DateTime(2026, 9, 23, 10);
+    const position = LocationPoint(latitude: 25.05, longitude: 121.6);
+
+    await service.overviewForPlace(
+      districtName: '南港區',
+      cityName: '臺北市',
+      placePosition: position,
+      now: start,
+    );
+    await service.check(
+      position,
+      cityName: '臺北市',
+      now: start.add(const Duration(minutes: 5)),
+    );
+    expect(requests, 1);
+
+    final otherCity = await service.overviewForPlace(
+      districtName: '中區',
+      cityName: '臺中市',
+      placePosition: position,
+      now: start.add(const Duration(minutes: 10)),
+    );
+    expect(otherCity, isNull);
+    expect(requests, 1);
+  });
+
+  test('parses a CWA rain observation', () {
+    final forecast = CwaForecast.fromJson(
+      jsonDecode(_forecastResponse(rain: 60).body) as Map<String, dynamic>,
+      const LocationPoint(latitude: 25.04, longitude: 121.52),
+      DateTime(2026, 9, 27, 9),
+    );
+    expect(forecast.precipitationProbability, 60);
+  });
+
+  test(
+    'one-hour reservation survives a new limiter and is shared by trips',
+    () async {
+      final store = _MemoryQueryTimeStore();
+      final first = CwaQueryLimiter(store: store);
+      final nextTrip = CwaQueryLimiter(store: store);
+      final start = DateTime(2026, 9, 27, 9);
+
+      expect(await first.reserve(start), isTrue);
+      expect(
+        await nextTrip.reserve(start.add(const Duration(minutes: 59))),
+        isFalse,
+      );
+      expect(
+        await nextTrip.reserve(start.add(const Duration(hours: 1))),
+        isTrue,
+      );
+    },
+  );
+
+  test('simultaneous checks share one CWA reservation', () async {
+    final limiter = CwaQueryLimiter(store: _MemoryQueryTimeStore());
+    final now = DateTime(2026, 9, 27, 9);
+
+    final results = await Future.wait([
+      limiter.reserve(now),
+      limiter.reserve(now),
+    ]);
+    expect(results.where((allowed) => allowed), hasLength(1));
+  });
+
+  test(
+    'separate weather service instances share the same hourly quota',
+    () async {
+      final store = _MemoryQueryTimeStore();
+      var requests = 0;
+      WeatherAdvisoryService service() => WeatherAdvisoryService(
+        apiKey: 'test-key',
+        queryLimiter: CwaQueryLimiter(store: store),
+        notifications: _WeatherNotifications(),
+        client: MockClient((_) async {
+          requests++;
+          return _forecastResponse(rain: 20);
+        }),
+      );
+      final first = service();
+      final second = service();
+      final start = DateTime(2026, 9, 27, 9);
+      const position = LocationPoint(latitude: 25.04, longitude: 121.52);
+
+      await first.check(position, now: start);
+      await second.check(position, now: start.add(const Duration(minutes: 30)));
+      expect(requests, 1);
+      await second.check(position, now: start.add(const Duration(hours: 1)));
+      expect(requests, 2);
+
+      first.dispose();
+      second.dispose();
+    },
+  );
+
+  test('a failed CWA response also consumes the hour interval', () async {
+    var requests = 0;
+    final service = WeatherAdvisoryService(
+      apiKey: 'test-key',
+      queryLimiter: CwaQueryLimiter(store: _MemoryQueryTimeStore()),
+      notifications: _WeatherNotifications(),
+      client: MockClient((_) async {
+        requests++;
+        return http.Response('unavailable', 503);
+      }),
+    );
+    final start = DateTime(2026, 9, 27, 9);
+    const position = LocationPoint(latitude: 25.04, longitude: 121.52);
+
+    await service.check(position, now: start);
+    await service.check(position, now: start.add(const Duration(minutes: 5)));
+    expect(requests, 1);
+    await service.check(position, now: start.add(const Duration(hours: 1)));
+    expect(requests, 2);
+    service.dispose();
+  });
+
+  test(
+    'latest position is used after an hour, not on each GPS update',
+    () async {
+      final requests = <http.Request>[];
+      final service = WeatherAdvisoryService(
+        apiKey: 'test-key',
+        queryLimiter: CwaQueryLimiter(store: _MemoryQueryTimeStore()),
+        notifications: _WeatherNotifications(),
+        client: MockClient((request) async {
+          requests.add(request);
+          return _forecastResponse(rain: 20);
+        }),
+      );
+      final start = DateTime(2026, 9, 27, 9);
+      const firstPosition = LocationPoint(latitude: 25.04, longitude: 121.52);
+      const laterPosition = LocationPoint(latitude: 24.15, longitude: 120.67);
+
+      await service.check(firstPosition, now: start);
+      await service.check(
+        laterPosition,
+        now: start.add(const Duration(minutes: 30)),
+      );
+      expect(requests, hasLength(1));
+      await service.check(
+        laterPosition,
+        now: start.add(const Duration(hours: 1)),
+      );
+      expect(requests, hasLength(2));
+      service.dispose();
+    },
+  );
+
+  test(
+    'same risk alerts once, then alerts again after observed recovery',
+    () async {
+      final notifications = _WeatherNotifications();
+      final rainValues = [60.0, 80.0, 20.0, 55.0];
+      var requestIndex = 0;
+      final service = WeatherAdvisoryService(
+        apiKey: 'test-key',
+        queryLimiter: CwaQueryLimiter(store: _MemoryQueryTimeStore()),
+        notifications: notifications,
+        client: MockClient(
+          (_) async => _forecastResponse(rain: rainValues[requestIndex++]),
+        ),
+      );
+      final start = DateTime(2026, 9, 27, 9);
+      const position = LocationPoint(latitude: 25.04, longitude: 121.52);
+
+      for (var hour = 0; hour < 4; hour++) {
+        await service.check(position, now: start.add(Duration(hours: hour)));
+      }
+
+      expect(requestIndex, 4);
+      expect(notifications.titles, ['稍後可能下雨', '稍後可能下雨']);
+      service.dispose();
+    },
+  );
+
+  test('weather notification carries the active guardian session ID', () async {
+    final notifications = _WeatherNotifications();
+    final service = WeatherAdvisoryService(
+      apiKey: 'test-key',
+      queryLimiter: CwaQueryLimiter(store: _MemoryQueryTimeStore()),
+      notifications: notifications,
+      client: MockClient((_) async => _forecastResponse(rain: 60)),
+    );
+    addTearDown(service.dispose);
+
+    await service.check(
+      const LocationPoint(latitude: 25.04, longitude: 121.52),
+      now: DateTime(2026, 9, 27, 9),
+      guardianSessionId: 'active-trip-1',
+    );
+
+    expect(notifications.payloads, ['guardian:weather:active-trip-1']);
+  });
+
+  test('missing observations do not clear an active risk', () async {
+    final notifications = _WeatherNotifications();
+    final rainValues = <double?>[60, null, 65];
+    var requestIndex = 0;
+    final service = WeatherAdvisoryService(
+      apiKey: 'test-key',
+      queryLimiter: CwaQueryLimiter(store: _MemoryQueryTimeStore()),
+      notifications: notifications,
+      client: MockClient(
+        (_) async => _forecastResponse(rain: rainValues[requestIndex++]),
+      ),
+    );
+    final start = DateTime(2026, 9, 27, 9);
+    const position = LocationPoint(latitude: 25.04, longitude: 121.52);
+
+    for (var hour = 0; hour < 3; hour++) {
+      await service.check(position, now: start.add(Duration(hours: hour)));
+    }
+
+    expect(notifications.titles, ['稍後可能下雨']);
+    service.dispose();
+  });
 }
+
+class _MemoryQueryTimeStore implements CwaQueryTimeStore {
+  DateTime? lastAttempt;
+
+  @override
+  Future<DateTime?> readLastAttempt() async => lastAttempt;
+
+  @override
+  Future<void> writeLastAttempt(DateTime time) async {
+    lastAttempt = time;
+  }
+}
+
+class _WeatherNotifications extends Fake implements TripNotificationGateway {
+  final List<String> titles = [];
+  final List<String?> payloads = [];
+
+  @override
+  Future<void> showWeatherAdvisory({
+    required int id,
+    required String title,
+    required String body,
+    String? payload,
+  }) async {
+    titles.add(title);
+    payloads.add(payload);
+  }
+}
+
+http.Response _forecastResponse({double? rain}) => http.Response(
+  jsonEncode({
+    'records': {
+      'locations': [
+        {
+          'location': [
+            {
+              'lat': '25.04',
+              'lon': '121.52',
+              'weatherElement': [
+                if (rain != null)
+                  {
+                    'elementName': '降雨機率',
+                    'time': [
+                      {
+                        'elementValue': [
+                          {'value': '$rain'},
+                        ],
+                      },
+                    ],
+                  },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  }),
+  200,
+  headers: {'content-type': 'application/json; charset=utf-8'},
+);

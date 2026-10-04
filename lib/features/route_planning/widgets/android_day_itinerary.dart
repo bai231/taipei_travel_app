@@ -44,11 +44,6 @@ class AndroidDayItinerary extends StatelessWidget {
           ],
         ),
       ),
-      if (timetable != null)
-        const Padding(
-          padding: EdgeInsets.symmetric(vertical: 4),
-          child: Text('長按景點可拖到新的時間', style: TextStyle(fontSize: 12)),
-        ),
       Expanded(
         child:
             timetable ??

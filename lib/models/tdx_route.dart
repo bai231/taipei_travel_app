@@ -1,3 +1,5 @@
+enum RouteProvider { tdx, google }
+
 class TdxRoute {
   final int transfers;
   final int travelTime;
@@ -5,6 +7,7 @@ class TdxRoute {
   final DateTime? endTime;
   final int? distanceMeters;
   final List<RouteSection> sections;
+  final RouteProvider? provider;
 
   TdxRoute({
     required this.transfers,
@@ -13,6 +16,7 @@ class TdxRoute {
     this.endTime,
     this.distanceMeters,
     required this.sections,
+    this.provider,
   });
 
   factory TdxRoute.fromJson(Map<String, dynamic> json) {
@@ -39,6 +43,19 @@ class RouteSection {
   final int travelTime;
   final int stopCount;
   final List<String> intermediateStops; // 中途站點列表
+  final String? operatorCode; // TRA、CityBus、HighwayBus 等營運系統代碼
+  final String? agencyId;
+  final String? serviceId; // MaaS transport.uuid，供後續班次解析使用
+  final String? routeId;
+  final String? city;
+  final String? departureStopId;
+  final String? arrivalStopId;
+  final double? departureLatitude;
+  final double? departureLongitude;
+  final double? arrivalLatitude;
+  final double? arrivalLongitude;
+  final DateTime? scheduledDeparture;
+  final DateTime? scheduledArrival;
 
   RouteSection({
     required this.mode,
@@ -51,6 +68,19 @@ class RouteSection {
     required this.travelTime,
     required this.stopCount,
     required this.intermediateStops,
+    this.operatorCode,
+    this.agencyId,
+    this.serviceId,
+    this.routeId,
+    this.city,
+    this.departureStopId,
+    this.arrivalStopId,
+    this.departureLatitude,
+    this.departureLongitude,
+    this.arrivalLatitude,
+    this.arrivalLongitude,
+    this.scheduledDeparture,
+    this.scheduledArrival,
   });
 
   factory RouteSection.fromJson(Map<String, dynamic> json) {
@@ -114,6 +144,27 @@ class RouteSection {
     int durationSec =
         json['travelSummary']?['duration'] ?? json['travel_time'] ?? 0;
 
+    final departure = json['departure'] as Map?;
+    final arrival = json['arrival'] as Map?;
+    final departurePlace = departure?['place'] as Map?;
+    final arrivalPlace = arrival?['place'] as Map?;
+    final departureLocation = departurePlace?['location'] as Map?;
+    final arrivalLocation = arrivalPlace?['location'] as Map?;
+    final agency = json['agency'] as Map?;
+    String? firstText(Iterable<Object?> values) {
+      for (final value in values) {
+        final text = value?.toString().trim();
+        if (text != null && text.isNotEmpty) return text;
+      }
+      return null;
+    }
+
+    double? number(Object? value) => value is num
+        ? value.toDouble()
+        : double.tryParse(value?.toString() ?? '');
+    final rawDepartureTime = departure?['time']?.toString();
+    final rawArrivalTime = arrival?['time']?.toString();
+
     return RouteSection(
       mode: mode,
       lineName: line,
@@ -125,6 +176,53 @@ class RouteSection {
       travelTime: durationSec,
       stopCount: stops.length,
       intermediateStops: stops,
+      operatorCode: firstText([
+        agency?['agency_id'],
+        agency?['id'],
+        transport?['category'],
+        transport?['mode'],
+      ]),
+      agencyId: firstText([agency?['agency_id'], agency?['id']]),
+      serviceId: firstText([
+        transport?['uuid'],
+        transport?['trip_id'],
+        transport?['tripId'],
+      ]),
+      routeId: firstText([
+        transport?['route_uid'],
+        transport?['routeUID'],
+        transport?['number'],
+        transport?['shortName'],
+      ]),
+      city: firstText([transport?['city']]),
+      departureStopId: firstText([
+        departurePlace?['stop_uid'],
+        departurePlace?['stopUID'],
+        departurePlace?['station_id'],
+        departurePlace?['stationID'],
+        departurePlace?['id'],
+      ]),
+      arrivalStopId: firstText([
+        arrivalPlace?['stop_uid'],
+        arrivalPlace?['stopUID'],
+        arrivalPlace?['station_id'],
+        arrivalPlace?['stationID'],
+        arrivalPlace?['id'],
+      ]),
+      departureLatitude: number(
+        departureLocation?['lat'] ?? departureLocation?['latitude'],
+      ),
+      departureLongitude: number(
+        departureLocation?['lng'] ?? departureLocation?['longitude'],
+      ),
+      arrivalLatitude: number(
+        arrivalLocation?['lat'] ?? arrivalLocation?['latitude'],
+      ),
+      arrivalLongitude: number(
+        arrivalLocation?['lng'] ?? arrivalLocation?['longitude'],
+      ),
+      scheduledDeparture: _parseServiceDateTime(rawDepartureTime),
+      scheduledArrival: _parseServiceDateTime(rawArrivalTime),
     );
   }
 
@@ -189,4 +287,13 @@ class RouteSection {
   static bool _containsAny(String value, List<String> keywords) {
     return keywords.any(value.contains);
   }
+}
+
+DateTime? _parseServiceDateTime(String? value) {
+  if (value == null || value.isEmpty) return null;
+  // TDX MaaS timestamps describe Taiwan service wall-clock time. Keeping the
+  // wall-clock portion avoids host timezone conversion changing 10:05 to 02:05
+  // in tests or non-Taiwan build environments.
+  final wallClock = value.length >= 19 ? value.substring(0, 19) : value;
+  return DateTime.tryParse(wallClock);
 }

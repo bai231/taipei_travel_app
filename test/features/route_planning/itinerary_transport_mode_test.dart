@@ -180,6 +180,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(gap, findsOneWidget);
     final start = tester.getCenter(find.text('測試景點'));
+    await tester.tap(find.byTooltip('更多行程操作'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('展開全部時段'));
     await tester.pumpAndSettle();
     final gesture = await tester.startGesture(start);
@@ -190,22 +192,112 @@ void main() {
     await tester.pumpAndSettle();
     expect(droppedMinutes, isNotNull);
     expect(droppedMinutes, greaterThan(20));
-    await tester.tap(find.text('多日總覽'));
+    await tester.tap(find.byTooltip('多日總覽'));
     await tester.pumpAndSettle();
-    expect(
-      tester.getCenter(find.byTooltip('縮小行程表')).dy,
-      tester.getCenter(find.byTooltip('放大行程表')).dy,
-    );
-    await tester.tap(find.byTooltip('縮小行程表'));
+    for (var i = 0; i < 2; i++) {
+      await tester.tap(find.byTooltip('更多行程操作'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.textContaining('縮小行程表'));
+      await tester.pumpAndSettle();
+    }
+    await tester.tap(find.byTooltip('更多行程操作'));
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('縮小行程表'));
+    expect(find.textContaining('縮小行程表 · 60%'), findsOneWidget);
+    await tester.tap(find.text('拖曳操作說明'));
     await tester.pumpAndSettle();
-    expect(find.text('60%'), findsOneWidget);
+    expect(find.text('拖曳行程'), findsOneWidget);
+    await tester.tap(find.text('知道了'));
+    await tester.pumpAndSettle();
     expect(find.text('測試景點'), findsOneWidget);
     expect(tester.takeException(), isNull);
-    await tester.tap(find.text('單日課表'));
+    await tester.tap(find.byTooltip('單日課表'));
     await tester.pumpAndSettle();
     expect(find.byType(AndroidDayItinerary), findsOneWidget);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.android));
+  testWidgets('Android 已儲存行程沒有新增回呼時不顯示無效按鈕', (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ItineraryResultPage(
+          itinerary: _itinerary(RouteTravelMode.transit),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('新增'), findsNothing);
+    expect(tester.takeException(), isNull);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.android));
+  testWidgets('Android 多日總覽只壓縮所有日期共同的頭尾空白', (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final base = _itinerary(RouteTravelMode.transit);
+    final place = base.days.first.visits.first.place;
+    RouteDay day(int number, int startHour) => RouteDay(
+      day: number,
+      date: DateTime(2030, 1, number),
+      origin: base.origin,
+      isValid: true,
+      travelLegs: const [],
+      visits: [
+        RouteVisit(
+          place: place,
+          sequence: 1,
+          arrivalMinutes: startHour * 60,
+          startMinutes: startHour * 60,
+          endMinutes: (startHour + 1) * 60,
+          waitingMinutes: 0,
+          stayMinutes: 60,
+          requestedStartMinutes: null,
+          locked: false,
+        ),
+      ],
+    );
+    final itinerary = RouteItinerary(
+      request: base.request,
+      origin: base.origin,
+      generatedAt: base.generatedAt,
+      days: [day(1, 9), day(2, 18)],
+    );
+    await tester.pumpWidget(
+      MaterialApp(home: ItineraryResultPage(itinerary: itinerary)),
+    );
+    await tester.tap(find.byTooltip('多日總覽'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('00:00–09:00 空白'), findsOneWidget);
+    expect(find.textContaining('19:00–24:00 空白'), findsOneWidget);
+    expect(find.textContaining('10:00–18:00 空白'), findsNothing);
+    await tester.tap(find.textContaining('00:00–09:00 空白'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('00:00–09:00 空白'), findsNothing);
+    expect(find.textContaining('19:00–24:00 空白'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.android));
+  testWidgets('Android 窄螢幕大字體的頂部工具列不溢出', (tester) async {
+    tester.view.physicalSize = const Size(320, 700);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      MaterialApp(
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(
+            context,
+          ).copyWith(textScaler: TextScaler.linear(1.5)),
+          child: child!,
+        ),
+        home: ItineraryResultPage(
+          itinerary: _itinerary(RouteTravelMode.transit),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('更多行程操作'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   }, variant: TargetPlatformVariant.only(TargetPlatform.android));
   testWidgets('手機大字體行程表可縮放且提醒預設收合', (tester) async {
     tester.view.physicalSize = const Size(390, 844);
@@ -247,6 +339,23 @@ void main() {
     expect(find.text('景點 已超出當天時間'), findsOneWidget);
     expect(tester.takeException(), isNull);
   }, variant: TargetPlatformVariant.only(TargetPlatform.linux));
+  testWidgets('Android 操作選單保留 main 新增的 AI 修改入口', (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ItineraryResultPage(
+          itinerary: _itinerary(RouteTravelMode.transit),
+        ),
+      ),
+    );
+    await tester.tap(find.byTooltip('更多行程操作'));
+    await tester.pumpAndSettle();
+    expect(find.text('AI 協助修改'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.android));
   testWidgets('只切換使用者選取的交通路段', (tester) async {
     tester.view.physicalSize = const Size(1100, 900);
     tester.view.devicePixelRatio = 1;

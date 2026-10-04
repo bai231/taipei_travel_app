@@ -85,10 +85,19 @@
         lng: input.destination.longitude,
       },
       travelMode: input.travelMode,
-      fields: ['durationMillis', 'distanceMeters'],
+      fields: input.travelMode === 'TRANSIT'
+        ? [
+            'durationMillis', 'distanceMeters',
+            'legs.steps.travelMode', 'legs.steps.staticDurationMillis',
+            'legs.steps.transitDetails',
+          ]
+        : ['durationMillis', 'distanceMeters'],
       language: 'zh-TW',
       region: 'TW',
     };
+    if (input.travelMode === 'TRANSIT') {
+      request.departureTime = usableDepartureTime(input.departureTime);
+    }
     if (input.travelMode === 'DRIVING') {
       request.routingPreference = 'TRAFFIC_UNAWARE';
     }
@@ -99,6 +108,28 @@
     return JSON.stringify({
       durationMillis: route.durationMillis || 0,
       distanceMeters: route.distanceMeters || null,
+      ...(input.travelMode === 'TRANSIT' ? {
+        steps: (route.legs || []).flatMap(leg => (leg.steps || []).map(step => {
+          const details = step.transitDetails;
+          return {
+            travelMode: step.travelMode || null,
+            staticDurationMillis: step.staticDurationMillis || 0,
+            transitDetails: details ? {
+              departureTime: details.departureTime?.toISOString() || null,
+              arrivalTime: details.arrivalTime?.toISOString() || null,
+              departureStop: { name: details.departureStop?.name || null },
+              arrivalStop: { name: details.arrivalStop?.name || null },
+              headsign: details.headsign || null,
+              stopCount: details.stopCount || 0,
+              transitLine: {
+                name: details.transitLine?.name || null,
+                nameShort: details.transitLine?.shortName || null,
+                vehicle: { type: details.transitLine?.vehicle?.vehicleType || null },
+              },
+            } : null,
+          };
+        })),
+      } : {}),
     });
   };
 })();

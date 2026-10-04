@@ -1,4 +1,5 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter/foundation.dart';
 import 'itinerary_snapshot.dart';
 
 /// 已儲存行程服務介面契約
@@ -22,6 +23,7 @@ abstract interface class SavedItineraryGateway {
 
 /// 雲端行程儲存服務實作
 class SavedItineraryService implements SavedItineraryGateway {
+  static final ValueNotifier<int> changes = ValueNotifier<int>(0);
   final SupabaseClient client;
 
   SavedItineraryService(this.client);
@@ -48,21 +50,18 @@ class SavedItineraryService implements SavedItineraryGateway {
     // 驗證快照結構是否合法
     decodeItinerarySnapshot(snapshot);
 
-    // 🌟 核心：使用 upsert 並以 id 為衝突鍵進行覆蓋更新，同時寫入 updated_at
-    await client.from('saved_itineraries').upsert(
-      {
+    await client.from('saved_itineraries').upsert({
         'id': id,
         'user_id': userId,
         'title': title,
         'snapshot': snapshot,
         'updated_at': DateTime.now().toIso8601String(),
-      },
-      onConflict: 'id',
-    );
+      }, onConflict: 'user_id,id');
 
     if (currentUserId != userId) {
       throw StateError('帳號已變更，請在原帳號確認儲存結果');
     }
+    changes.value++;
   }
 
   /// 撈取使用者行程清單（不載入龐大的 snapshot 欄位，加快效能）
@@ -119,5 +118,6 @@ class SavedItineraryService implements SavedItineraryGateway {
         .eq('id', id);
 
     if (currentUserId != uid) throw StateError('帳號已變更');
+    changes.value++;
   }
 }

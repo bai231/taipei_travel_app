@@ -108,6 +108,17 @@ class _TripMapPanelState extends State<TripMapPanel> {
             target: coordinates.first,
           ),
           markers: _markers,
+          circles: {
+            if (widget.currentLocation case final location?)
+              Circle(
+                circleId: const CircleId('current-location-halo'),
+                center: LatLng(location.latitude, location.longitude),
+                radius: 35,
+                fillColor: const Color(0x332196F3),
+                strokeColor: const Color(0xFF1976D2),
+                strokeWidth: 1,
+              ),
+          },
           polylines: routePolylines,
           onMapCreated: (controller) {
             _controller = controller;
@@ -157,6 +168,9 @@ class _TripMapPanelState extends State<TripMapPanel> {
             mainAxisSize: MainAxisSize.min,
             children: [
               const Text('Google 參考路線可能與 TDX 班次不同。紅色虛線僅為示意連線，不代表可行走道路。'),
+              const SizedBox(height: 8),
+              const _PlaceMarkerLegend(),
+              const SizedBox(height: 8),
               const _RouteLegend(),
               Text(
                 _failedLegs.entries
@@ -257,7 +271,8 @@ class _TripMapPanelState extends State<TripMapPanel> {
 
   bool get _originIsFirstVisit =>
       widget.day.visits.isNotEmpty &&
-      widget.day.origin.id == widget.day.visits.first.place.id;
+      (widget.day.origin.id == widget.day.visits.first.occurrenceId ||
+          widget.day.origin.id == widget.day.visits.first.place.id);
 
   Iterable<RouteVisit> get _visitsAfterOrigin =>
       _originIsFirstVisit ? widget.day.visits.skip(1) : widget.day.visits;
@@ -270,19 +285,32 @@ class _TripMapPanelState extends State<TripMapPanel> {
   ];
 
   Set<Marker> get _markers => {
-    Marker(
-      markerId: MarkerId('day-${widget.day.day}-origin'),
-      position: LatLng(widget.day.origin.latitude, widget.day.origin.longitude),
-      infoWindow: InfoWindow(title: '起點：${widget.day.origin.name}'),
-      icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
-    ),
-    ..._visitsAfterOrigin.map(
+    if (!_originIsFirstVisit)
+      Marker(
+        markerId: MarkerId('day-${widget.day.day}-origin'),
+        position: LatLng(
+          widget.day.origin.latitude,
+          widget.day.origin.longitude,
+        ),
+        infoWindow: InfoWindow(title: '起點：${widget.day.origin.name}'),
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueViolet),
+      ),
+    ...widget.day.visits.map(
       (visit) => Marker(
         markerId: MarkerId('day-${widget.day.day}-${visit.occurrenceId}'),
         position: LatLng(visit.place.latitude, visit.place.longitude),
         infoWindow: InfoWindow(
-          title: '${visit.sequence}. ${visit.label}',
-          snippet: visit.place.address,
+          title:
+              '${MapService.markerLabelForPlace(visit.place.type)} ${visit.sequence}. ${visit.label}',
+          snippet: [
+            if (_originIsFirstVisit &&
+                identical(visit, widget.day.visits.first))
+              '當日起點',
+            if (visit.place.address.isNotEmpty) visit.place.address,
+          ].join(' · '),
+        ),
+        icon: BitmapDescriptor.defaultMarkerWithHue(
+          MapService.markerHueForPlace(visit.place.type),
         ),
       ),
     ),
@@ -356,6 +384,46 @@ class _MapMessage extends StatelessWidget {
       ),
     );
   }
+}
+
+class _PlaceMarkerLegend extends StatelessWidget {
+  const _PlaceMarkerLegend();
+
+  @override
+  Widget build(BuildContext context) => Card(
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      child: Wrap(
+        spacing: 12,
+        runSpacing: 6,
+        children: const [
+          _MarkerLegendItem(color: Color(0xFF1976D2), label: '目前 GPS'),
+          _MarkerLegendItem(color: Color(0xFF8E24AA), label: '行程起點'),
+          _MarkerLegendItem(color: Color(0xFFE91E63), label: '景點'),
+          _MarkerLegendItem(color: Color(0xFFFB8C00), label: '餐廳'),
+          _MarkerLegendItem(color: Color(0xFF43A047), label: '住宿'),
+          _MarkerLegendItem(color: Color(0xFFFDD835), label: '轉乘點'),
+        ],
+      ),
+    ),
+  );
+}
+
+class _MarkerLegendItem extends StatelessWidget {
+  final Color color;
+  final String label;
+
+  const _MarkerLegendItem({required this.color, required this.label});
+
+  @override
+  Widget build(BuildContext context) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Icon(Icons.location_on, color: color, size: 18),
+      const SizedBox(width: 3),
+      Text(label, style: Theme.of(context).textTheme.labelSmall),
+    ],
+  );
 }
 
 class _RouteLegend extends StatelessWidget {

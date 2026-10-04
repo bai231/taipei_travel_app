@@ -4,7 +4,18 @@ import 'dart:math';
 import 'package:http/http.dart' as http;
 
 import 'location_service.dart';
+import 'cwa_query_limiter.dart';
 import 'trip_notification_service.dart';
+
+abstract interface class WeatherAdvisoryGateway {
+  bool get isConfigured;
+  Future<WeatherCheckResult?> check(
+    LocationPoint position, {
+    DateTime? now,
+    String? guardianSessionId,
+  });
+  void dispose();
+}
 
 /// CWA forecast client and travel-only advisory evaluator.
 ///
@@ -12,7 +23,7 @@ import 'trip_notification_service.dart';
 /// app. See `docs/weather-alerts.md` for production delivery requirements.
 enum WeatherRiskLevel { warning, severe }
 
-class WeatherAdvisoryService {
+class WeatherAdvisoryService implements WeatherAdvisoryGateway {
   static const _endpoint =
       'https://opendata.cwa.gov.tw/api/v1/rest/datastore/F-D0047-093';
   static const _checkInterval = Duration(hours: 1);
@@ -94,21 +105,26 @@ class WeatherAdvisoryService {
 
   final String apiKey;
   final http.Client _client;
-  final TripNotificationService _notifications;
+  final TripNotificationGateway _notifications;
+  final CwaQueryLimiter? _queryLimiter;
   DateTime? _lastCheck;
   DateTime? _cachedAt;
   Map<String, dynamic>? _cachedJson;
   String? _cachedLocationIdsKey;
   Future<Map<String, dynamic>?>? _inFlightRequest;
   final Set<String> _sentKinds = <String>{};
+  bool _disposed = false;
   String? lastError;
 
   WeatherAdvisoryService({
     required this.apiKey,
     http.Client? client,
-    TripNotificationService? notifications,
+    TripNotificationGateway? notifications,
+    CwaQueryLimiter? queryLimiter,
   }) : _client = client ?? http.Client(),
-       _notifications = notifications ?? TripNotificationService();
+       _notifications = notifications ?? TripNotificationService(),
+       _queryLimiter =
+           queryLimiter ?? (client == null ? CwaQueryLimiter.shared : null);
 
   bool get isConfigured => apiKey.isNotEmpty;
 
@@ -117,7 +133,9 @@ class WeatherAdvisoryService {
     LocationPoint position, {
     String? cityName,
     DateTime? now,
+    String? guardianSessionId,
   }) async {
+    if (_disposed) return null;
     if (!isConfigured) {
       lastError = '尚未設定 CWA_API_KEY。';
       return null;
@@ -137,13 +155,26 @@ class WeatherAdvisoryService {
       _lastCheck = checkedAt;
       final forecast = CwaForecast.fromJson(json, position, checkedAt);
       final newAdvisories = <WeatherAdvisory>[];
-      for (final advisory in WeatherAdvisory.evaluate(forecast)) {
+      final active = WeatherAdvisory.evaluate(forecast);
+      _sentKinds.removeWhere((kind) {
+        final observed = switch (kind) {
+          'rain' => forecast.precipitationProbability != null,
+          'uv' => forecast.uvIndex != null,
+          'heat' => forecast.apparentTemperature != null,
+          _ => false,
+        };
+        return observed && !active.any((advisory) => advisory.kind == kind);
+      });
+      for (final advisory in active) {
         if (!_sentKinds.add(advisory.kind)) continue;
         newAdvisories.add(advisory);
         await _notifications.showWeatherAdvisory(
           id: 7100 + advisory.kind.hashCode.abs() % 100,
           title: advisory.title,
           body: advisory.body,
+          payload: guardianSessionId == null
+              ? null
+              : 'guardian:weather:$guardianSessionId',
         );
       }
       return WeatherCheckResult(forecast: forecast, advisories: newAdvisories);
@@ -217,6 +248,10 @@ class WeatherAdvisoryService {
   ) async {
     lastError = null;
     try {
+      if (_queryLimiter != null && !await _queryLimiter.reserve(now)) {
+        lastError = 'CWA 資料一小時查詢間隔尚未結束。';
+        return null;
+      }
       final response = await _client.get(
         Uri.parse(_endpoint).replace(
           queryParameters: <String, dynamic>{
@@ -253,7 +288,10 @@ class WeatherAdvisoryService {
   static String _normalizeCityName(String? value) =>
       (value ?? '').trim().replaceAll('台', '臺');
 
-  void dispose() => _client.close();
+  void dispose() {
+    _disposed = true;
+    _client.close();
+  }
 }
 
 class CwaForecast {

@@ -547,6 +547,7 @@ class ItineraryPlanningService {
       late DateTime requestedDeparture;
       late ScheduledVisit schedule;
       TdxRoute? route;
+      RouteProvider? routeProvider;
       String? errorMessage;
       var routeAdjustmentCount = 0;
       var rateLimitRetriesForLeg = 0;
@@ -580,6 +581,7 @@ class ItineraryPlanningService {
         while (true) {
           requestedDeparture = date.add(Duration(minutes: departureMinutes));
           route = null;
+          routeProvider = null;
           errorMessage = null;
           var queriedApiThisAttempt = false;
           final reusableLeg = _reusableTravelLeg(
@@ -593,6 +595,7 @@ class ItineraryPlanningService {
             errorMessage = '已取消等待，後續路段使用估計時間。';
           } else if (reusableLeg != null) {
             route = _routeForReuse(reusableLeg, requestedDeparture);
+            routeProvider = reusableLeg.effectiveRouteProvider;
             errorMessage = reusableLeg.errorMessage;
           } else if (travelMode != RouteTravelMode.transit) {
             try {
@@ -606,6 +609,7 @@ class ItineraryPlanningService {
                 requestedDeparture: requestedDeparture,
                 travelMode: travelMode,
               );
+              if (route != null) routeProvider = RouteProvider.google;
               if (route == null) {
                 errorMessage =
                     'Google Maps 沒有提供可用的${travelMode.label}路線，已使用估計時間。';
@@ -624,8 +628,9 @@ class ItineraryPlanningService {
                       '${destination.latitude},${destination.longitude}',
                   requestedDeparture: requestedDeparture,
                 );
+                if (route != null) routeProvider = RouteProvider.tdx;
                 if (route == null) {
-                  errorMessage = 'TDX 沒有提供指定時間後的可用路線，已使用估計時間。';
+                  errorMessage = 'TDX 沒有提供指定時間後的可用路線。';
                 }
                 break;
               } on TdxRateLimitException catch (error) {
@@ -633,7 +638,7 @@ class ItineraryPlanningService {
                     rateLimitRetriesForLeg < 1 &&
                     retryBudget.remainingWaits > 0;
                 if (!canRetry) {
-                  errorMessage = 'TDX 仍在查詢冷卻中，已使用估計時間。';
+                  errorMessage = 'TDX 仍在查詢冷卻中。';
                   break;
                 }
 
@@ -653,6 +658,31 @@ class ItineraryPlanningService {
               } catch (error) {
                 errorMessage = routeErrorMessage(error);
                 break;
+              }
+            }
+            if (route == null && !control.useEstimatesForRemainingRoutes) {
+              onProgress?.call('TDX 未取得路線，正在查詢 Google Maps 大眾運輸備援…');
+              try {
+                queriedApiForLeg = true;
+                queriedApiThisAttempt = true;
+                route = await _googleRouteService.getRoute(
+                  originLatitude: previousStop.latitude,
+                  originLongitude: previousStop.longitude,
+                  destinationLatitude: destination.latitude,
+                  destinationLongitude: destination.longitude,
+                  requestedDeparture: requestedDeparture,
+                  travelMode: RouteTravelMode.transit,
+                );
+                if (route != null) {
+                  routeProvider = RouteProvider.google;
+                  errorMessage =
+                      'TDX 未取得路線；已改用 Google Maps 大眾運輸參考路線，班次未經 TDX 驗證。';
+                } else {
+                  errorMessage = 'TDX 與 Google Maps 均無可用大眾運輸路線，已使用估計時間。';
+                }
+              } catch (error) {
+                errorMessage =
+                    'TDX 與 Google Maps 大眾運輸查詢皆未成功，已使用估計時間。${routeErrorMessage(error)}';
               }
             }
           }
@@ -692,7 +722,9 @@ class ItineraryPlanningService {
               schedule.waitingMinutes > 15 &&
               routeAdjustmentCount < 2;
           final routeTimingLabel = travelMode == RouteTravelMode.transit
-              ? 'TDX 班次'
+              ? routeProvider == RouteProvider.google
+                    ? 'Google Maps 大眾運輸備援'
+                    : 'TDX 班次'
               : 'Google Maps ${travelMode.label}路線';
 
           if (shouldRetryEarlier) {
@@ -728,6 +760,7 @@ class ItineraryPlanningService {
             requestedDeparture: requestedDeparture,
             schedule: schedule,
             route: route,
+            routeProvider: routeProvider,
             errorMessage: errorMessage,
             travelMode: travelMode,
           ),
@@ -782,6 +815,9 @@ class ItineraryPlanningService {
             ? '本次從此位置開始，不新增進站交通。'
             : route == null
             ? '交通時間為估算，未確認實際可搭乘路線。'
+            : routeProvider == RouteProvider.google &&
+                  travelMode == RouteTravelMode.transit
+            ? '交通時間來自 Google Maps 大眾運輸備援，班次未經 TDX 即時資料驗證。'
             : travelMode == RouteTravelMode.transit
             ? '交通時間來自 TDX 查詢，不代表已訂票或保證班次運行。'
             : '交通時間來自 Google Maps ${travelMode.label}路線，不包含即時路況。',
@@ -849,6 +885,10 @@ class ItineraryPlanningService {
   }) {
     final leg = reusableTravelLegs[key];
     if (leg == null || leg.travelMode != travelMode) return null;
+    if (travelMode == RouteTravelMode.transit &&
+        leg.effectiveRouteProvider == RouteProvider.google) {
+      return null;
+    }
     final route = leg.route;
     if (route == null) {
       return leg.requestedDeparture == requestedDeparture ? leg : null;

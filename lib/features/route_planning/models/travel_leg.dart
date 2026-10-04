@@ -11,6 +11,7 @@ class TravelLeg {
   final TdxRoute? route;
   final String? errorMessage;
   final RouteTravelMode travelMode;
+  final RouteProvider? routeProvider;
 
   const TravelLeg({
     required this.origin,
@@ -20,10 +21,24 @@ class TravelLeg {
     this.route,
     this.errorMessage,
     this.travelMode = RouteTravelMode.transit,
+    this.routeProvider,
   });
 
   bool get usesEstimatedTravelTime => route == null;
 
-  String get routeSourceLabel =>
-      usesEstimatedTravelTime ? '估計' : travelMode.sourceLabel;
+  RouteProvider? get effectiveRouteProvider => route == null
+      ? null
+      : routeProvider ??
+            route?.provider ??
+            (travelMode == RouteTravelMode.transit
+                ? RouteProvider.tdx
+                : RouteProvider.google);
+
+  String get routeSourceLabel => switch (effectiveRouteProvider) {
+    null => '估計',
+    RouteProvider.tdx => 'TDX',
+    RouteProvider.google when travelMode == RouteTravelMode.transit =>
+      'Google Maps（TDX 備援）',
+    RouteProvider.google => 'Google Maps',
+  };
 }

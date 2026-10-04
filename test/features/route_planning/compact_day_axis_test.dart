@@ -47,4 +47,27 @@ void main() {
       expect(all.any((b) => b.collapsed), isFalse);
     },
   );
+
+  test('only leading and trailing empty time collapses', () {
+    final bands = compactDayBands(
+      endHour: 24,
+      visits: [(start: 9 * 60, end: 10 * 60), (start: 15 * 60, end: 16 * 60)],
+      hourHeight: 90,
+      gapHeight: 48,
+    );
+    expect(bands.first.collapsed, isTrue);
+    expect(bands.first.endHour, 9);
+    for (var hour = 10; hour < 15; hour++) {
+      expect(
+        bands.singleWhere((band) => band.startHour == hour).collapsed,
+        isFalse,
+      );
+    }
+    expect(bands.last.collapsed, isTrue);
+    expect(bands.last.startHour, 16);
+    expect(
+      compactMinuteOffset(bands, 15 * 60) - compactMinuteOffset(bands, 10 * 60),
+      5 * 90,
+    );
+  });
 }
