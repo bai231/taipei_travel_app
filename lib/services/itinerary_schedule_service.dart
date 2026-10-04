@@ -5,6 +5,16 @@ import '../models/tdx_route.dart';
 class ItineraryScheduleService {
   const ItineraryScheduleService();
 
+  DateTime? firstKnownDeparture(TdxRoute route) {
+    if (route.startTime != null) return route.startTime;
+    for (final section in route.sections) {
+      if (section.scheduledDeparture != null) {
+        return section.scheduledDeparture;
+      }
+    }
+    return null;
+  }
+
   ScheduledVisit scheduleVisit({
     required int departureMinutes,
     required int travelMinutes,
@@ -34,8 +44,9 @@ class ItineraryScheduleService {
     required DateTime requestedDeparture,
   }) {
     final availableRoutes = routes.where((route) {
-      return route.startTime == null ||
-          !route.startTime!.isBefore(requestedDeparture);
+      final firstDeparture = firstKnownDeparture(route);
+      return firstDeparture == null ||
+          !firstDeparture.isBefore(requestedDeparture);
     }).toList();
     if (availableRoutes.isEmpty) return null;
     availableRoutes.sort((first, second) {

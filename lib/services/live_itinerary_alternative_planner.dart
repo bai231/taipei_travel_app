@@ -235,7 +235,9 @@ class LiveItineraryAlternativePlanner {
           '「${origin.name} → ${destination.name}」使用 Google Maps 大眾運輸備援；班次未經 TDX 即時資料驗證。',
         );
       }
-      final routeStartTime = route?.startTime;
+      final routeStartTime = route == null
+          ? null
+          : schedule.firstKnownDeparture(route);
       if (routeStartTime != null && routeStartTime.isBefore(cursor)) {
         return LiveAlternativePlan.failure(
           '「${origin.name} → ${destination.name}」的候選班次已出發，請重新查詢。',
@@ -340,26 +342,87 @@ class LiveItineraryAlternativePlanner {
       cursor = _midnight(day.date).add(Duration(minutes: end));
       origin = destination;
     }
-    return LiveAlternativePlan.success(
-      RouteDay(
-        day: day.day,
-        date: day.date,
-        origin: first == 0
-            ? RouteStop(
-                id: 'live-location-${now.millisecondsSinceEpoch}',
-                name: '目前位置',
-                latitude: startingPoint.latitude,
-                longitude: startingPoint.longitude,
-                stayDurationMinutes: 0,
-              )
-            : day.origin,
-        visits: visits,
-        travelLegs: legs,
-        isValid: true,
-        warnings: [...day.warnings, ...warnings],
-      ),
-      warnings,
+    final candidate = RouteDay(
+      day: day.day,
+      date: day.date,
+      origin: first == 0
+          ? RouteStop(
+              id: 'live-location-${now.millisecondsSinceEpoch}',
+              name: '目前位置',
+              latitude: startingPoint.latitude,
+              longitude: startingPoint.longitude,
+              stayDurationMinutes: 0,
+            )
+          : day.origin,
+      visits: visits,
+      travelLegs: legs,
+      isValid: true,
+      warnings: [...day.warnings, ...warnings],
     );
+    if (!_hasMeaningfulChange(day, candidate)) {
+      return LiveAlternativePlan.failure('重新查詢後行程與原安排相同，沒有可套用的備案。');
+    }
+    return LiveAlternativePlan.success(candidate, warnings);
+  }
+
+  bool _hasMeaningfulChange(RouteDay original, RouteDay candidate) {
+    if (original.visits.length != candidate.visits.length ||
+        original.travelLegs.length != candidate.travelLegs.length) {
+      return true;
+    }
+    if (_distanceBetweenStops(original.origin, candidate.origin) > 0.001) {
+      return true;
+    }
+    for (var i = 0; i < original.visits.length; i++) {
+      final before = original.visits[i];
+      final after = candidate.visits[i];
+      if (before.occurrenceId != after.occurrenceId ||
+          before.arrivalMinutes != after.arrivalMinutes ||
+          before.startMinutes != after.startMinutes ||
+          before.endMinutes != after.endMinutes) {
+        return true;
+      }
+    }
+    for (var i = 0; i < original.travelLegs.length; i++) {
+      final before = original.travelLegs[i];
+      final after = candidate.travelLegs[i];
+      if (before.destination.id != after.destination.id ||
+          _distanceBetweenStops(before.origin, after.origin) > 0.001 ||
+          before.travelMode != after.travelMode ||
+          before.schedule.departureMinutes != after.schedule.departureMinutes ||
+          before.schedule.arrivalMinutes != after.schedule.arrivalMinutes ||
+          before.effectiveRouteProvider != after.effectiveRouteProvider ||
+          !_sameRoute(before.route, after.route)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool _sameRoute(TdxRoute? before, TdxRoute? after) {
+    if (before == null || after == null) return before == after;
+    if (before.startTime != after.startTime ||
+        before.endTime != after.endTime ||
+        before.travelTime != after.travelTime ||
+        before.transfers != after.transfers ||
+        before.sections.length != after.sections.length) {
+      return false;
+    }
+    for (var i = 0; i < before.sections.length; i++) {
+      final oldSection = before.sections[i];
+      final newSection = after.sections[i];
+      if (oldSection.mode != newSection.mode ||
+          oldSection.lineName != newSection.lineName ||
+          oldSection.serviceId != newSection.serviceId ||
+          oldSection.routeId != newSection.routeId ||
+          oldSection.departureStopId != newSection.departureStopId ||
+          oldSection.arrivalStopId != newSection.arrivalStopId ||
+          oldSection.scheduledDeparture != newSection.scheduledDeparture ||
+          oldSection.scheduledArrival != newSection.scheduledArrival) {
+        return false;
+      }
+    }
+    return true;
   }
 
   List<RouteVisit> _orderRemaining(

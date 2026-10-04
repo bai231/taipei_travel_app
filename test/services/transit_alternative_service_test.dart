@@ -237,6 +237,145 @@ void main() {
     );
     expect(gateway.origin, '25.1,121.1');
     expect(gateway.departure, DateTime(2026, 9, 23, 20, 5));
+
+    final laterRisk = TransitConnectionRisk(
+      kind: TransitRiskKind.boarding,
+      affectedSection: risk.affectedSection,
+      expectedReadyAt: DateTime(2026, 9, 23, 20, 15),
+      shortageMinutes: 10,
+      reason: '無法趕上原班次',
+    );
+    final laterStart = service.startForRisk(
+      day: day,
+      risk: laterRisk,
+      currentLocation: const LocationPoint(latitude: 24, longitude: 120),
+      now: DateTime(2026, 9, 23, 18, 15),
+    );
+    expect(laterStart.origin.latitude, 25.1);
+    expect(laterStart.departure, DateTime(2026, 9, 23, 20, 15));
+  });
+
+  test('上車準備晚於原班次時，不能重查原班次時間', () async {
+    final gateway = _Gateway();
+    final service = TransitAlternativeService(routingGateway: gateway);
+    final day = _day();
+    final readyAt = DateTime(2026, 9, 23, 12, 15);
+    final risk = TransitConnectionRisk(
+      kind: TransitRiskKind.boarding,
+      affectedSection: TransitSectionIdentity(
+        provider: TransitProvider.bus,
+        legIndex: 0,
+        sectionIndex: 0,
+        serviceDate: day.date,
+        section: RouteSection(
+          mode: 'bus',
+          travelTime: 1200,
+          stopCount: 0,
+          intermediateStops: const [],
+        ),
+      ),
+      expectedReadyAt: readyAt,
+      shortageMinutes: 135,
+      reason: '無法趕上原班次',
+    );
+    final now = DateTime(2026, 9, 23, 9, 30);
+
+    final start = service.startForRisk(
+      day: day,
+      risk: risk,
+      currentLocation: const LocationPoint(latitude: 24, longitude: 120),
+      now: now,
+    );
+    expect(start.departure, readyAt);
+    await service.options(
+      day: day,
+      risk: risk,
+      currentLocation: const LocationPoint(latitude: 24, longitude: 120),
+      now: now,
+    );
+    expect(gateway.departure, readyAt);
+  });
+
+  test('轉乘風險不會被尚未結束的原路段起點覆蓋', () {
+    final service = TransitAlternativeService(routingGateway: _Gateway());
+    final day = _day();
+    final incoming = TransitSectionIdentity(
+      provider: TransitProvider.bus,
+      legIndex: 0,
+      sectionIndex: 0,
+      serviceDate: day.date,
+      section: RouteSection(
+        mode: 'bus',
+        travelTime: 600,
+        stopCount: 0,
+        intermediateStops: const [],
+        arrivalLatitude: 25.2,
+        arrivalLongitude: 121.2,
+      ),
+    );
+    final risk = TransitConnectionRisk(
+      kind: TransitRiskKind.transfer,
+      affectedSection: TransitSectionIdentity(
+        provider: TransitProvider.tra,
+        legIndex: 0,
+        sectionIndex: 1,
+        serviceDate: day.date,
+        section: RouteSection(
+          mode: 'train',
+          travelTime: 1200,
+          stopCount: 0,
+          intermediateStops: const [],
+        ),
+      ),
+      incomingSection: incoming,
+      expectedReadyAt: DateTime(2026, 9, 23, 10, 30),
+      shortageMinutes: 10,
+      reason: '轉乘時間不足',
+    );
+    final start = service.startForRisk(
+      day: day,
+      risk: risk,
+      currentLocation: const LocationPoint(latitude: 24, longitude: 120),
+      now: DateTime(2026, 9, 23, 9, 30),
+    );
+    expect(start.origin.latitude, 25.2);
+    expect(start.departure, DateTime(2026, 9, 23, 10, 30));
+  });
+
+  test('TDX 回傳已開出的原班次時，不列為備案並改查 Google', () async {
+    final google = _GoogleFallback();
+    final service = TransitAlternativeService(
+      routingGateway: _StaleGateway(),
+      googleGateway: google,
+    );
+    final day = _day();
+    final readyAt = DateTime(2026, 9, 23, 12, 15);
+    final risk = TransitConnectionRisk(
+      kind: TransitRiskKind.boarding,
+      affectedSection: TransitSectionIdentity(
+        provider: TransitProvider.bus,
+        legIndex: 0,
+        sectionIndex: 0,
+        serviceDate: day.date,
+        section: RouteSection(
+          mode: 'bus',
+          travelTime: 1200,
+          stopCount: 0,
+          intermediateStops: const [],
+        ),
+      ),
+      expectedReadyAt: readyAt,
+      shortageMinutes: 135,
+      reason: '無法趕上原班次',
+    );
+    final options = await service.options(
+      day: day,
+      risk: risk,
+      currentLocation: const LocationPoint(latitude: 25, longitude: 121),
+      now: DateTime(2026, 9, 23, 9, 30),
+    );
+    expect(options.single.provider, RouteProvider.google);
+    expect(google.departure, readyAt);
   });
 }
 
@@ -278,6 +417,29 @@ class _Gateway implements TdxRoutingGateway {
     departure = departureTime;
     return [];
   }
+}
+
+class _StaleGateway extends _Gateway {
+  @override
+  Future<List<TdxRoute>> getRoutingOptions({
+    required String origin,
+    required String destination,
+    DateTime? departureTime,
+  }) async => [
+    TdxRoute(
+      transfers: 0,
+      travelTime: 1200,
+      sections: [
+        RouteSection(
+          mode: 'bus',
+          scheduledDeparture: DateTime(2026, 9, 23, 10),
+          travelTime: 1200,
+          stopCount: 0,
+          intermediateStops: const [],
+        ),
+      ],
+    ),
+  ];
 }
 
 RouteDay _day() {

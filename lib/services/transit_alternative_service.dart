@@ -2,6 +2,7 @@ import '../features/route_planning/models/route_day.dart';
 import '../features/route_planning/models/route_travel_mode.dart';
 import '../models/tdx_route.dart';
 import 'google_route_planning_gateway.dart';
+import 'itinerary_schedule_service.dart';
 import 'location_service.dart';
 import 'tdx_service.dart';
 import 'transit_realtime_monitor.dart';
@@ -12,10 +13,12 @@ import 'transit_realtime_monitor.dart';
 class TransitAlternativeService {
   final TdxRoutingGateway routingGateway;
   final GoogleRoutePlanningGateway? googleGateway;
+  final ItineraryScheduleService schedule;
 
   const TransitAlternativeService({
     required this.routingGateway,
     this.googleGateway,
+    this.schedule = const ItineraryScheduleService(),
   });
 
   ({LocationPoint origin, DateTime departure}) startForRisk({
@@ -25,6 +28,15 @@ class TransitAlternativeService {
     required DateTime now,
   }) {
     final leg = day.travelLegs[risk.affectedSection.legIndex];
+    final earliestDeparture = departureForRisk(risk, now);
+    if (risk.incomingSection != null) {
+      // A missed connection resumes at the transfer stop, not at the place
+      // where the whole leg originally began.
+      return (
+        origin: originForRisk(risk, currentLocation),
+        departure: earliestDeparture,
+      );
+    }
     final previousVisit = day.visits.where(
       (visit) => visit.occurrenceId == leg.origin.id,
     );
@@ -43,13 +55,15 @@ class TransitAlternativeService {
             latitude: leg.origin.latitude,
             longitude: leg.origin.longitude,
           ),
-          departure: visitEnd,
+          departure: visitEnd.isAfter(earliestDeparture)
+              ? visitEnd
+              : earliestDeparture,
         );
       }
     }
     return (
       origin: originForRisk(risk, currentLocation),
-      departure: departureForRisk(risk, now),
+      departure: earliestDeparture,
     );
   }
 
@@ -71,11 +85,7 @@ class TransitAlternativeService {
 
   DateTime departureForRisk(TransitConnectionRisk risk, DateTime now) {
     final readyAt = risk.expectedReadyAt;
-    return risk.incomingSection != null &&
-            readyAt != null &&
-            readyAt.isAfter(now)
-        ? readyAt
-        : now;
+    return readyAt != null && readyAt.isAfter(now) ? readyAt : now;
   }
 
   Future<List<TdxRoute>> options({
@@ -97,7 +107,11 @@ class TransitAlternativeService {
         destination: '${leg.destination.latitude},${leg.destination.longitude}',
         departureTime: start.departure,
       );
-      if (routes.isNotEmpty) return routes;
+      final available = routes.where((route) {
+        final departure = schedule.firstKnownDeparture(route);
+        return departure == null || !departure.isBefore(start.departure);
+      }).toList();
+      if (available.isNotEmpty) return available;
     } catch (_) {
       if (googleGateway == null) rethrow;
     }

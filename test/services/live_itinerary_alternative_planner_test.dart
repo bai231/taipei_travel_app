@@ -268,6 +268,91 @@ void main() {
     expect(result.day!.travelLegs.first.route, same(selected));
     expect(result.day!.travelLegs.first.travelMode, RouteTravelMode.transit);
   });
+
+  test('原班次未換且時間未變時，不提供與原行程相同的備案', () async {
+    final original = _day();
+    final firstVisit = original.visits.first;
+    final firstLeg = original.travelLegs.first;
+    final day = RouteDay(
+      day: original.day,
+      date: original.date,
+      origin: original.origin,
+      visits: [firstVisit],
+      travelLegs: [
+        TravelLeg(
+          origin: firstLeg.origin,
+          destination: firstLeg.destination,
+          requestedDeparture: DateTime(2026, 9, 22, 9, 40),
+          schedule: const ScheduledVisit(
+            departureMinutes: 580,
+            arrivalMinutes: 600,
+            visitStartMinutes: 600,
+            visitEndMinutes: 660,
+            waitingMinutes: 0,
+            stayMinutes: 60,
+          ),
+          route: _route(20),
+        ),
+      ],
+      isValid: true,
+    );
+    final planner = LiveItineraryAlternativePlanner(
+      transit: _Transit(),
+      google: _Google(),
+    );
+    final unchanged = await planner.plan(
+      day: day,
+      currentLocation: const LocationPoint(latitude: 25, longitude: 121),
+      now: DateTime(2026, 9, 22, 9, 40),
+      completedCount: 0,
+      strategy: LiveAlternativeStrategy.preserveOrder,
+    );
+    expect(unchanged.canApply, isFalse);
+    expect(unchanged.failure, contains('相同'));
+
+    final later = await planner.plan(
+      day: day,
+      currentLocation: const LocationPoint(latitude: 25, longitude: 121),
+      now: DateTime(2026, 9, 22, 9, 40),
+      completedCount: 0,
+      strategy: LiveAlternativeStrategy.preserveOrder,
+      firstDeparture: DateTime(2026, 9, 22, 12, 15),
+    );
+    expect(later.canApply, isTrue);
+    expect(later.day!.travelLegs.first.schedule.departureMinutes, 735);
+    expect(later.day!.visits.first.startMinutes, 755);
+  });
+
+  test('候選路線只有轉乘段時間、但已開出時仍須拒絕', () async {
+    final day = _day();
+    final result =
+        await LiveItineraryAlternativePlanner(
+          transit: _Transit(),
+          google: _Google(),
+        ).plan(
+          day: day,
+          currentLocation: const LocationPoint(latitude: 25, longitude: 121),
+          now: DateTime(2026, 9, 22, 10, 30),
+          completedCount: 0,
+          strategy: LiveAlternativeStrategy.preserveOrder,
+          affectedLegIndex: 0,
+          selectedFirstRoute: TdxRoute(
+            transfers: 0,
+            travelTime: 1200,
+            sections: [
+              RouteSection(
+                mode: 'bus',
+                scheduledDeparture: DateTime(2026, 9, 22, 10, 15),
+                travelTime: 1200,
+                stopCount: 0,
+                intermediateStops: const [],
+              ),
+            ],
+          ),
+        );
+    expect(result.canApply, isFalse);
+    expect(result.failure, contains('已出發'));
+  });
 }
 
 class _Transit implements TdxRoutingGateway {
