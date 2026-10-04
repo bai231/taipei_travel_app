@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:geolocator/geolocator.dart';
 import '../models/place.dart';
 import '../services/place_service.dart';
 import '../services/location_service.dart';
@@ -8,34 +10,32 @@ import '../services/language_service.dart';
 import '../theme/app_typography.dart';
 
 class HomePage extends StatefulWidget {
-  const HomePage({super.key});
+  const HomePage({super.key, this.placeLoader, this.locationGateway});
+
+  final Future<List<Place>> Function()? placeLoader;
+  final CurrentLocationGateway? locationGateway;
 
   @override
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> {
-  final PlaceService placeService = PlaceService();
-  final LocationService _locationService = const LocationService(); // 📍 定位服務實例
+class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
+  late final PlaceService placeService = PlaceService();
+  CurrentLocationGateway get _locationService =>
+      widget.locationGateway ?? const LocationService();
 
   // 網上熱門行程清單（包含行程名稱與圖片，未來可替換為 Supabase 雲端網址）
   final List<Map<String, String>> hotTrips = const [
-    {
-      'name': '台北文藝慢活之旅',
-      'image': 'assets/test1.jpg',
-    },
-    {
-      'name': '九份老街與山城夕陽',
-      'image': 'assets/test2.jpg',
-    },
-    {
-      'name': '淡水河畔浪漫一日遊',
-      'image': 'assets/test3.jpg',
-    },
+    {'name': '台北文藝慢活之旅', 'image': 'assets/test1.jpg'},
+    {'name': '九份老街與山城夕陽', 'image': 'assets/test2.jpg'},
+    {'name': '淡水河畔浪漫一日遊', 'image': 'assets/test3.jpg'},
   ];
 
   List<Place> places = [];
+  List<Place> _basePlaces = [];
   bool isLoading = true;
+  bool _isRetryingLocation = false;
+  bool _returningFromLocationSettings = false;
   String? errorMessage;
 
   LocationPoint? _currentUserLocation; // 📍 紀錄是否成功抓到使用者的經緯度
@@ -43,45 +43,62 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     loadPlaces();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _returningFromLocationSettings) {
+      _returningFromLocationSettings = false;
+      _retryLocation();
+    }
+  }
+
+  List<Place> _recommendationsFor(
+    List<Place> source,
+    LocationPoint? userLocation,
+  ) {
+    if (userLocation == null) return source;
+    final nearby = source.map((place) {
+      if (place.latitude == 0 || place.longitude == 0) return place;
+      final distance = LocationService.getDistance(
+        userLocation.latitude,
+        userLocation.longitude,
+        place.latitude,
+        place.longitude,
+      );
+      return place.copyWith(distanceInMeters: distance);
+    }).toList();
+    nearby.sort((a, b) {
+      if (a.distanceInMeters == null) return 1;
+      if (b.distanceInMeters == null) return -1;
+      return a.distanceInMeters!.compareTo(b.distanceInMeters!);
+    });
+    return nearby;
   }
 
   Future<void> loadPlaces() async {
     try {
       // 1. 同步平行啟動「撈取景點」與「取得手機 GPS 位置」
-      final placesFuture = placeService.getPlaces();
+      final placesFuture =
+          widget.placeLoader?.call() ?? placeService.getPlaces();
       final locationFuture = _locationService.getCurrentLocation();
 
       final results = await Future.wait([placesFuture, locationFuture]);
-      List<Place> fetchedPlaces = results[0] as List<Place>;
+      final fetchedPlaces = results[0] as List<Place>;
       final LocationPoint? userLocation = results[1] as LocationPoint?;
-
-      // 2. 若有成功抓到使用者定位，計算距離並排序
-      if (userLocation != null) {
-        fetchedPlaces = fetchedPlaces.map((place) {
-          if (place.latitude != 0.0 && place.longitude != 0.0) {
-            final dist = LocationService.getDistance(
-              userLocation.latitude,
-              userLocation.longitude,
-              place.latitude,
-              place.longitude,
-            );
-            return place.copyWith(distanceInMeters: dist);
-          }
-          return place;
-        }).toList();
-
-        // 依距離由小到大（由近到遠）排序
-        fetchedPlaces.sort((a, b) {
-          if (a.distanceInMeters == null) return 1;
-          if (b.distanceInMeters == null) return -1;
-          return a.distanceInMeters!.compareTo(b.distanceInMeters!);
-        });
-      }
 
       if (!mounted) return;
       setState(() {
-        places = fetchedPlaces;
+        _basePlaces = fetchedPlaces;
+        places = _recommendationsFor(fetchedPlaces, userLocation);
         _currentUserLocation = userLocation;
         isLoading = false;
       });
@@ -91,6 +108,34 @@ class _HomePageState extends State<HomePage> {
         errorMessage = e.toString();
         isLoading = false;
       });
+    }
+  }
+
+  Future<void> _retryLocation() async {
+    if (_isRetryingLocation || isLoading) return;
+    setState(() => _isRetryingLocation = true);
+    final location = await _locationService.getCurrentLocation();
+    if (!mounted) return;
+    setState(() {
+      _currentUserLocation = location;
+      places = _recommendationsFor(_basePlaces, location);
+      _isRetryingLocation = false;
+    });
+  }
+
+  Future<void> _openLocationSettings() async {
+    _returningFromLocationSettings = true;
+    try {
+      final opened = await (await Geolocator.isLocationServiceEnabled()
+          ? Geolocator.openAppSettings()
+          : Geolocator.openLocationSettings());
+      if (!opened) _returningFromLocationSettings = false;
+    } catch (_) {
+      _returningFromLocationSettings = false;
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('無法開啟定位設定，請到手機設定手動開啟定位與 App 位置權限。')),
+      );
     }
   }
 
@@ -119,7 +164,8 @@ class _HomePageState extends State<HomePage> {
                   scrollDirection: Axis.horizontal,
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   itemCount: hotTrips.length,
-                  separatorBuilder: (context, index) => const SizedBox(width: 14),
+                  separatorBuilder: (context, index) =>
+                      const SizedBox(width: 14),
                   itemBuilder: (context, index) {
                     final trip = hotTrips[index];
                     final String tripName = trip['name'] ?? '精選行程';
@@ -132,7 +178,8 @@ class _HomePageState extends State<HomePage> {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (_) => ItineraryResultPage(tripTitle: tripName),
+                            builder: (_) =>
+                                ItineraryResultPage(tripTitle: tripName),
                           ),
                         );
                       },
@@ -153,9 +200,7 @@ class _HomePageState extends State<HomePage> {
                           child: Stack(
                             children: [
                               // 底層：行程背景照片（自動辨識網路網址或本地 Asset）
-                              Positioned.fill(
-                                child: _buildTripImage(imageSrc),
-                              ),
+                              Positioned.fill(child: _buildTripImage(imageSrc)),
 
                               // 中層：半透明漸層黑遮罩（強化文字對比）
                               Positioned.fill(
@@ -209,22 +254,32 @@ class _HomePageState extends State<HomePage> {
                                           vertical: 3,
                                         ),
                                         decoration: BoxDecoration(
-                                          color: Colors.white.withValues(alpha: 0.25),
-                                          borderRadius: BorderRadius.circular(10),
+                                          color: Colors.white.withValues(
+                                            alpha: 0.25,
+                                          ),
+                                          borderRadius: BorderRadius.circular(
+                                            10,
+                                          ),
                                           border: Border.all(
-                                            color: Colors.white.withValues(alpha: 0.5),
+                                            color: Colors.white.withValues(
+                                              alpha: 0.5,
+                                            ),
                                             width: 0.8,
                                           ),
                                         ),
                                         child: Row(
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
-                                            Text(
-                                              LanguageService.tr(context, 'view_trip'),
-                                              style: TextStyle(
-                                                color: Colors.white,
-                                                fontSize: 10,
-                                                fontWeight: FontWeight.w500,
+                                            Flexible(
+                                              child: Text(
+                                                LanguageService.tr(context, 'view_trip'),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 10,
+                                                  fontWeight: FontWeight.w500,
+                                                ),
                                               ),
                                             ),
                                             SizedBox(width: 2),
@@ -252,24 +307,40 @@ class _HomePageState extends State<HomePage> {
               // 3. 區塊二：景點推薦標題
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 24, 16, 12),
-                child: Row(
+                child: Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 8,
+                  runSpacing: 6,
                   children: [
                     Text(
-                      LanguageService.tr(context, 'spot_recommendations'),
+                      LanguageService.tr(
+                        context,
+                        _currentUserLocation == null
+                            ? 'spot_recommendations'
+                            : 'nearby_spot_recommendations',
+                      ),
                       style: AppTypography.headline(),
                     ),
-                    const SizedBox(width: 8),
                     if (_currentUserLocation != null)
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 2,
+                        ),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF70B19B).withValues(alpha: 0.25),
+                          color: const Color(
+                            0xFF70B19B,
+                          ).withValues(alpha: 0.25),
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.near_me_rounded, size: 12, color: Color(0xFF1E3A2F)),
+                            Icon(
+                              Icons.near_me_rounded,
+                              size: 12,
+                              color: Color(0xFF1E3A2F),
+                            ),
                             SizedBox(width: 3),
                             Text(
                               LanguageService.tr(context, 'home_distance_sort'),
@@ -285,6 +356,55 @@ class _HomePageState extends State<HomePage> {
                   ],
                 ),
               ),
+
+              if (!isLoading &&
+                  errorMessage == null &&
+                  _currentUserLocation == null &&
+                  !kIsWeb &&
+                  defaultTargetPlatform == TargetPlatform.android)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                  child: Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            '開啟手機定位並允許 App 使用位置，即可依距離顯示附近景點；目前顯示一般推薦。',
+                          ),
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 4,
+                            children: [
+                              TextButton.icon(
+                                onPressed: _openLocationSettings,
+                                icon: const Icon(Icons.settings_outlined),
+                                label: const Text('定位設定'),
+                              ),
+                              TextButton.icon(
+                                onPressed: _isRetryingLocation
+                                    ? null
+                                    : _retryLocation,
+                                icon: _isRetryingLocation
+                                    ? const SizedBox(
+                                        width: 18,
+                                        height: 18,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : const Icon(Icons.refresh),
+                                label: const Text('重試定位'),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
 
               // 4. Supabase 景點列表展示
               if (isLoading)
