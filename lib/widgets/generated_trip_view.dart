@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../models/generated_trip.dart';
+import '../services/language_service.dart';
+import '../theme/app_typography.dart';
 import 'trip_item_card.dart';
 
 class GeneratedTripView extends StatelessWidget {
@@ -16,9 +18,9 @@ class GeneratedTripView extends StatelessWidget {
       children: [
         const SizedBox(height: 20),
 
-        const Text(
-          '推薦行程',
-          style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+        Text(
+          LanguageService.tr(context, 'recommended_itinerary'),
+          style: AppTypography.headline(),
         ),
 
         const SizedBox(height: 16),
@@ -38,15 +40,15 @@ class GeneratedTripView extends StatelessWidget {
 
         Text(
           'Day $day',
-          style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          style: AppTypography.sectionTitle(),
         ),
 
         const Divider(),
 
         if (items.isEmpty)
-          const Padding(
+          Padding(
             padding: EdgeInsets.symmetric(vertical: 12),
-            child: Text('這一天目前沒有安排景點', style: TextStyle(color: Colors.grey)),
+            child: Text(LanguageService.tr(context, 'trip_day_no_spots'), style: const TextStyle(color: Colors.grey)),
           ),
 
         ...items.map((item) => TripItemCard(item: item)),

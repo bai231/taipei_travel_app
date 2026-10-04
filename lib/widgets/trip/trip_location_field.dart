@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../services/language_service.dart';
 
 class TripLocationField extends StatelessWidget {
   final String location;
@@ -41,7 +42,7 @@ class TripLocationField extends StatelessWidget {
       initialValue: location,
 
       decoration: InputDecoration(
-        labelText: "旅遊地點",
+        labelText: LanguageService.tr(context, 'trip_location'),
         prefixIcon: const Icon(Icons.location_on),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
       ),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../services/language_service.dart';
 
 class PeopleCounter extends StatelessWidget {
   final int people;
@@ -24,7 +25,7 @@ class PeopleCounter extends StatelessWidget {
 
           const SizedBox(width: 12),
 
-          const Expanded(child: Text("旅遊人數", style: TextStyle(fontSize: 16))),
+          Expanded(child: Text(LanguageService.tr(context, 'trip_people'), style: const TextStyle(fontSize: 16))),
 
           IconButton(
             onPressed: people > 1
@@ -36,7 +37,7 @@ class PeopleCounter extends StatelessWidget {
           ),
 
           Text(
-            "$people 人",
+            "$people ${LanguageService.tr(context, 'trip_people_unit')}",
             style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
           ),
 

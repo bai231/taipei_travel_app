@@ -9,6 +9,7 @@ import 'profile_page.dart';
 import 'setting_page.dart';
 import 'guide_overlay_screen.dart';
 import 'login_screen.dart';
+import '../services/language_service.dart';
 
 class MainPage extends StatefulWidget {
   const MainPage({super.key});
@@ -74,22 +75,21 @@ class _MainPageState extends State<MainPage> {
 
     if (guideRect != null) {
       steps.add(GuideStep(
-        title: '使用指南與設定',
-        desc: '點擊這裡可以隨時再次開啟這份按鍵使用導引說明。',
+        title: LanguageService.tr(context, 'guide_settings_title'),
+        desc: LanguageService.tr(context, 'guide_settings_desc'),
         targetRect: guideRect,
         isUpwards: false,
       ));
     }
 
     if (navRect != null) {
-      steps.add(GuideStep(
-        title: '底部切換導航',
-        desc: '隨時在「首頁」、「行程安排」、「個人空間」與「靈感搜尋」之間切換。',
-        targetRect: navRect,
-        isUpwards: true,
-      ));
+    steps.add(GuideStep(
+      title: LanguageService.tr(context, 'guide_nav_title'),
+      desc: LanguageService.tr(context, 'guide_nav_desc'),
+      targetRect: navRect,
+      isUpwards: true,
+    ));
     }
-
     if (steps.isEmpty) return;
 
     Navigator.of(context).push(
@@ -119,8 +119,8 @@ class _MainPageState extends State<MainPage> {
               size: 20,
               color: Color(0xFF1E3A2F),
             ),
-            label: const Text(
-              "使用指南",
+            label: Text(
+              LanguageService.tr(context, 'guide'),
               style: TextStyle(
                 color: Color(0xFF1E3A2F),
                 fontSize: 15,
@@ -139,8 +139,8 @@ class _MainPageState extends State<MainPage> {
                       MaterialPageRoute(builder: (_) => const LoginScreen()),
                     );
                   },
-                  child: const Text(
-                    "登入",
+                  child: Text(
+                    LanguageService.tr(context, 'login'),
                     style: TextStyle(
                       color: Color(0xFF1E3A2F),
                       fontSize: 15,
@@ -206,13 +206,24 @@ class _MainPageState extends State<MainPage> {
             unselectedItemColor: Colors.black38,
             selectedFontSize: 12,
             unselectedFontSize: 12,
-            items: const [
-              BottomNavigationBarItem(icon: Icon(Icons.home_rounded), label: '首頁'),
-              BottomNavigationBarItem(icon: Icon(Icons.auto_fix_high_rounded), label: '行程'),
-              BottomNavigationBarItem(icon: Icon(Icons.star_rounded), label: '我的'),
-              //BottomNavigationBarItem(icon: Icon(Icons.search_rounded), label: '靈感'),
-              BottomNavigationBarItem(icon: Icon(Icons.settings_rounded), label: '設定'),
-            ],
+  items: [
+    BottomNavigationBarItem(
+      icon: const Icon(Icons.home_rounded),
+      label: LanguageService.tr(context, 'nav_home'),
+    ),
+    BottomNavigationBarItem(
+      icon: const Icon(Icons.auto_fix_high_rounded),
+      label: LanguageService.tr(context, 'nav_trip'),
+    ),
+    BottomNavigationBarItem(
+      icon: const Icon(Icons.person_rounded),
+      label: LanguageService.tr(context, 'nav_profile'),
+    ),
+    BottomNavigationBarItem(
+      icon: const Icon(Icons.settings_rounded),
+      label: LanguageService.tr(context, 'nav_settings'),
+    ),
+  ],
           ),
         ),
       ),

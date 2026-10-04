@@ -47,6 +47,7 @@ dependencies:
   shared_preferences: ^2.5.5
   supabase_flutter: ^2.17.2
   url_launcher: ^6.3.2
+  google_fonts: ^9.0.0
 
 dev_dependencies:
   flutter_test:
@@ -75,6 +76,20 @@ flutter:
     - assets/test2.jpg
     - assets/test3.jpg
     - assets/geo/taiwan_counties.geojson
+  fonts:
+    - family: NotoSansTC
+      fonts:
+        - asset: assets/fonts/NotoSansTC-VF.ttf
+          weight: 100
+          # The variable font covers the complete 100–900 weight range.
+    - family: Nunito
+      fonts:
+        - asset: assets/fonts/Nunito-Variable.ttf
+          weight: 200
+          # The variable font covers weights 200–1000.
+    - family: jf-openhunround # 粉圓字體
+      fonts:
+        - asset: assets/fonts/jf-openhuninn-2.1.ttf
   # To add assets to your application, add an assets section, like this:
   # assets:
   #   - images/a_dot_burr.jpeg

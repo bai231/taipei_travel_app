@@ -8,6 +8,7 @@ import '../../../services/route_error_message.dart';
 import '../../../services/route_geometry_gateway.dart';
 import '../../../services/route_geometry_normalizer.dart';
 import '../../../services/location_service.dart';
+import '../../../theme/app_colors.dart';
 import '../models/route_day.dart';
 import '../models/route_visit.dart';
 
@@ -436,11 +437,11 @@ class _RouteLegend extends StatelessWidget {
         child: Wrap(
           spacing: 10,
           runSpacing: 6,
-          children: const [
+          children: [
             _LegendItem(color: Color(0xFF616161), label: '步行'),
             _LegendItem(color: Color(0xFFF57C00), label: '公車'),
             _LegendItem(color: Color(0xFF1565C0), label: '捷運'),
-            _LegendItem(color: Color(0xFF7B1FA2), label: '台鐵'),
+            _LegendItem(color: AppColors.primary, label: '台鐵'),
             _LegendItem(color: Color(0xFFC2185B), label: '高鐵'),
             _LegendItem(color: Color(0xFF2E7D32), label: '汽車'),
             _LegendItem(color: Color(0xFFD32F2F), label: '示意連線（虛線）'),

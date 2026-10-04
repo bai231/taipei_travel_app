@@ -3,14 +3,19 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/widgets.dart' as flutter_widgets;
 
+
+import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
+import '../theme/app_typography.dart';
 import '../services/favorite_service.dart';
+import '../services/saved_itinerary_service.dart';
 import '../models/place.dart';
 import 'itinerary_result_page.dart';
 import 'place_detail_page.dart';
 import '../services/user_data_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide Container;
-import '../services/saved_itinerary_service.dart';
+import '../services/language_service.dart';
+import '../widgets/place_image.dart';
 import 'saved_itinerary_result_page.dart';
 
 class ProfilePage extends StatefulWidget {
@@ -21,60 +26,163 @@ class ProfilePage extends StatefulWidget {
 }
 
 class _ProfilePageState extends State<ProfilePage> {
-  Future<List<Map<String, dynamic>>>? _savedItineraries;
-  StreamSubscription<AuthState>? _authSubscription;
-
-  void _loadSavedItineraries() {
-    final service = SavedItineraryService(Supabase.instance.client);
-    setState(() {
-      _savedItineraries = service.currentUserId == null
-          ? Future.value([])
-          : service.list();
-    });
-  }
-
   final FavoriteService _favoriteService = FavoriteService();
   final UserDataService _userDataService = UserDataService();
-  // 模擬行程與資料夾資料（指定明確型別避免轉型錯誤）
+  late final SavedItineraryService _savedItineraryService;
+  Future<List<Map<String, dynamic>>>? _savedItineraries;
+
+  // 模擬行程與資料夾資料（指定明確型別避免轉型錯誤）[cite: 1]
   final List<String> _itineraries = ["台北一日遊", "九份文化之旅"];
   List<Map<String, dynamic>> _folders = [];
-  /*final List<Map<String, dynamic>> _folders = [
-    {"title": "必去美食", "places": <Place>[]},
-    {"title": "拍照打卡", "places": <Place>[]},
-  ];*/
+
+  StreamSubscription<AuthState>? _authSub; // 統一使用 _authSub 變數名稱
 
   @override
-  void initState() {
-    super.initState();
-    // 1. 監聽收藏狀態變化（首頁或詳情頁按愛心時，這裡自動同步刷新）
-    _favoriteService.addListener(_onFavoritesChanged);
-    // 🌟 關鍵修復：進入頁面時主動向 Supabase 撈取雲端收藏！
-    _favoriteService.fetchFavoritesFromCloud();
-    _loadCloudFolders();
-    _loadSavedItineraries();
-    SavedItineraryService.changes.addListener(_loadSavedItineraries);
-    _authSubscription = Supabase.instance.client.auth.onAuthStateChange.listen((
-      _,
-    ) {
-      if (mounted) _loadSavedItineraries();
-    });
-    //_loadExportedTrips();
-  }
+void initState() {
+  super.initState();
 
-  Future<void> _loadCloudFolders() async {
-    final cloudFolders = await _userDataService.fetchFolders();
-    //print("👉 抓回來的資料夾筆數: ${cloudFolders.length}");
+  _savedItineraryService = SavedItineraryService(Supabase.instance.client);
+  _favoriteService.addListener(_onFavoritesChanged);
+  SavedItineraryService.changes.addListener(_onSavedItinerariesChanged);
+
+  // 🌟 1. 全域監聽登入狀態改變
+  _authSub = Supabase.instance.client.auth.onAuthStateChange.listen((data) async {
+    final AuthChangeEvent event = data.event;
+
+    if (event == AuthChangeEvent.signedIn) {
+      // 關鍵防延遲：等 300 毫秒確保 Supabase Session 完整寫入本地
+      await Future.delayed(const Duration(milliseconds: 300));
+
+      if (mounted) {
+        _favoriteService.fetchFavoritesFromCloud();
+        await _loadCloudFolders();
+        _loadSavedItineraries();
+      }
+    } else if (event == AuthChangeEvent.signedOut) {
+      if (mounted) {
+        setState(() {
+          _savedItineraries = Future.value([]);
+          _folders.clear();
+        });
+      }
+    }
+  });
+
+  // 🌟 2. 初始進入頁面時載入
+  _favoriteService.fetchFavoritesFromCloud();
+  _loadCloudFolders();
+  _loadSavedItineraries();
+}
+
+void _onSavedItinerariesChanged() {
+  _loadSavedItineraries();
+}
+
+void _loadSavedItineraries() {
+  if (!mounted) return;
+  final userId = _savedItineraryService.currentUserId;
+  setState(() {
+    _savedItineraries = userId == null
+        ? Future.value([])
+        : _savedItineraryService.list(offset: 0, limit: 50);
+  });
+}
+
+// 🌟 3. 確保 _loadCloudFolders 撈完後一定有呼叫 setState 刷新畫面！
+Future<void> _loadCloudFolders() async {
+  try {
+    final folders = await _userDataService.fetchFolders();
+    debugPrint("📂 [ProfilePage] 自動抓取資料夾成功: ${folders.length} 個");
     if (mounted) {
       setState(() {
-        _folders = cloudFolders;
+        _folders = folders;
       });
     }
+  } catch (e) {
+    debugPrint("❌ [ProfilePage] 抓取資料夾失敗: $e");
   }
+}
+
+Future<bool> _confirmDelete({required String title, required String name}) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: Text(title),
+      content: Text(
+        LanguageService.tr(context, 'delete_item_confirm')
+            .replaceAll('{name}', name),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(dialogContext, false),
+          child: Text(LanguageService.tr(context, 'dialog_cancel')),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(dialogContext, true),
+          child: Text(
+            LanguageService.tr(context, 'delete_action'),
+            style: TextStyle(color: AppColors.textSecondary),
+          ),
+        ),
+      ],
+    ),
+  );
+  return confirmed == true;
+}
+
+Future<bool> _deleteSavedTrip(String id, String title) async {
+  if (!await _confirmDelete(
+    title: LanguageService.tr(context, 'delete_trip'),
+    name: title,
+  )) return false;
+  try {
+    await _savedItineraryService.delete(id);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${LanguageService.tr(context, 'delete_success')}「$title」')),
+      );
+    }
+    return true;
+  } catch (_) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(LanguageService.tr(context, 'delete_failed'))),
+      );
+    }
+    return false;
+  }
+}
+
+Future<bool> _deleteSavedFolder(Map<String, dynamic> folder) async {
+  final id = (folder['id'] as num?)?.toInt();
+  if (id == null) return false;
+  final title = folder['title']?.toString() ?? '';
+  if (!await _confirmDelete(
+    title: LanguageService.tr(context, 'delete_folder'),
+    name: title,
+  )) return false;
+  final deleted = await _userDataService.deleteFolder(id);
+  if (!mounted) return false;
+  if (deleted) {
+    await _loadCloudFolders();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('${LanguageService.tr(context, 'delete_success')}「$title」')),
+    );
+    return true;
+  } else {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(LanguageService.tr(context, 'delete_failed'))),
+    );
+    return false;
+  }
+}
+
+
 
   @override
   void dispose() {
-    _authSubscription?.cancel();
-    SavedItineraryService.changes.removeListener(_loadSavedItineraries);
+    _authSub?.cancel();
+    SavedItineraryService.changes.removeListener(_onSavedItinerariesChanged);
     _favoriteService.removeListener(_onFavoritesChanged);
     super.dispose();
   }
@@ -125,7 +233,7 @@ class _ProfilePageState extends State<ProfilePage> {
                       // 1. 加入行程
                       _buildDialogOption(
                         icon: Icons.add_circle_outline_rounded,
-                        label: '加入行程',
+                        label: LanguageService.tr(parentContext, 'add_to_trip'),
                         onTap: () {
                           Navigator.pop(dialogCtx);
                           _showAddToTripDialog(parentContext, place);
@@ -135,7 +243,7 @@ class _ProfilePageState extends State<ProfilePage> {
                       // 2. 加入資料夾
                       _buildDialogOption(
                         icon: Icons.folder_open_rounded,
-                        label: '加入資料夾',
+                        label: LanguageService.tr(parentContext, 'add_to_folder'),
                         onTap: () {
                           Navigator.pop(dialogCtx);
                           _showSelectFolderDialog(parentContext, place);
@@ -145,24 +253,21 @@ class _ProfilePageState extends State<ProfilePage> {
                       // 3. 取消收藏（安全呼叫 toggleFavorite）
                       _buildDialogOption(
                         icon: Icons.favorite_border_rounded,
-                        label: '取消收藏',
+                        label: LanguageService.tr(parentContext, 'cancel_fav'),
                         textColor: Colors.redAccent,
                         iconColor: Colors.redAccent,
-                        onTap: () async {
+                        onTap: () {
                           Navigator.pop(dialogCtx);
-                          await _favoriteService.toggleFavorite(place);
-                          if (parentContext.mounted) {
-                            ScaffoldMessenger.of(parentContext).showSnackBar(
-                              SnackBar(content: Text('已取消收藏「${place.name}」')),
-                            );
-                          }
+                          unawaited(
+                            _removeFavoriteAndShowMessage(parentContext, place),
+                          );
                         },
                       ),
 
                       // 4. 查看資訊
                       _buildDialogOption(
                         icon: Icons.info_outline_rounded,
-                        label: '查看資訊',
+                        label: LanguageService.tr(parentContext, 'profile_view_info'),
                         onTap: () {
                           Navigator.pop(dialogCtx);
                           Navigator.push(
@@ -181,6 +286,20 @@ class _ProfilePageState extends State<ProfilePage> {
           ),
         );
       },
+    );
+  }
+
+  Future<void> _removeFavoriteAndShowMessage(
+    BuildContext context,
+    Place place,
+  ) async {
+    await _favoriteService.toggleFavorite(place);
+    if (!context.mounted) return;
+
+    final message = LanguageService.tr(context, 'place_favorite_removed')
+        .replaceAll('{place}', place.name);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
     );
   }
 
@@ -238,37 +357,35 @@ class _ProfilePageState extends State<ProfilePage> {
               ),
               title: Row(
                 children: [
-                  const Icon(
-                    Icons.folder_open_rounded,
-                    color: AppColors.primaryDark,
-                    size: 24,
-                  ),
+                  Icon(Icons.folder_open_rounded, color: AppColors.primaryDark, size: 24),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       folder["title"].toString(),
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.textPrimary,
-                        fontSize: 18,
-                      ),
+                      style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimary, fontSize: 18),
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
                   Text(
                     "(${places.length})",
-                    style: const TextStyle(
-                      fontSize: 14,
-                      color: AppColors.textSecondary,
-                      fontWeight: FontWeight.normal,
-                    ),
+                    style: TextStyle(fontSize: 14, color: AppColors.textSecondary, fontWeight: FontWeight.normal),
+                  ),
+                  IconButton(
+                    tooltip: LanguageService.tr(context, 'delete_folder'),
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () async {
+                      if (await _deleteSavedFolder(folder) && dialogCtx.mounted) {
+                        Navigator.pop(dialogCtx);
+                      }
+                    },
+                    icon: Icon(Icons.delete_outline, color: AppColors.textSecondary),
                   ),
                 ],
               ),
               content: SizedBox(
                 width: double.maxFinite,
                 child: places.isEmpty
-                    ? const Padding(
+                    ? Padding(
                         padding: EdgeInsets.symmetric(vertical: 24.0),
                         child: Center(
                           child: Text(
@@ -307,19 +424,11 @@ class _ProfilePageState extends State<ProfilePage> {
                                   ),
                                   borderRadius: BorderRadius.circular(10),
                                 ),
-                                child: const Icon(
-                                  Icons.place_outlined,
-                                  color: AppColors.textPrimary,
-                                  size: 20,
-                                ),
+                                child: Icon(Icons.place_outlined, color: AppColors.textPrimary, size: 20),
                               ),
                               title: Text(
                                 place.name,
-                                style: const TextStyle(
-                                  color: AppColors.textPrimary,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 14,
-                                ),
+                                style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.bold, fontSize: 14),
                               ),
                               trailing: IconButton(
                                 icon: const Icon(
@@ -363,13 +472,7 @@ class _ProfilePageState extends State<ProfilePage> {
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(ctx),
-                  child: const Text(
-                    "關閉",
-                    style: TextStyle(
-                      color: AppColors.primaryDark,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
+                  child: Text("關閉", style: TextStyle(color: AppColors.primaryDark, fontWeight: FontWeight.bold)),
                 ),
               ],
             );
@@ -386,7 +489,7 @@ class _ProfilePageState extends State<ProfilePage> {
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text(
+        title: Text(
           "加入資料夾",
           style: TextStyle(
             fontWeight: FontWeight.bold,
@@ -399,7 +502,7 @@ class _ProfilePageState extends State<ProfilePage> {
             mainAxisSize: MainAxisSize.min,
             children: [
               if (_folders.isEmpty)
-                const Padding(
+                Padding(
                   padding: EdgeInsets.symmetric(vertical: 16.0),
                   child: Text(
                     "目前尚無任何資料夾",
@@ -414,21 +517,15 @@ class _ProfilePageState extends State<ProfilePage> {
                     itemBuilder: (context, index) {
                       final folder = _folders[index];
                       return ListTile(
-                        leading: const Icon(
-                          Icons.folder_outlined,
-                          color: AppColors.textPrimary,
-                        ),
+                        leading: Icon(Icons.folder_outlined, color: AppColors.textPrimary),
                         title: Text(
                           folder["title"].toString(),
-                          style: const TextStyle(
+                          style: TextStyle(
                             color: AppColors.textPrimary,
                             fontWeight: FontWeight.w500,
                           ),
                         ),
-                        trailing: const Icon(
-                          Icons.add,
-                          color: AppColors.textPrimary,
-                        ),
+                        trailing: Icon(Icons.add, color: AppColors.textPrimary),
                         onTap: () async {
                           final int folderId = (folder["id"] as num).toInt();
                           Navigator.pop(ctx); // 先關閉彈窗
@@ -467,11 +564,8 @@ class _ProfilePageState extends State<ProfilePage> {
                   Navigator.pop(ctx);
                   _showCreateFolderDialog(parentContext, place);
                 },
-                icon: const Icon(
-                  Icons.create_new_folder_outlined,
-                  color: AppColors.primaryDark,
-                ),
-                label: const Text(
+                icon: Icon(Icons.create_new_folder_outlined, color: AppColors.primaryDark),
+                label: Text(
                   "建立新資料夾",
                   style: TextStyle(
                     color: AppColors.primaryDark,
@@ -494,7 +588,7 @@ class _ProfilePageState extends State<ProfilePage> {
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text(
+        title: Text(
           "建立資料夾",
           style: TextStyle(
             fontWeight: FontWeight.bold,
@@ -504,26 +598,23 @@ class _ProfilePageState extends State<ProfilePage> {
         content: TextField(
           controller: folderController,
           autofocus: true,
-          style: const TextStyle(color: AppColors.textPrimary),
+          style: TextStyle(color: AppColors.textPrimary),
           decoration: InputDecoration(
             hintText: "請輸入資料夾名稱",
-            hintStyle: const TextStyle(color: AppColors.textSecondary),
+            hintStyle: TextStyle(color: AppColors.textSecondary),
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text(
-              "取消",
-              style: TextStyle(color: AppColors.textSecondary),
-            ),
+            child: Text("取消", style: TextStyle(color: AppColors.textSecondary)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.primary,
               foregroundColor: AppColors.surface,
-              shape: const StadiumBorder(),
+              shape: StadiumBorder(),
             ),
             onPressed: () async {
               final folderName = folderController.text.trim();
@@ -570,16 +661,15 @@ class _ProfilePageState extends State<ProfilePage> {
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text(
-          "加入行程",
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            color: AppColors.textPrimary,
-          ),
+        title: Text(
+          LanguageService.tr(ctx, 'add_to_trip_dialog_title'),
+          style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimary),
         ),
         content: SizedBox(
           width: double.maxFinite,
-          child: ListView.builder(
+          child: _itineraries.isEmpty
+              ? Center(child: Text(LanguageService.tr(ctx, 'add_to_trip_empty')))
+              : ListView.builder(
             shrinkWrap: true,
             itemCount: _itineraries.length,
             itemBuilder: (context, index) {
@@ -587,16 +677,15 @@ class _ProfilePageState extends State<ProfilePage> {
               return ListTile(
                 title: Text(
                   trip,
-                  style: const TextStyle(
-                    color: AppColors.textPrimary,
-                    fontWeight: FontWeight.w500,
-                  ),
+                  style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w500),
                 ),
-                trailing: const Icon(Icons.add, color: AppColors.textPrimary),
-                onTap: () async {
+                trailing: Icon(Icons.add, color: AppColors.textPrimary),
+                onTap: () async{
                   Navigator.pop(ctx);
                   ScaffoldMessenger.of(parentContext).showSnackBar(
-                    SnackBar(content: Text("已將「${place.name}」加入「$trip」！")),
+                    SnackBar(content: Text(LanguageService.tr(parentContext, 'add_to_trip_success')
+                        .replaceAll('{place}', place.name)
+                        .replaceAll('{trip}', trip))),
                   );
                 },
               );
@@ -620,7 +709,7 @@ class _ProfilePageState extends State<ProfilePage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // 個人空間：自己的行程與收藏分開呈現。
-              const Row(
+              Row(
                 children: [
                   Icon(
                     Icons.person_outline_rounded,
@@ -629,13 +718,8 @@ class _ProfilePageState extends State<ProfilePage> {
                   ),
                   SizedBox(width: 8),
                   Text(
-                    "個人空間",
-                    style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.textPrimary,
-                      letterSpacing: 0.5,
-                    ),
+                    LanguageService.tr(context, 'personal_space'),
+                    style: AppTypography.headline()
                   ),
                 ],
               ),
@@ -643,20 +727,17 @@ class _ProfilePageState extends State<ProfilePage> {
               const SizedBox(height: 24),
 
               // 景點區塊
-              const Text(
-                "我的行程",
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textPrimary,
-                ),
+              Text(
+                LanguageService.tr(context, 'my_trips'),
+                style: AppTypography.sectionTitle(),
               ),
               const SizedBox(height: 8),
-              const Text(
-                "你親自規劃並儲存的旅程",
+              Text(
+                LanguageService.tr(context, 'my_trips_desc'),
                 style: TextStyle(color: AppColors.textPrimary),
               ),
               const SizedBox(height: 12),
+
               FutureBuilder<List<Map<String, dynamic>>>(
                 future: _savedItineraries,
                 builder: (context, snapshot) {
@@ -667,9 +748,9 @@ class _ProfilePageState extends State<ProfilePage> {
                         child: snapshot.hasError
                             ? TextButton(
                                 onPressed: _loadSavedItineraries,
-                                child: const Text('讀取失敗，點此重試'),
+                                child: Text(LanguageService.tr(context, 'load_trips_failed')),
                               )
-                            : const CircularProgressIndicator(),
+                            : CircularProgressIndicator(color: AppColors.primary),
                       ),
                     );
                   }
@@ -677,22 +758,32 @@ class _ProfilePageState extends State<ProfilePage> {
                   if (trips.isEmpty) {
                     return SizedBox(
                       height: 100,
-                      child: _buildEmptyState('尚未儲存行程'),
+                      child: _buildEmptyState(LanguageService.tr(context, 'empty_trips')),
                     );
                   }
                   return Column(
                     children: [
                       for (final trip in trips)
                         Card(
+                          color: AppColors.surface,
                           child: ListTile(
-                            leading: const Icon(Icons.route_outlined),
-                            title: Text((trip['title'] ?? '我的行程').toString()),
-                            trailing: const Icon(Icons.chevron_right),
+                            leading: Icon(Icons.route_outlined, color: AppColors.textPrimary),
+                            title: Text(
+                              (trip['title'] ?? LanguageService.tr(context, 'my_trips')).toString(),
+                              style: TextStyle(color: AppColors.textPrimary),
+                            ),
+                            trailing: Icon(Icons.chevron_right, color: AppColors.textSecondary),
                             onTap: () async {
+                              final tripId = trip['id']?.toString() ?? '';
+                              if (tripId.isEmpty) return;
                               await Navigator.of(context).push(
                                 MaterialPageRoute<void>(
                                   builder: (_) => SavedItineraryResultPage(
-                                    id: trip['id'].toString(),
+                                    id: tripId,
+                                    onDelete: () => _deleteSavedTrip(
+                                      tripId,
+                                      (trip['title'] ?? LanguageService.tr(context, 'my_trips')).toString(),
+                                    ),
                                   ),
                                 ),
                               );
@@ -703,23 +794,18 @@ class _ProfilePageState extends State<ProfilePage> {
                     ],
                   );
                 },
-              ),
-              const SizedBox(height: 28),
+              ),              const SizedBox(height: 28),
 
               // 收藏景點區塊
-              const Text(
-                "收藏景點",
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textPrimary,
-                ),
+              Text(
+                LanguageService.tr(context, 'saved_spots'),
+                style: AppTypography.sectionTitle(),
               ),
               const SizedBox(height: 12),
               SizedBox(
-                height: 130,
+                height: 125,
                 child: favorites.isEmpty
-                    ? _buildEmptyState("尚未收藏任何景點")
+                    ? _buildEmptyState(LanguageService.tr(context, 'empty_spots'))
                     : ListView.separated(
                         scrollDirection: Axis.horizontal,
                         itemCount: favorites.length,
@@ -734,17 +820,13 @@ class _ProfilePageState extends State<ProfilePage> {
               const SizedBox(height: 16),
 
               // 行程區塊
-              const Text(
-                "收藏行程",
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textPrimary,
-                ),
+              Text(
+                LanguageService.tr(context, 'saved_trips'),
+                style: AppTypography.sectionTitle(),
               ),
               const SizedBox(height: 12),
               SizedBox(
-                height: 130,
+                height: 125,
                 child: ListView.separated(
                   scrollDirection: Axis.horizontal,
                   itemCount: _itineraries.length,
@@ -758,19 +840,15 @@ class _ProfilePageState extends State<ProfilePage> {
               const SizedBox(height: 16),
 
               // 我的資料夾區塊
-              const Text(
-                "收藏資料夾",
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textPrimary,
-                ),
+              Text(
+                LanguageService.tr(context, 'saved_folders'),
+                style: AppTypography.sectionTitle(),
               ),
               const SizedBox(height: 12),
               SizedBox(
-                height: 130,
+                height: 125,
                 child: _folders.isEmpty
-                    ? _buildEmptyState("尚未建立任何資料夾")
+                    ? _buildEmptyState(LanguageService.tr(context, 'empty_folders'))
                     : ListView.separated(
                         scrollDirection: Axis.horizontal,
                         itemCount: _folders.length,
@@ -799,55 +877,46 @@ class _ProfilePageState extends State<ProfilePage> {
         MaterialPageRoute(builder: (_) => PlaceDetailPage(place: place)),
       ),
       child: flutter_widgets.Container(
-        width: 110,
+        width: 120,
         decoration: BoxDecoration(
           color: AppColors.primary,
           borderRadius: BorderRadius.circular(20),
         ),
+        clipBehavior: Clip.antiAlias,
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const Padding(
-              padding: EdgeInsets.only(top: 28),
-              child: Text(
-                '圖片',
-                style: TextStyle(
-                  color: AppColors.textPrimary,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
+            SizedBox(
+              height: 76,
+              width: double.infinity,
+              child: PlaceImage(place: place),
             ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Expanded(
-                    child: Text(
-                      place.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: AppColors.textPrimary,
-                        fontSize: 13,
-                        fontWeight: FontWeight.bold,
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        place.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: AppColors.textPrimary,
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
-                  ),
-                  GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () => _showFrostedMenu(context, place),
-                    child: const Padding(
-                      padding: EdgeInsets.all(4.0),
-                      child: Icon(
-                        Icons.more_vert,
-                        size: 18,
-                        color: AppColors.textPrimary,
+                    GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => _showFrostedMenu(context, place),
+                      child: Padding(
+                        padding: const EdgeInsets.all(4),
+                        child: Icon(Icons.more_vert, size: 18, color: AppColors.textPrimary),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ],
@@ -858,45 +927,45 @@ class _ProfilePageState extends State<ProfilePage> {
 
   // 行程卡片
   Widget _buildTripCard(String title) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque, // 確保整張卡片區域都能被點擊
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => ItineraryResultPage(tripTitle: title),
-          ),
-        );
-      },
-      child: flutter_widgets.Container(
-        width: 110,
-        decoration: BoxDecoration(
-          color: AppColors.primary,
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.textPrimary.withValues(alpha: 0.08),
-              blurRadius: 8,
-              offset: const Offset(0, 3),
-            ),
-          ],
+  return GestureDetector(
+    behavior: HitTestBehavior.opaque, // 確保整張卡片區域都能被點擊
+    onTap: () {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ItineraryResultPage(tripTitle: title),
         ),
-        alignment: Alignment.center,
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        child: Text(
-          title,
-          textAlign: TextAlign.center,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
-            color: AppColors.textPrimary,
-            fontSize: 14,
-            fontWeight: FontWeight.bold,
+      );
+    },
+    child: flutter_widgets.Container(
+      width: 120,
+      alignment: Alignment.center,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      decoration: BoxDecoration(
+        color: AppColors.primary,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.textPrimary.withValues(alpha: 0.08),
+            blurRadius: 8,
+            offset: const Offset(0, 3),
           ),
+        ],
+      ),
+      child: Text(
+        title,
+        textAlign: TextAlign.center,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          color: AppColors.textPrimary,
+          fontSize: 14,
+          fontWeight: FontWeight.bold,
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   // 資料夾卡片
   Widget _buildFolderCard(Map<String, dynamic> folder) {
@@ -906,35 +975,30 @@ class _ProfilePageState extends State<ProfilePage> {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () => _showFolderContentDialog(context, folder),
-    child: flutter_widgets.Container(
-        width: 110,
+      child: flutter_widgets.Container(
+        width: 120,
         decoration: BoxDecoration(
           color: AppColors.primary,
           borderRadius: BorderRadius.circular(20),
         ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        child: Stack(
           children: [
-            Padding(
-              padding: const EdgeInsets.only(top: 24),
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  const Icon(
-                    Icons.folder_open_rounded,
-                    size: 30,
-                    color: AppColors.textPrimary,
-                  ),
+            Column(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(top: 24),
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                  Icon(Icons.folder_open_rounded, size: 30, color: AppColors.textPrimary),
                   if (places.isNotEmpty)
                     Positioned(
                       top: -4,
                       right: -6,
                       child: flutter_widgets.Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 5,
-                          vertical: 1,
-                        ),
-                        decoration: const BoxDecoration(
+                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                        decoration: BoxDecoration(
                           color: AppColors.primaryDark,
                           shape: BoxShape.circle,
                         ),
@@ -948,23 +1012,25 @@ class _ProfilePageState extends State<ProfilePage> {
                         ),
                       ),
                     ),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-              child: Center(
-                child: Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: 13,
-                    fontWeight: FontWeight.bold,
+                    ],
                   ),
                 ),
-              ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                  child: Center(
+                    child: Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -976,10 +1042,10 @@ class _ProfilePageState extends State<ProfilePage> {
   Widget _buildEmptyState(String text) {
     return flutter_widgets.Container(
       alignment: Alignment.centerLeft,
-      padding: const EdgeInsets.only(left: 8.0),
+      padding: EdgeInsets.only(left: 8.0),
       child: Text(
         text,
-        style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
+        style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
       ),
     );
   }

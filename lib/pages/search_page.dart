@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
-import '../theme/app_theme.dart'; // 引入色彩系統
+import '../theme/app_colors.dart'; // 引入色彩系統
+import '../services/language_service.dart';
+import '../theme/app_typography.dart';
 
 class SearchPage extends StatefulWidget {
   const SearchPage({super.key});
@@ -53,8 +55,8 @@ class _SearchPageState extends State<SearchPage> {
                 ),
                 child: TextField(
                   controller: _searchController,
-                  decoration: const InputDecoration(
-                    hintText: "搜尋行程...",
+                  decoration: InputDecoration(
+                    hintText: LanguageService.tr(context, 'search_hint'),
                     hintStyle: TextStyle(color: Colors.white70),
                     prefixIcon: Icon(Icons.search, color: Colors.white),
                     border: InputBorder.none,
@@ -70,18 +72,18 @@ class _SearchPageState extends State<SearchPage> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text(
-                    "你可能會喜歡......",
-                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.black87),
+                  Text(
+                    LanguageService.tr(context, 'search_recommendations'),
+                    style: AppTypography.headline(color: Colors.black87),
                   ),
                   InkWell(
                     onTap: () {
                       // 點擊選擇排序方式
                     },
-                    child: const Row(
+                    child: Row(
                       children: [
                         Text(
-                          "(排序方式)",
+                          LanguageService.tr(context, 'search_sort_label'),
                           style: TextStyle(fontSize: 14, color: Colors.black87),
                         ),
                         SizedBox(width: 4),
@@ -150,7 +152,7 @@ class _SearchPageState extends State<SearchPage> {
             overflow: TextOverflow.ellipsis,
           ),
           Text(
-            "(使用次數: $count)",
+            LanguageService.tr(context, 'search_count_label').replaceAll('{count}', '$count'),
             style: const TextStyle(fontSize: 11, color: Colors.black54),
           ),
 

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../services/language_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../models/place.dart';
 import '../../services/user_data_service.dart';
@@ -93,12 +94,12 @@ class _PlannerFavoritePickerDialogState
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Row(
+                Row(
                   children: [
                     Icon(Icons.bookmark_add_rounded, color: primaryDark, size: 22),
                     SizedBox(width: 8),
                     Text(
-                      "從收藏加入景點",
+                      LanguageService.tr(context, 'favorite_picker_title'),
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
@@ -122,7 +123,7 @@ class _PlannerFavoritePickerDialogState
                 scrollDirection: Axis.horizontal,
                 children: [
                   _buildFolderChip(
-                    label: "全部收藏 (${_allFavorites.length})",
+                    label: "${LanguageService.tr(context, 'picker_all_favorites').replaceAll('{count}', '${_allFavorites.length}')}",
                     isSelected: _selectedFolderId == null,
                     onTap: () => setState(() => _selectedFolderId = null),
                   ),
@@ -146,9 +147,9 @@ class _PlannerFavoritePickerDialogState
               child: _isLoading
                   ? const Center(child: CircularProgressIndicator())
                   : _currentDisplayPlaces.isEmpty
-                      ? const Center(
+                      ? Center(
                           child: Text(
-                            "此分類暫無可加入的景點",
+                            LanguageService.tr(context, 'favorite_picker_empty'),
                             style: TextStyle(color: Colors.grey, fontSize: 13),
                           ),
                         )
@@ -215,7 +216,7 @@ class _PlannerFavoritePickerDialogState
                         Navigator.pop(context);
                       },
                 child: Text(
-                  "加入行程 (${_selectedPlaceIds.length})",
+                  LanguageService.tr(context, 'favorite_picker_add_count').replaceAll('{count}', '${_selectedPlaceIds.length}'),
                   style: const TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.bold,

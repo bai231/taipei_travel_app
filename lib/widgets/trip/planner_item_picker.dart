@@ -4,6 +4,7 @@ import '../../models/place.dart';
 import '../../models/planner_favorites.dart';
 import '../../services/place_service.dart';
 import '../../services/planner_candidate_ranking.dart';
+import '../../services/language_service.dart';
 
 class PlannerItemPicker extends StatefulWidget {
   final PlaceType type;
@@ -109,12 +110,13 @@ class _PlannerItemPickerState extends State<PlannerItemPicker> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    '選擇${_typeName(widget.type)}',
+                    LanguageService.tr(context, 'picker_choose_type')
+                        .replaceAll('{type}', _typeName(widget.type)),
                     style: Theme.of(context).textTheme.titleLarge,
                   ),
                 ),
                 IconButton(
-                  tooltip: '關閉',
+                  tooltip: LanguageService.tr(context, 'picker_close'),
                   onPressed: () => Navigator.pop(context),
                   icon: const Icon(Icons.close),
                 ),
@@ -128,13 +130,13 @@ class _PlannerItemPickerState extends State<PlannerItemPicker> {
                 spacing: 8,
                 children: [
                   ChoiceChip(
-                    label: const Text('全部'),
+                    label: Text(LanguageService.tr(context, 'picker_all')),
                     selected: !_favoritesOnly,
                     onSelected: (_) => setState(() => _favoritesOnly = false),
                   ),
                   ChoiceChip(
                     avatar: const Icon(Icons.favorite_border, size: 18),
-                    label: const Text('我的收藏'),
+                    label: Text(LanguageService.tr(context, 'picker_favorites')),
                     selected: _favoritesOnly,
                     showCheckmark: false,
                     onSelected: (_) => setState(() => _favoritesOnly = true),
@@ -158,14 +160,14 @@ class _PlannerItemPickerState extends State<PlannerItemPicker> {
                   child: TextField(
                     controller: _searchController,
                     decoration: InputDecoration(
-                      hintText: '搜尋名稱、分類或地址',
+                      hintText: LanguageService.tr(context, 'picker_search_hint'),
                       prefixIcon: const Icon(Icons.search),
                       border: const OutlineInputBorder(),
                       isDense: true,
                       suffixIcon: _searchController.text.isEmpty
                           ? null
                           : IconButton(
-                              tooltip: '清除搜尋',
+                              tooltip: LanguageService.tr(context, 'picker_clear_search'),
                               onPressed: () {
                                 _searchController.clear();
                                 setState(() {});
@@ -184,19 +186,21 @@ class _PlannerItemPickerState extends State<PlannerItemPicker> {
                           key: ValueKey('folders:$folderId'),
                           initialValue: folderId,
                           isExpanded: true,
-                          decoration: const InputDecoration(
-                            labelText: '收藏資料夾',
+                          decoration: InputDecoration(
+                            labelText: LanguageService.tr(context, 'picker_folders'),
                             border: OutlineInputBorder(),
                             isDense: true,
                           ),
                           items: [
-                            const DropdownMenuItem<String?>(
+                            DropdownMenuItem<String?>(
                               value: null,
-                              child: Text('全部收藏'),
+                              child: Text(LanguageService.tr(context, 'picker_all_favorites')
+                                  .replaceAll('{count}', '$_favoriteCount')),
                             ),
-                            const DropdownMenuItem<String?>(
+                            DropdownMenuItem<String?>(
                               value: _uncategorizedFolderId,
-                              child: Text('未分類景點'),
+                              child: Text(LanguageService.tr(context, 'picker_uncategorized')
+                                  .replaceAll('{count}', '${_uncategorizedCount(categorizedPlaceIds)}')),
                             ),
                             ...widget.favoriteFolders.map(
                               (folder) => DropdownMenuItem<String?>(
@@ -217,15 +221,15 @@ class _PlannerItemPickerState extends State<PlannerItemPicker> {
                           key: const ValueKey('counties'),
                           initialValue: _selectedCounty,
                           isExpanded: true,
-                          decoration: const InputDecoration(
-                            labelText: '縣市',
+                          decoration: InputDecoration(
+                            labelText: LanguageService.tr(context, 'picker_counties'),
                             border: OutlineInputBorder(),
                             isDense: true,
                           ),
                           items: [
-                            const DropdownMenuItem<String?>(
+                            DropdownMenuItem<String?>(
                               value: null,
-                              child: Text('全部縣市'),
+                              child: Text(LanguageService.tr(context, 'picker_all_counties')),
                             ),
                             ...counties.map(
                               (county) => DropdownMenuItem<String?>(
@@ -254,8 +258,10 @@ class _PlannerItemPickerState extends State<PlannerItemPicker> {
                       favoritesMode && widget.favoritePlaceIds == null
                           ? widget.favoritesUnavailableMessage
                           : favoritesMode
-                          ? '目前沒有符合條件的收藏${_typeName(widget.type)}'
-                          : '目前沒有符合條件的${_typeName(widget.type)}',
+                          ? LanguageService.tr(context, 'picker_no_favorites')
+                              .replaceAll('{type}', _typeName(widget.type))
+                          : LanguageService.tr(context, 'picker_no_places')
+                              .replaceAll('{type}', _typeName(widget.type)),
                       style: TextStyle(color: Colors.grey.shade600),
                     ),
                   )
@@ -282,9 +288,10 @@ class _PlannerItemPickerState extends State<PlannerItemPicker> {
                           [
                             if (county.isNotEmpty) county,
                             if (place.category.isNotEmpty) place.category,
-                            if (!isRoutable) '缺少座標，暫不可排入行程',
+                            if (!isRoutable) LanguageService.tr(context, 'picker_no_coordinates'),
                             '⭐ ${place.rating}',
-                            '停留 ${place.stayTime} 分鐘',
+                            LanguageService.tr(context, 'picker_stay')
+                                .replaceAll('{minutes}', '${place.stayTime}'),
                           ].join('・'),
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
@@ -303,13 +310,15 @@ class _PlannerItemPickerState extends State<PlannerItemPicker> {
               children: [
                 Expanded(
                   child: Text(
-                    '已選 ${_selectedPlaceIds.length} 個${_typeName(widget.type)}',
+                    LanguageService.tr(context, 'picker_selected')
+                        .replaceAll('{count}', '${_selectedPlaceIds.length}')
+                        .replaceAll('{type}', _typeName(widget.type)),
                   ),
                 ),
                 FilledButton.icon(
                   onPressed: _confirmSelection,
                   icon: const Icon(Icons.check),
-                  label: const Text('套用選擇'),
+                  label: Text(LanguageService.tr(context, 'picker_apply')),
                 ),
               ],
             ),
@@ -342,11 +351,24 @@ class _PlannerItemPickerState extends State<PlannerItemPicker> {
 
   String _typeName(PlaceType type) {
     return switch (type) {
-      PlaceType.attraction => '景點',
-      PlaceType.restaurant => '餐廳',
-      PlaceType.accommodation => '住宿',
+      PlaceType.attraction => LanguageService.trCurrent('place_category_attraction'),
+      PlaceType.restaurant => LanguageService.trCurrent('place_category_restaurant'),
+      PlaceType.accommodation => LanguageService.trCurrent('place_category_accommodation'),
     };
   }
+
+  int get _favoriteCount => widget.places
+      .where((place) =>
+          place.type == widget.type &&
+          (widget.favoritePlaceIds?.contains(place.id) ?? false))
+      .length;
+
+  int _uncategorizedCount(Set<String> categorizedPlaceIds) => widget.places
+      .where((place) =>
+          place.type == widget.type &&
+          (widget.favoritePlaceIds?.contains(place.id) ?? false) &&
+          !categorizedPlaceIds.contains(place.id))
+      .length;
 
   IconData _typeIcon(PlaceType type) {
     return switch (type) {

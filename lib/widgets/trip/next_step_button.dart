@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../services/language_service.dart';
 
 class NextStepButton extends StatelessWidget {
   final VoidCallback onPressed;
@@ -24,7 +25,9 @@ class NextStepButton extends StatelessWidget {
               )
             : const Icon(Icons.arrow_forward),
         label: Text(
-          isLoading ? '正在理解旅遊需求...' : '下一步',
+          isLoading
+              ? LanguageService.tr(context, 'trip_understanding_preferences')
+              : LanguageService.tr(context, 'trip_next_step'),
           style: const TextStyle(fontSize: 18),
         ),
       ),

@@ -7,6 +7,7 @@ import 'edit_profile_screen.dart'; // 引入編輯個人資料頁面
 import 'guide_overlay_screen.dart'; // 引入使用指南
 import 'login_screen.dart';         // 引入登入頁面
 import '../theme/app_colors.dart';
+import '../theme/app_typography.dart';
 import '../services/language_service.dart';
 
 class SettingsPage extends StatefulWidget {
@@ -38,74 +39,93 @@ class _SettingsPageState extends State<SettingsPage> {
     super.dispose();
   }
   // 色彩配置（延續草圖風格色調）
-  static const Color bgColor = Color(0xFFC7DEC8);         // 水彩淺綠底色
-  static const Color cardColor = Color(0xFF70B19B);       // 卡片綠色
-  static const Color textDark = Color(0xFF1E3A2F);        // 深墨綠主要文字
-  static const Color dividerColor = Color(0xFFA1C6B4);     // 分隔線淡綠色
+  static Color get bgColor => AppColors.background;
+  static Color get cardColor => AppColors.primary;
+  static Color get textDark => AppColors.textPrimary;
+  static Color get dividerColor => AppColors.primaryLight;
 
   // 開關與設定狀態變數
   bool _isNotificationEnabled = true;
-  bool _isDarkMode = false;
-  String _currentLanguage = '繁體中文';
   bool _isLoggedIn = false; // 模擬是否已登入
 
   // 彈出半透明磨砂選擇視窗（以語言選擇為例）
   void _showFrostedLanguageDialog() {
-    showDialog(
-      context: context,
-      barrierColor: Colors.black.withValues(alpha: 0.2),
-      builder: (dialogCtx) {
-        final currentLang = LanguageService().currentLanguageName;
-        return Center(
-          child: Material(
-          type: MaterialType.transparency,
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(20),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-              child: Container(
-                width: 220,
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.88),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.6),
-                    width: 1.2,
-                  ),
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text(
-                      '選擇語言',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: textDark,
+  showDialog(
+    context: context,
+    barrierColor: Colors.black.withValues(alpha: 0.2),
+    builder: (dialogCtx) {
+      // 🌟 關鍵：直接監聽全域 Locale 變更，語系一變，彈窗內部與勾勾保證立刻切換
+      return ValueListenableBuilder<Locale>(
+        valueListenable: LanguageService().currentLocale,
+        builder: (context, locale, _) {
+          final isEnglish = locale.languageCode == 'en';
+
+          return Center(
+            child: Material(
+              type: MaterialType.transparency,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(20),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                  child: Container(
+                    width: 220,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.9),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.6),
+                        width: 1.2,
                       ),
                     ),
-                    const SizedBox(height: 12),
-                    _buildLanguageOption('繁體中文', currentLang, dialogCtx),
-                    _buildLanguageOption('English', currentLang, dialogCtx),
-                  ],
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          LanguageService.tr(context, 'select_language'),
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black87,
+                            fontFamily: 'NotoSansTC',
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        // 繁體中文選項
+                        // 找到 _showFrostedLanguageDialog 內部：
+                        _buildLanguageOption(
+                          '繁體中文',
+                          !isEnglish,
+                          dialogCtx,
+                        ),
+                        _buildLanguageOption(
+                          'English',
+                          isEnglish,
+                          dialogCtx,
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
             ),
-          ),
-          ),
-        );
-      },
-    );
-  }
+          );
+        },
+      );
+    },
+  );
+}
 
-  Widget _buildLanguageOption(String lang, String currentSelected, BuildContext dialogCtx) {
-    final bool isSelected = _currentLanguage == lang;
+  Widget _buildLanguageOption(String lang, bool isSelected, BuildContext dialogCtx) {
     return InkWell(
       onTap: () {
         LanguageService().changeLanguage(lang);
-        Navigator.pop(dialogCtx);
         setState(() {});
+        Future.delayed(const Duration(milliseconds: 200), () {
+        if (dialogCtx.mounted) {
+          Navigator.pop(dialogCtx);
+        }
+      });
       },
       borderRadius: BorderRadius.circular(12),
       child: Container(
@@ -125,7 +145,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
               ),
             ),
-            if (isSelected) const Icon(Icons.check_rounded, size: 18, color: textDark),
+            if (isSelected) Icon(Icons.check_rounded, size: 18, color: textDark),
           ],
         ),
       ),
@@ -140,12 +160,12 @@ class _SettingsPageState extends State<SettingsPage> {
       builder: (context) => AlertDialog(
         backgroundColor: Colors.white.withValues(alpha: 0.9),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('清除暫存資料', style: TextStyle(color: textDark, fontWeight: FontWeight.bold)),
-        content: const Text('將清除暫存的景點圖片與離線資料（約 48.5 MB），這不會影響你的收藏或自訂行程。', style: TextStyle(color: textDark)),
+        title: Text(LanguageService.tr(context, 'clear_cache_title'), style: AppTypography.cardTitle(color: textDark)),
+        content: Text(LanguageService.tr(context, 'clear_cache_content'), style: const TextStyle(color: Colors.black87, fontFamily: 'NotoSansTC')),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('取消', style: TextStyle(color: Colors.grey)),
+            child: Text(LanguageService.tr(context, 'clear_cache_cancel'), style: const TextStyle(color: Colors.grey)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
@@ -156,10 +176,10 @@ class _SettingsPageState extends State<SettingsPage> {
             onPressed: () {
               Navigator.pop(context);
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('已成功清除暫存檔案 🧹')),
+                SnackBar(content: Text(LanguageService.tr(context, 'clear_cache_success'))),
               );
             },
-            child: const Text('確認清除', style: TextStyle(color: textDark, fontWeight: FontWeight.bold)),
+            child: Text(LanguageService.tr(context, 'clear_cache_confirm'), style: TextStyle(color: textDark, fontWeight: FontWeight.bold, fontFamily: 'NotoSansTC')),
           ),
         ],
       ),
@@ -177,18 +197,13 @@ class _SettingsPageState extends State<SettingsPage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // 2. 頁面標題：⚙️ 設定
-              const Row(
+               Row(
                 children: [
                   Icon(Icons.settings_outlined, size: 28, color: textDark),
                   SizedBox(width: 8),
                   Text(
-                    "設定",
-                    style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                      color: textDark,
-                      letterSpacing: 0.5,
-                    ),
+                    LanguageService.tr(context, 'settings_title'),
+                    style: AppTypography.headline(color: textDark),
                   ),
                 ],
               ),
@@ -203,14 +218,14 @@ class _SettingsPageState extends State<SettingsPage> {
               // 4. 區塊一：個人帳號設置
               Text(
                 LanguageService.tr(context, 'account_settings'),
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textDark),
+                style: AppTypography.sectionTitle(color: textDark),
               ),
               const SizedBox(height: 12),
               _buildSettingsGroup([
                 _buildSettingTile(
                   icon: Icons.person_outline_rounded,
-                  title: "編輯個人資料",
-                  subtitle: "修改頭像、暱稱與個人簡介",
+                  title: LanguageService.tr(context, 'edit_profile'),
+                  subtitle: LanguageService.tr(context, 'edit_profile_sub'),
                   onTap: () async{
                     final bool? updated = await Navigator.push(
                       context,
@@ -224,16 +239,16 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
                 /*_buildSettingTile(
                   icon: Icons.explore_outlined,
-                  title: "旅遊偏好設定",
-                  subtitle: "海島放鬆、戶外探險、人文美食",
+                  title: LanguageService.tr(context, 'travel_pref'),
+                  subtitle: LanguageService.tr(context, 'travel_pref_sub'),
                   onTap: () {
                     // TODO: 跳轉旅遊偏好選擇頁面
                   },
                 ),*/
                 _buildSwitchTile(
                   icon: Icons.notifications_none_rounded,
-                  title: "行程與推播通知",
-                  subtitle: "接收景點時間提醒與優惠資訊",
+                  title: LanguageService.tr(context, 'notifications'),
+                  subtitle: LanguageService.tr(context, 'notifications_sub') ,
                   value: _isNotificationEnabled,
                   onChanged: (val) => setState(() => _isNotificationEnabled = val),
                 ),
@@ -242,16 +257,16 @@ class _SettingsPageState extends State<SettingsPage> {
               _buildSectionDivider(),
 
               // 5. 區塊二：頁面與系統設定
-              const Text(
-                "頁面與系統設定",
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textDark),
+              Text(
+                LanguageService.tr(context, 'system_settings'),
+                style: AppTypography.sectionTitle(color: textDark),
               ),
               const SizedBox(height: 12),
               _buildSettingsGroup([
                 /*_buildSwitchTile(
                   icon: Icons.dark_mode_outlined,
-                  title: "深色模式",
-                  subtitle: "降低低光源環境下的視覺刺眼感",
+                  title: LanguageService.tr(context, 'dark_mode'),
+                  subtitle: LanguageService.tr(context, 'dark_mode_sub'),
                   value: _isDarkMode,
                   onChanged: (val) => setState(() => _isDarkMode = val),
                 ),*/
@@ -263,12 +278,12 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
                 _buildSettingTile(
                   icon: Icons.help_outline_rounded,
-                  title: "重新檢視使用指南",
+                  title: LanguageService.tr(context, 'review_guide'),
                   onTap: () => showUserGuide(context),
                 ),
                 _buildSettingTile(
                   icon: Icons.info_outline_rounded,
-                  title: "關於陪伴旅伴 App",
+                  title: LanguageService.tr(context, 'about_app'),
                   trailingText: "v1.0.0",
                   onTap: () {
                     // TODO: 展示關於頁面或隱私條款
@@ -285,12 +300,12 @@ class _SettingsPageState extends State<SettingsPage> {
                     onPressed: () {
                       setState(() => _isLoggedIn = false);
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('已安全登出')),
+                        SnackBar(content: Text(LanguageService.tr(context, 'logged_out_safe'))),
                       );
                     },
                     icon: const Icon(Icons.logout_rounded, color: Colors.redAccent, size: 20),
-                    label: const Text(
-                      "登出帳號",
+                    label: Text(
+                      LanguageService.tr(context, 'logout_account'),
                       style: TextStyle(color: Colors.redAccent, fontSize: 15, fontWeight: FontWeight.bold),
                     ),
                   ),
@@ -315,13 +330,13 @@ class _SettingsPageState extends State<SettingsPage> {
       ? (user.userMetadata?['username'] ?? 
          user.userMetadata?['full_name'] ?? 
          user.email?.split('@').first ?? 
-         '旅人')
-      : '訪客旅人';
+         LanguageService.tr(context, 'traveler'))
+      : LanguageService.tr(context, 'guest_traveler');
 
   // 3. 取得副標題（已登入顯示信箱，未登入顯示引導提示）
   final String displaySubtitle = isLoggedIn 
       ? (user.email ?? '') 
-      : '登入以同步自訂行程與收藏';
+      : LanguageService.tr(context, 'login_sync_hint');
 
   return Container(
     padding: const EdgeInsets.all(16),
@@ -391,19 +406,19 @@ class _SettingsPageState extends State<SettingsPage> {
               shape: const StadiumBorder(),
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
             ),
-            child: const Text("登入", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+            child: Text(LanguageService.tr(context, 'login_action'), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
           )
         else
           IconButton(
             icon: Icon(Icons.logout_rounded, color: AppColors.textPrimary),
-            tooltip: '登出帳號',
+            tooltip: LanguageService.tr(context, 'logout_account'),
             onPressed: () async {
               await Supabase.instance.client.auth.signOut();
               if (mounted) {
                 setState(() {});
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('已安全登出 🌿'),
+                  SnackBar(
+                    content: Text(LanguageService.tr(context, 'logged_out_safe_leaf')),
                     duration: Duration(seconds: 1),
                   ),
                 );  
@@ -422,14 +437,7 @@ class _SettingsPageState extends State<SettingsPage> {
         color: Colors.white.withValues(alpha: 0.5),
         borderRadius: BorderRadius.circular(20),
       ),
-      // ListTile paints its ink response on Material.  Keep that Material
-      // above this translucent decoration so taps work in debug and release.
-      child: Material(
-        type: MaterialType.transparency,
-        borderRadius: BorderRadius.circular(20),
-        clipBehavior: Clip.antiAlias,
-        child: Column(children: children),
-      ),
+      child: Column(children: children),
     );
   }
 
@@ -447,10 +455,10 @@ class _SettingsPageState extends State<SettingsPage> {
       leading: Icon(icon, color: textDark, size: 22),
       title: Text(
         title,
-        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: textDark),
+        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: textDark, fontFamily: 'NotoSansTC'),
       ),
       subtitle: subtitle != null
-          ? Text(subtitle, style: TextStyle(fontSize: 12, color: textDark.withValues(alpha: 0.7)))
+          ? Text(subtitle, style: TextStyle(fontSize: 14, color: textDark.withValues(alpha: 0.7), fontFamily: 'NotoSansTC'))
           : null,
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
@@ -458,10 +466,10 @@ class _SettingsPageState extends State<SettingsPage> {
           if (trailingText != null)
             Text(
               trailingText,
-              style: TextStyle(fontSize: 13, color: textDark.withValues(alpha: 0.7)),
+              style: TextStyle(fontSize: 14, color: textDark.withValues(alpha: 0.7), fontFamily: 'NotoSansTC'),
             ),
           const SizedBox(width: 4),
-          const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: textDark),
+          Icon(Icons.arrow_forward_ios_rounded, size: 14, color: textDark),
         ],
       ),
     );
@@ -480,10 +488,10 @@ class _SettingsPageState extends State<SettingsPage> {
       leading: Icon(icon, color: textDark, size: 22),
       title: Text(
         title,
-        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: textDark),
+        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: textDark, fontFamily: 'NotoSansTC'),
       ),
       subtitle: subtitle != null
-          ? Text(subtitle, style: TextStyle(fontSize: 12, color: textDark.withValues(alpha: 0.7)))
+          ? Text(subtitle, style: TextStyle(fontSize: 14, color: textDark.withValues(alpha: 0.7), fontFamily: 'NotoSansTC'))
           : null,
       trailing: Switch.adaptive(
         value: value,

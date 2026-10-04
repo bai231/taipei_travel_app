@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../services/language_service.dart';
 
 Future<String?> showCreateTripDialog({required BuildContext context}) async {
   final TextEditingController controller = TextEditingController();
@@ -8,13 +9,13 @@ Future<String?> showCreateTripDialog({required BuildContext context}) async {
 
     builder: (context) {
       return AlertDialog(
-        title: const Text("建立新行程"),
+        title: Text(LanguageService.tr(context, 'create_trip')),
 
         content: TextField(
           controller: controller,
 
-          decoration: const InputDecoration(
-            hintText: "例如：台北一日遊",
+          decoration: InputDecoration(
+            hintText: LanguageService.tr(context, 'create_trip_example'),
 
             border: OutlineInputBorder(),
           ),
@@ -26,7 +27,7 @@ Future<String?> showCreateTripDialog({required BuildContext context}) async {
               Navigator.pop(context);
             },
 
-            child: const Text("取消"),
+            child: Text(LanguageService.tr(context, 'dialog_cancel')),
           ),
 
           ElevatedButton(
@@ -38,7 +39,7 @@ Future<String?> showCreateTripDialog({required BuildContext context}) async {
               Navigator.pop(context, controller.text.trim());
             },
 
-            child: const Text("建立"),
+            child: Text(LanguageService.tr(context, 'dialog_create')),
           ),
         ],
       );

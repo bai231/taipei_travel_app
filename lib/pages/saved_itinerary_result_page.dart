@@ -18,7 +18,12 @@ import 'trip_planner_page.dart';
 /// after the user explicitly generates a new preview in the planner.
 class SavedItineraryResultPage extends StatefulWidget {
   final String id;
-  const SavedItineraryResultPage({super.key, required this.id});
+  final Future<bool> Function()? onDelete;
+  const SavedItineraryResultPage({
+    super.key,
+    required this.id,
+    this.onDelete,
+  });
 
   @override
   State<SavedItineraryResultPage> createState() =>
@@ -117,6 +122,8 @@ class _SavedItineraryResultPageState extends State<SavedItineraryResultPage> {
         key: ValueKey('${widget.id}:${snapshot.data!.generatedAt}'),
         itinerary: snapshot.data!,
         savedItineraryId: widget.id,
+        savedItineraryUserId: _service.currentUserId,
+        onDelete: widget.onDelete,
         onEditItinerary: _edit,
         onRecalculate: _recalculate,
         onResolvePlaceQuery: (query, excludedIds) async {

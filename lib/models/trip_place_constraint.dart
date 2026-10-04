@@ -16,8 +16,8 @@ class TripPlaceConstraint {
   // true = 系統不能更改這個景點的時間
   bool locked;
   VisitPreferences preferences;
-  final VisitKind kind;
-  final MealType? suggestedMealType;
+  VisitKind kind;
+  MealType? suggestedMealType;
 
   int get stayMinutes => preferences.durationFor(place);
 

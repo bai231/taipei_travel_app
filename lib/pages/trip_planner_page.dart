@@ -25,6 +25,8 @@ import '../models/trip_auto_fill_plan.dart';
 import '../services/recommendation/trip_auto_fill_service.dart';
 import '../models/recommendation_conflict.dart';
 import '../features/route_planning/services/itinerary_place_resolver.dart';
+import '../services/language_service.dart';
+import '../theme/app_colors.dart';
 
 class TripPlannerPage extends StatefulWidget {
   final TripRequest request;
@@ -234,7 +236,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
       builder: (dialogContext) {
         return AlertDialog(
           icon: const Icon(Icons.warning_amber_rounded, color: Colors.orange),
-          title: const Text('旅遊需求有衝突'),
+          title: Text(LanguageService.tr(dialogContext, 'planner_conflict_title')),
           content: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 420),
             child: SingleChildScrollView(
@@ -242,10 +244,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    '部分喜好同時出現在排除條件中，'
-                    '目前會以排除條件為優先：',
-                  ),
+                  Text(LanguageService.tr(dialogContext, 'planner_conflict_message')),
                   const SizedBox(height: 12),
                   for (final conflict in _recommendationConflicts)
                     Padding(
@@ -271,7 +270,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
               onPressed: () {
                 Navigator.of(dialogContext).pop();
               },
-              child: const Text('我知道了'),
+              child: Text(LanguageService.tr(dialogContext, 'planner_acknowledge')),
             ),
           ],
         );
@@ -283,13 +282,13 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("安排行程"),
+        title: Text(LanguageService.tr(context, 'planner_title')),
 
         actions: [
           IconButton(
             icon: Icon(_typeIcon(_selectedType)),
 
-            tooltip: "新增${_typeName(_selectedType)}",
+            tooltip: LanguageService.tr(context, 'planner_add_new').replaceAll('{type}', _typeName(_selectedType)),
 
             onPressed: _isGenerating ? null : _showPlacePicker,
           ),
@@ -451,7 +450,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
 
             if (_candidatePlaces.isEmpty)
               const Padding(
-                padding: EdgeInsets.all(16),
+                padding: const EdgeInsets.all(16),
                 child: Text(
                   '沒有符合目前條件的景點，'
                   '可能需要放寬地區、預算或排除條件。',
@@ -512,7 +511,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
 
             if (_recommendations.isEmpty)
               const Padding(
-                padding: EdgeInsets.all(16),
+                padding: const EdgeInsets.all(16),
                 child: Text(
                   '目前沒有符合條件的推薦景點。',
                   style: TextStyle(color: Colors.orange),
@@ -672,9 +671,13 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                '景點 $attractionCount・餐廳 $restaurantCount・'
-                '住宿 $accommodationCount｜固定時間 $fixedTimeCount・'
-                '指定日期 $fixedDayCount・自動安排 $automaticCount',
+                LanguageService.tr(context, 'planner_summary')
+                    .replaceAll('{attractions}', '$attractionCount')
+                    .replaceAll('{restaurants}', '$restaurantCount')
+                    .replaceAll('{accommodations}', '$accommodationCount')
+                    .replaceAll('{fixed}', '$fixedTimeCount')
+                    .replaceAll('{dated}', '$fixedDayCount')
+                    .replaceAll('{automatic}', '$automaticCount'),
                 style: Theme.of(context).textTheme.bodySmall,
                 textAlign: TextAlign.center,
               ),
@@ -682,7 +685,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
               OutlinedButton.icon(
                 onPressed: _isGenerating ? null : _autoFillAttractions,
                 icon: const Icon(Icons.auto_awesome),
-                label: const Text('智慧補齊景點'),
+                label: Text(LanguageService.tr(context, 'planner_auto_fill')),
               ),
 
               const SizedBox(height: 8),
@@ -696,8 +699,8 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
                     : const Icon(Icons.alt_route),
                 label: Text(
                   _isGenerating
-                      ? (_planningMessage ?? '正在安排詳細行程…')
-                      : '完成安排，產生詳細行程',
+                      ? (_planningMessage ?? LanguageService.tr(context, 'planner_generating'))
+                      : LanguageService.tr(context, 'planner_finish_generate'),
                 ),
               ),
               if (_isWaitingForTdx) ...[
@@ -705,7 +708,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
                 OutlinedButton.icon(
                   onPressed: _useEstimatesForRemainingRoutes,
                   icon: const Icon(Icons.fast_forward),
-                  label: const Text('取消等待，後續改用估算'),
+                  label: Text(LanguageService.tr(context, 'planner_cancel_wait_estimate')),
                 ),
               ],
             ],
@@ -729,7 +732,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
               (type) => ButtonSegment<PlaceType>(
                 value: type,
                 icon: Icon(_typeIcon(type)),
-                label: Text('安排${_typeName(type)}'),
+                label: Text(LanguageService.tr(context, 'planner_type_schedule').replaceAll('{type}', _typeName(type))),
               ),
             )
             .toList(),
@@ -826,8 +829,8 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
         // 已指定 Day，但還沒指定時間
         // ==========================================
         if (untimedPlaces.isNotEmpty) ...[
-          const Text(
-            "待安排時間",
+          Text(
+            LanguageService.tr(context, 'planner_untimed_title'),
 
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
@@ -844,8 +847,8 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
         // ==========================================
         // 時間軸
         // ==========================================
-        const Text(
-          "時間軸",
+        Text(
+          LanguageService.tr(context, 'planner_timeline_title'),
 
           style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
         ),
@@ -922,10 +925,12 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(10),
 
-        color: constraint.locked ? Colors.orange.shade100 : Colors.blue.shade50,
+        color: constraint.locked
+            ? Colors.orange.shade100
+            : AppColors.primary.withValues(alpha: 0.12),
 
         border: Border.all(
-          color: constraint.locked ? Colors.orange : Colors.blue,
+          color: constraint.locked ? Colors.orange : AppColors.primary,
         ),
       ),
 
@@ -998,10 +1003,10 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
         padding: const EdgeInsets.all(12),
         children: [
           Text(
-            '不限日期／時間的${_typeName(_selectedType)}',
+            LanguageService.tr(context, 'planner_unscheduled_type').replaceAll('{type}', _typeName(_selectedType)),
             style: Theme.of(context).textTheme.titleMedium,
           ),
-          if (unscheduledPlaces.isEmpty) const Text('目前沒有待安排項目'),
+          if (unscheduledPlaces.isEmpty) Text(LanguageService.tr(context, 'planner_unscheduled_empty')),
           for (final item in unscheduledPlaces)
             Card(
               child: Padding(
@@ -1023,8 +1028,8 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
                               : () => _selectDay(item),
                           child: Text(
                             item.place.type == PlaceType.accommodation
-                                ? '調整住宿'
-                                : '指定日期',
+                                ? LanguageService.tr(context, 'planner_adjust_hotel')
+                                : LanguageService.tr(context, 'planner_select_day'),
                           ),
                         ),
                         _preferencesButton(item),
@@ -1032,7 +1037,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
                           onPressed: _isGenerating
                               ? null
                               : () => _removePlace(item),
-                          child: const Text('移除'),
+                          child: Text(LanguageService.tr(context, 'planner_remove')),
                         ),
                       ],
                     ),
@@ -1063,7 +1068,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
               const SizedBox(width: 8),
 
               Text(
-                "不限日期／時間的${_typeName(_selectedType)}",
+                LanguageService.tr(context, 'planner_unscheduled_type').replaceAll('{type}', _typeName(_selectedType)),
 
                 style: const TextStyle(
                   fontSize: 17,
@@ -1076,7 +1081,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
           const SizedBox(height: 4),
 
           Text(
-            "這些${_typeName(_selectedType)}會由系統自動安排",
+            LanguageService.tr(context, 'planner_unscheduled_auto').replaceAll('{type}', _typeName(_selectedType)),
 
             style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
           ),
@@ -1087,7 +1092,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
             child: unscheduledPlaces.isEmpty
                 ? Center(
                     child: Text(
-                      "目前沒有待安排${_typeName(_selectedType)}",
+                      LanguageService.tr(context, 'planner_no_unscheduled_type').replaceAll('{type}', _typeName(_selectedType)),
                       style: TextStyle(color: Colors.grey.shade500),
                     ),
                   )
@@ -1138,7 +1143,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
                     ),
                   ),
                   IconButton(
-                    tooltip: '移除${_typeName(constraint.place.type)}',
+                    tooltip: LanguageService.tr(context, 'planner_remove_type').replaceAll('{type}', _typeName(constraint.place.type)),
                     onPressed: _isGenerating
                         ? null
                         : () => _removePlace(constraint),
@@ -1163,8 +1168,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
               )) ...[
                 const SizedBox(height: 4),
                 Text(
-                  '提醒：此景點並非預設遊玩範圍，'
-                  '但因為是必去景點仍會保留。',
+                  LanguageService.tr(context, 'planner_outside_range'),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -1178,9 +1182,9 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
               if (_autoRecommendedPlaceIds.contains(constraint.place.id)) ...[
                 const SizedBox(height: 4),
                 Text(
-                  '系統推薦・可自行移除',
+                  LanguageService.tr(context, 'planner_recommended_removable'),
                   style: TextStyle(
-                    color: Colors.blue.shade700,
+                    color: AppColors.primaryDark,
                     fontSize: 11,
                     fontWeight: FontWeight.w500,
                   ),
@@ -1201,8 +1205,8 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
                           : () => _selectDay(constraint),
                       child: Text(
                         constraint.place.type == PlaceType.accommodation
-                            ? '調整住宿'
-                            : '指定日期',
+                            ? LanguageService.tr(context, 'planner_adjust_accommodation')
+                            : LanguageService.tr(context, 'planner_select_date'),
                       ),
                     ),
                   ),
@@ -1249,7 +1253,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
                   const SizedBox(height: 4),
 
                   Text(
-                    'Day ${constraint.day}・時間不限\n${constraint.preferences.summaryFor(constraint.place)}',
+                    '${LanguageService.trCurrent('planner_day_time_unlimited').replaceAll('{day}', '${constraint.day}')}\n${constraint.preferences.summaryFor(constraint.place)}',
 
                     style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
                   ),
@@ -1264,13 +1268,13 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
                 _selectTime(constraint);
               },
 
-              child: const Text("指定時間"),
+              child: Text(LanguageService.tr(context, 'planner_specify_time')),
             ),
 
             _preferencesButton(constraint),
 
             IconButton(
-              tooltip: '移除${_typeName(constraint.place.type)}',
+              tooltip: LanguageService.tr(context, 'planner_remove_type').replaceAll('{type}', _typeName(constraint.place.type)),
               onPressed: _isGenerating ? null : () => _removePlace(constraint),
               icon: const Icon(Icons.close),
             ),
@@ -1282,25 +1286,23 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
 
   String _getConstraintStatus(TripPlaceConstraint constraint) {
     if (constraint.day == null) {
-      return "不限日期／時間";
+      return LanguageService.trCurrent('planner_any_date_time');
     }
 
     if (constraint.startMinutes == null) {
-      return "Day ${constraint.day}・時間不限";
+      return LanguageService.trCurrent('planner_day_time_unlimited').replaceAll('{day}', '${constraint.day}');
     }
 
     if (constraint.locked) {
-      return "Day ${constraint.day}・"
-          "${_formatTime(constraint.startMinutes!)}・已鎖定";
+      return 'Day ${constraint.day}・${LanguageService.trCurrent('planner_locked_time').replaceAll('{time}', _formatTime(constraint.startMinutes!))}';
     }
 
-    return "Day ${constraint.day}・"
-        "${_formatTime(constraint.startMinutes!)}";
+    return 'Day ${constraint.day}・${_formatTime(constraint.startMinutes!)}';
   }
 
   Widget _preferencesButton(TripPlaceConstraint constraint) {
     return IconButton(
-      tooltip: '時段、停留與資訊來源',
+      tooltip: LanguageService.trCurrent('planner_preferences_tooltip'),
       onPressed: _isGenerating ? null : () => _editPreferences(constraint),
       icon: const Icon(Icons.tune, size: 20),
     );
@@ -1337,11 +1339,11 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
             mainAxisSize: MainAxisSize.min,
 
             children: [
-              const Padding(
+              Padding(
                 padding: EdgeInsets.all(16),
 
                 child: Text(
-                  "選擇日期",
+                  LanguageService.tr(context, 'planner_choose_date'),
 
                   style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                 ),
@@ -1370,7 +1372,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
               ListTile(
                 leading: const Icon(Icons.clear),
 
-                title: const Text("不限日期"),
+                title: Text(LanguageService.tr(context, 'planner_any_day')),
 
                 onTap: () {
                   setState(() {
@@ -1398,7 +1400,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
     if (constraint.day == null) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text("請先指定日期")));
+      ).showSnackBar(SnackBar(content: Text(LanguageService.tr(context, 'planner_choose_day_first'))));
 
       return;
     }
@@ -1458,8 +1460,11 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
       final todayOnly = DateTime(now.year, now.month, now.day);
 
       final message = selectedDayOnly.isBefore(todayOnly)
-          ? '不能將景點安排在已經過去的日期。'
-          : '今天的景點最早只能安排在 ${_formatTime(minimumDateTime.hour * 60 + minimumDateTime.minute)}。';
+          ? LanguageService.tr(context, 'planner_date_past')
+          : LanguageService.tr(context, 'planner_today_earliest').replaceAll(
+              '{time}',
+              _formatTime(minimumDateTime.hour * 60 + minimumDateTime.minute),
+            );
 
       ScaffoldMessenger.of(
         context,
@@ -1487,10 +1492,10 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Padding(
+              Padding(
                 padding: EdgeInsets.all(16),
                 child: Text(
-                  '選擇新增項目類型',
+                  LanguageService.tr(context, 'planner_add_type_title'),
                   style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                 ),
               ),
@@ -1605,7 +1610,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
     if (_selectedPlaces.isEmpty) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('請至少加入一個行程項目')));
+      ).showSnackBar(SnackBar(content: Text(LanguageService.tr(context, 'planner_add_item_first'))));
       return;
     }
 
@@ -1619,8 +1624,8 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            '以下行程項目缺少有效座標：${invalidPlaces.join('、')}。'
-            '請移除後重新產生行程。',
+            '${LanguageService.tr(context, 'planner_coordinates_missing').replaceAll('{places}', invalidPlaces.join('、'))}\n'
+            '${LanguageService.tr(context, 'planner_coordinates_remove_hint')}',
           ),
         ),
       );
@@ -1631,7 +1636,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
     setState(() {
       _isGenerating = true;
       _isWaitingForTdx = false;
-      _planningMessage = '正在整理景點限制…';
+      _planningMessage = LanguageService.trCurrent('planner_progress_organizing');
       _planningControl = planningControl;
     });
 
@@ -1688,7 +1693,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('無法產生詳細行程：$error')));
+      ).showSnackBar(SnackBar(content: Text('${LanguageService.tr(context, 'planner_generation_failed')}: $error')));
     } finally {
       if (mounted && _isGenerating) {
         setState(() {
@@ -1705,7 +1710,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
     _planningControl?.useEstimates();
     setState(() {
       _isWaitingForTdx = false;
-      _planningMessage = '已取消 TDX 等待，正在以估計時間完成行程…';
+      _planningMessage = LanguageService.trCurrent('planner_progress_tdx_cancelled');
     });
   }
 
@@ -1753,10 +1758,8 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
     if (_mustVisitPlaceIds.contains(constraint.place.id)) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            '${constraint.place.name} 是必去景點，'
-            '若要移除，請返回修改旅遊需求。',
-          ),
+          content: Text(LanguageService.tr(context, 'planner_required_spot_remove')
+              .replaceAll('{place}', constraint.place.name)),
         ),
       );
 
@@ -1776,9 +1779,9 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
 
   String _typeName(PlaceType type) {
     return switch (type) {
-      PlaceType.attraction => '景點',
-      PlaceType.restaurant => '餐廳',
-      PlaceType.accommodation => '住宿',
+      PlaceType.attraction => LanguageService.trCurrent('place_category_attraction'),
+      PlaceType.restaurant => LanguageService.trCurrent('place_category_restaurant'),
+      PlaceType.accommodation => LanguageService.trCurrent('place_category_accommodation'),
     };
   }
 
@@ -1807,9 +1810,9 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
   // ============================================================
   String _paceLabel(String pace) {
     return switch (pace.trim().toLowerCase()) {
-      'relaxed' => '悠閒',
-      'intensive' => '緊湊',
-      _ => '平衡',
+      'relaxed' => LanguageService.trCurrent('pace_relaxed'),
+      'intensive' => LanguageService.trCurrent('pace_intensive'),
+      _ => LanguageService.trCurrent('pace_balanced'),
     };
   }
 
@@ -1820,7 +1823,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          title: const Text('智慧補齊景點'),
+          title: Text(LanguageService.tr(dialogContext, 'autofill_title')),
           content: SizedBox(
             width: 420,
             child: SingleChildScrollView(
@@ -1829,18 +1832,18 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    '目前已有 '
-                    '${plan.currentAttractionCount} 個景點。\n'
-                    '依照 ${widget.request.days} 天、'
-                    '${_paceLabel(_recommendationCriteria.pace)}行程，'
-                    '建議安排 '
-                    '${plan.targetAttractionCount} 個景點。',
+                    LanguageService.tr(dialogContext, 'autofill_overview')
+                        .replaceAll('{current}', '${plan.currentAttractionCount}')
+                        .replaceAll('{days}', '${widget.request.days}')
+                        .replaceAll('{pace}', _paceLabel(_recommendationCriteria.pace))
+                        .replaceAll('{target}', '${plan.targetAttractionCount}'),
                   ),
 
                   const SizedBox(height: 12),
 
                   Text(
-                    '將補入 ${plan.actualAddCount} 個景點：',
+                    LanguageService.tr(dialogContext, 'autofill_adding')
+                        .replaceAll('{count}', '${plan.actualAddCount}'),
                     style: const TextStyle(fontWeight: FontWeight.bold),
                   ),
 
@@ -1868,8 +1871,8 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
                   if (remainingAfterFill > 0) ...[
                     const SizedBox(height: 12),
                     Text(
-                      '目前符合條件的景點不足，'
-                      '補入後仍少 $remainingAfterFill 個。',
+                      LanguageService.tr(dialogContext, 'autofill_not_enough')
+                          .replaceAll('{count}', '$remainingAfterFill'),
                       style: TextStyle(color: Colors.orange.shade800),
                     ),
                   ],
@@ -1882,13 +1885,14 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
               onPressed: () {
                 Navigator.of(dialogContext).pop(false);
               },
-              child: const Text('取消'),
+              child: Text(LanguageService.tr(dialogContext, 'autofill_cancel')),
             ),
             FilledButton(
               onPressed: () {
                 Navigator.of(dialogContext).pop(true);
               },
-              child: Text('補入 ${plan.actualAddCount} 個景點'),
+              child: Text(LanguageService.tr(dialogContext, 'autofill_confirm')
+                  .replaceAll('{count}', '${plan.actualAddCount}')),
             ),
           ],
         );
@@ -1910,21 +1914,18 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
     );
 
     if (plan.alreadyEnough) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            '目前已有 ${plan.currentAttractionCount} 個景點，'
-            '已達建議數量 ${plan.targetAttractionCount} 個。',
-          ),
-        ),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(LanguageService.tr(context, 'autofill_already_full')
+            .replaceAll('{current}', '${plan.currentAttractionCount}')
+            .replaceAll('{target}', '${plan.targetAttractionCount}')),
+      ));
       return;
     }
 
     if (plan.placesToAdd.isEmpty) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('目前沒有其他符合條件的推薦景點可以補入。')));
+      ).showSnackBar(SnackBar(content: Text(LanguageService.tr(context, 'autofill_none_available'))));
       return;
     }
 
@@ -1971,7 +1972,8 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
     });
 
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('已補入 ${plan.actualAddCount} 個推薦景點。')),
+      SnackBar(content: Text(LanguageService.tr(context, 'autofill_success')
+          .replaceAll('{count}', '${plan.actualAddCount}'))),
     );
   }
 
@@ -1985,11 +1987,11 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
     return Padding(
       padding: const EdgeInsets.only(top: 4),
       child: Text(
-        '推薦原因：${reasons.join('・')}',
+        LanguageService.tr(context, 'planner_recommendation_reason').replaceAll('{reasons}', reasons.join('・')),
         maxLines: 3,
         overflow: TextOverflow.ellipsis,
         style: TextStyle(
-          color: Colors.blue.shade700,
+          color: AppColors.primaryDark,
           fontSize: 11,
           height: 1.3,
         ),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../services/language_service.dart';
 
 class BudgetField extends StatelessWidget {
   final int? value;
@@ -6,12 +7,12 @@ class BudgetField extends StatelessWidget {
 
   const BudgetField({super.key, required this.value, required this.onChanged});
 
-  static const Map<int, String> _labels = {
-    1: '節省',
-    2: '平價',
-    3: '適中',
-    4: '高級',
-    5: '奢華',
+  static const Map<int, String> _labelKeys = {
+    1: 'budget_save',
+    2: 'budget_affordable',
+    3: 'budget_moderate',
+    4: 'budget_upscale',
+    5: 'budget_luxury',
   };
 
   @override
@@ -21,16 +22,16 @@ class BudgetField extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          '預算等級',
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+        Text(
+          LanguageService.tr(context, 'budget_level'),
+          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
         ),
 
         const SizedBox(height: 4),
 
         Text(
-          '1 最省・5 最高',
-          style: TextStyle(fontSize: 13, color: colorScheme.onSurfaceVariant),
+          LanguageService.tr(context, 'budget_scale_hint'),
+          style: TextStyle(fontSize: 14, color: colorScheme.onSurfaceVariant),
         ),
 
         const SizedBox(height: 10),
@@ -38,9 +39,12 @@ class BudgetField extends StatelessWidget {
         Wrap(
           spacing: 8,
           runSpacing: 8,
-          children: _labels.entries.map((entry) {
+          children: _labelKeys.entries.map((entry) {
             return ChoiceChip(
-              label: Text('${entry.key} ${entry.value}'),
+              label: Text(
+                '${entry.key} ${LanguageService.tr(context, entry.value)}',
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+              ),
               selected: value == entry.key,
               showCheckmark: false,
               onSelected: (_) {

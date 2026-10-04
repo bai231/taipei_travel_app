@@ -4,6 +4,8 @@ import '../services/place_service.dart';
 import '../services/location_service.dart';
 import '../widgets/place_card.dart';
 import '../pages/itinerary_result_page.dart';
+import '../services/language_service.dart';
+import '../theme/app_typography.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -102,15 +104,11 @@ class _HomePageState extends State<HomePage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // 1. 區塊一：網上大家都在玩的行程標題
-              const Padding(
+              Padding(
                 padding: EdgeInsets.fromLTRB(16, 16, 16, 10),
                 child: Text(
-                  "網上大家都在玩的行程",
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 0.5,
-                  ),
+                  LanguageService.tr(context, 'popular_trips'),
+                  style: AppTypography.headline(),
                 ),
               ),
 
@@ -218,11 +216,11 @@ class _HomePageState extends State<HomePage> {
                                             width: 0.8,
                                           ),
                                         ),
-                                        child: const Row(
+                                        child: Row(
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
                                             Text(
-                                              "查看行程",
+                                              LanguageService.tr(context, 'view_trip'),
                                               style: TextStyle(
                                                 color: Colors.white,
                                                 fontSize: 10,
@@ -257,12 +255,8 @@ class _HomePageState extends State<HomePage> {
                 child: Row(
                   children: [
                     Text(
-                      _currentUserLocation != null ? "附近景點推薦" : "景點推薦",
-                      style: const TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 0.5,
-                      ),
+                      LanguageService.tr(context, 'spot_recommendations'),
+                      style: AppTypography.headline(),
                     ),
                     const SizedBox(width: 8),
                     if (_currentUserLocation != null)
@@ -272,13 +266,13 @@ class _HomePageState extends State<HomePage> {
                           color: const Color(0xFF70B19B).withValues(alpha: 0.25),
                           borderRadius: BorderRadius.circular(10),
                         ),
-                        child: const Row(
+                        child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Icon(Icons.near_me_rounded, size: 12, color: Color(0xFF1E3A2F)),
                             SizedBox(width: 3),
                             Text(
-                              "依距離排序",
+                              LanguageService.tr(context, 'home_distance_sort'),
                               style: TextStyle(
                                 fontSize: 11,
                                 color: Color(0xFF1E3A2F),
@@ -305,16 +299,16 @@ class _HomePageState extends State<HomePage> {
                     child: Padding(
                       padding: const EdgeInsets.all(16.0),
                       child: Text(
-                        "讀取景點失敗：$errorMessage",
+                        LanguageService.tr(context, 'home_load_places_failed') + ": $errorMessage",
                         textAlign: TextAlign.center,
                       ),
                     ),
                   ),
                 )
               else if (places.isEmpty)
-                const SizedBox(
+                SizedBox(
                   height: 210,
-                  child: Center(child: Text("目前尚無景點資料")),
+                  child: Center(child: Text(LanguageService.tr(context, 'home_no_places'))),
                 )
               else
                 SizedBox(

@@ -4,6 +4,8 @@ import '../models/place.dart';
 import '../services/favorite_service.dart';
 import '../theme/app_colors.dart';
 import '../utils/map_launcher.dart';
+import '../services/language_service.dart';
+import '../theme/app_typography.dart';
 
 class PlaceDetailPage extends StatefulWidget {
   final Place place;
@@ -37,7 +39,7 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
   }
 
   Future<void> _openPhone(String phone) async {
-    await _launchExternal(Uri(scheme: 'tel', path: phone), '無法開啟電話功能');
+    await _launchExternal(Uri(scheme: 'tel', path: phone), LanguageService.tr(context, 'place_phone_unavailable'));
   }
 
   Future<void> _openWebsite(String website) async {
@@ -47,10 +49,10 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
         : 'https://$website';
     final uri = Uri.tryParse(normalized);
     if (uri == null) {
-      _showLaunchError('網站網址格式不正確');
+      _showLaunchError(LanguageService.tr(context, 'place_website_invalid'));
       return;
     }
-    await _launchExternal(uri, '無法開啟網站');
+    await _launchExternal(uri, LanguageService.tr(context, 'place_website_unavailable'));
   }
 
   Future<void> _launchExternal(Uri uri, String errorMessage) async {
@@ -81,9 +83,9 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
     final Color textColor = AppColors.primaryDark;
     final Color subTextColor = AppColors.primaryDark.withValues(alpha: 0.65);
     final typeLabel = switch (place.type) {
-      PlaceType.attraction => '景點',
-      PlaceType.restaurant => '餐廳',
-      PlaceType.accommodation => '住宿',
+      PlaceType.attraction => LanguageService.tr(context, 'place_category_attraction'),
+      PlaceType.restaurant => LanguageService.tr(context, 'place_category_restaurant'),
+      PlaceType.accommodation => LanguageService.tr(context, 'place_category_accommodation'),
     };
 
     return Scaffold(
@@ -122,8 +124,8 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
                     duration: const Duration(seconds: 1),
                     content: Text(
                       added
-                          ? '已將「${place.name}」加入收藏 ⭐️'
-                          : '已將「${place.name}」移出收藏',
+                          ? LanguageService.tr(context, 'place_favorite_added').replaceAll('{place}', place.name)
+                          : LanguageService.tr(context, 'place_favorite_removed').replaceAll('{place}', place.name),
                     ),
                   ),
                 );
@@ -195,7 +197,7 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
                 Icon(Icons.schedule_rounded, size: 18, color: subTextColor),
                 const SizedBox(width: 4),
                 Text(
-                  "建議 ${place.stayTime} 分鐘",
+                  "${LanguageService.tr(context, 'place_detail_stay')} ${place.stayTime} ${LanguageService.tr(context, 'place_detail_minutes')}",
                   style: TextStyle(color: subTextColor, fontSize: 13),
                 ),
               ],
@@ -205,12 +207,8 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
 
             // 3. 介紹區塊（手帳便籤卡片容器，支援自動換行與舒適行距）
             Text(
-              "$typeLabel介紹",
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: textColor,
-              ),
+              "$typeLabel${LanguageService.tr(context, 'place_detail_intro')}",
+              style: AppTypography.sectionTitle(color: textColor),
             ),
             const SizedBox(height: 10),
             Container(
@@ -228,7 +226,7 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
                 ],
               ),
               child: Text(
-                place.description.trim().isEmpty ? "暫無詳細介紹" : place.description,
+                place.description.trim().isEmpty ? LanguageService.tr(context, 'place_detail_empty_description') : place.description,
                 softWrap: true, // 自動換行
                 style: TextStyle(
                   fontSize: 15,
@@ -243,12 +241,8 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
             // 4. 地址資訊
             if (place.address.isNotEmpty) ...[
               Text(
-                "$typeLabel地址",
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: textColor,
-                ),
+                "$typeLabel${LanguageService.tr(context, 'place_detail_address')}",
+                style: AppTypography.sectionTitle(color: textColor),
               ),
               const SizedBox(height: 10),
               Container(
@@ -290,8 +284,8 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
                     ElevatedButton.icon(
                       onPressed: () => MapLauncher.openGoogleMaps(place),
                       icon: const Icon(Icons.navigation_rounded, size: 14),
-                      label: const Text(
-                        "導航",
+                      label: Text(
+                        LanguageService.tr(context, 'place_detail_navigation'),
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.bold,
@@ -323,7 +317,7 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
                 place.openingHoursRaw.trim().isNotEmpty) ...[
               const SizedBox(height: 24),
               Text(
-                '詳細資訊',
+                LanguageService.tr(context, 'view_detail'),
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
