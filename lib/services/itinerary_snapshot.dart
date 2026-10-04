@@ -27,6 +27,7 @@ Map<String, dynamic> itinerarySnapshot(RouteItinerary itinerary) {
       'startDate': request.startDate.toIso8601String(),
       'endDate': request.endDate.toIso8601String(),
       'location': request.location,
+      'locations': request.locations,
       'people': request.people,
       'budgetLevel': request.budget_level,
       'preferences': request.preferences,
