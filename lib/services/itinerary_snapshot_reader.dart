@@ -22,6 +22,9 @@ RouteItinerary itineraryFromSnapshot(Map<String, dynamic> raw) {
     title: _string(requestData['title']),
     startDate: _date(requestData['startDate'], 'request.startDate'),
     endDate: _date(requestData['endDate'], 'request.endDate'),
+    locations: requestData['locations'] is List
+        ? _strings(requestData['locations'])
+        : null,
     location: _string(requestData['location']),
     people: _int(requestData['people'], 1),
     budget_level: _int(requestData['budgetLevel'], 0),
