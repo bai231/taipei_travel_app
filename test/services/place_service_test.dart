@@ -120,6 +120,22 @@ void main() {
     expect(result.map((place) => place.name), ['台北景點']);
   });
 
+  test('多縣市行程會保留任一選取縣市且排除其他縣市', () {
+    final places = [
+      _place('台北景點', address: '臺北市中正區', latitude: 25.04),
+      _place('新北景點', address: '新北市板橋區', latitude: 25.01),
+      _place('台南景點', address: '臺南市東區', latitude: 22.98),
+      _place('缺座標', address: '新北市淡水區', latitude: 0),
+    ];
+
+    final result = PlaceService.filterForTripLocations(
+      places: places,
+      locations: const ['台北市', '新北市'],
+    );
+
+    expect(result.map((place) => place.name), ['台北景點', '新北景點']);
+  });
+
   test('台與臺視為相同縣市名稱', () {
     final place = _place('台北景點', address: '臺北市信義區');
 

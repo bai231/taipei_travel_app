@@ -171,7 +171,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
                 query: query,
                 places: catalog,
                 excludedPlaceIds: excludedPlaceIds,
-                preferredLocation: itinerary.request.location,
+                preferredLocations: itinerary.request.locations,
               );
             },
             onAddPlace: (ctx, selectedPlaceIds) async {

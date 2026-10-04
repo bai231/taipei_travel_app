@@ -23,7 +23,31 @@ class RouteStop {
     this.priorityScore = 1,
   });
 
-  factory RouteStop.fromPlace(Place place, {double priorityScore = 1}) {
+  factory RouteStop.fromPlace(
+    Place place, {
+    DateTime? date,
+    double priorityScore = 1,
+  }) {
+    final periods = date == null
+        ? const <OpeningPeriod>[]
+        : place.getOpeningPeriodsForDate(date);
+
+    int? earliestTimeMinutes;
+    int? latestTimeMinutes;
+
+    if (periods.isNotEmpty) {
+      earliestTimeMinutes = periods
+          .map((period) => period.openMinutes)
+          .reduce((a, b) => a < b ? a : b);
+
+      latestTimeMinutes = periods
+          .map((period) => period.closeMinutes)
+          .reduce((a, b) => a > b ? a : b);
+    } else if (place.hasKnownOpeningHours) {
+      earliestTimeMinutes = place.openMinutes;
+      latestTimeMinutes = place.closeMinutes;
+    }
+
     return RouteStop(
       id: place.id,
       name: place.name,
@@ -31,8 +55,8 @@ class RouteStop {
       longitude: place.longitude,
       county: place.county,
       stayDurationMinutes: place.stayTime,
-      earliestTimeMinutes: place.openMinutes,
-      latestTimeMinutes: place.closeMinutes,
+      earliestTimeMinutes: earliestTimeMinutes,
+      latestTimeMinutes: latestTimeMinutes,
       priorityScore: priorityScore,
     );
   }

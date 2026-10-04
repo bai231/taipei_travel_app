@@ -42,7 +42,7 @@ class _TripPageState extends State<TripPage> {
 
   int? _budgetLevel;
 
-  String _location = '台北市';
+  List<String> _selectedLocations = ['台北市'];
 
   List<String> _preferences = [];
 
@@ -208,6 +208,13 @@ class _TripPageState extends State<TripPage> {
       return;
     }
 
+    if (_selectedLocations.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("請至少選擇一個旅遊縣市")));
+      return;
+    }
+
     setState(() {
       _isSubmitting = true;
     });
@@ -236,7 +243,7 @@ class _TripPageState extends State<TripPage> {
         title: _tripNameController.text.trim(),
         startDate: _startDate!,
         endDate: _endDate!,
-        location: _location,
+        locations: _selectedLocations,
         people: _people,
         budget_level: _budgetLevel!,
         preferences: _preferences,
@@ -319,14 +326,10 @@ class _TripPageState extends State<TripPage> {
 
             const SizedBox(height: 16),
             TripLocationField(
-              location: _location,
-              onChanged: (value) {
-                if (value == null) {
-                  return;
-                }
-
+              selectedLocations: _selectedLocations,
+              onChanged: (locations) {
                 setState(() {
-                  _location = value;
+                  _selectedLocations = locations;
                 });
               },
             ),

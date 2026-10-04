@@ -20,8 +20,8 @@ class RecommendationCriteria {
   /// 使用者指定一定要去的景點名稱
   final Set<String> mustVisitPlaceNames;
 
-  /// 行程地區
-  final String location;
+  /// 行程地區，可包含多個縣市
+  final List<String> locations;
 
   /// 表單選擇的價格等級，範圍為 1～5
   final int budgetLevel;
@@ -52,7 +52,7 @@ class RecommendationCriteria {
     required this.excludedCategories,
     required this.excludedTags,
     required this.mustVisitPlaceNames,
-    required this.location,
+    required this.locations,
     required this.budgetLevel,
     required this.people,
     required this.days,
@@ -62,6 +62,11 @@ class RecommendationCriteria {
     required this.specialRequirements,
   });
 
+  /// 舊畫面相容：單一縣市回傳該縣市，多縣市時顯示「全台」。
+  String get location => locations.length == 1 ? locations.first : '全台';
+
+  String get locationLabel => locations.join('、');
+
   Map<String, dynamic> toJson() {
     return {
       'preferredCategories': preferredCategories.toList(),
@@ -69,7 +74,7 @@ class RecommendationCriteria {
       'excludedCategories': excludedCategories.toList(),
       'excludedTags': excludedTags.toList(),
       'mustVisitPlaceNames': mustVisitPlaceNames.toList(),
-      'location': location,
+      'locations': locations,
       'budgetLevel': budgetLevel,
       'people': people,
       'days': days,

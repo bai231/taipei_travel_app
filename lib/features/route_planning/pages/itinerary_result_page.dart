@@ -2424,7 +2424,7 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
       requestedAt: now,
       dayNumber: today?.day ?? 1,
       dayDate: today?.date ?? now,
-      tripLocation: _itinerary.request.location,
+      tripLocation: _itinerary.request.locationLabel,
       people: _itinerary.request.people,
       budget_level: _itinerary.request.budget_level,
       preferences: List<String>.from(_itinerary.request.preferences),
@@ -4398,14 +4398,19 @@ ${answer.trim()}
   }
 
   bool _isOutsidePreferredLocation(Place place) {
-    final preferredLocation = _normalizeLocation(_itinerary.request.location);
+    final preferredLocations = _itinerary.request.locations
+        .map(_normalizeLocation)
+        .where((location) => location.isNotEmpty)
+        .toSet();
 
-    if (preferredLocation.isEmpty || preferredLocation == '全台') {
+    if (preferredLocations.isEmpty ||
+        preferredLocations.contains('全台') ||
+        preferredLocations.contains('台灣')) {
       return false;
     }
 
     final county = _normalizeLocation(PlaceService.countyFor(place));
-    return county.isNotEmpty && county != preferredLocation;
+    return county.isNotEmpty && !preferredLocations.contains(county);
   }
 
   String _normalizeLocation(String value) {

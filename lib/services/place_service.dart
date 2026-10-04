@@ -82,9 +82,20 @@ class PlaceService {
     return batches.expand((batch) => batch).toList();
   }
 
-  Future<List<Place>> getPlacesForTrip({required String location}) async {
+  Future<List<Place>> getPlacesForTrip({
+    String? location,
+    List<String>? locations,
+  }) async {
     final places = await getPlaces();
-    return filterForTrip(places: places, location: location);
+
+    if (locations != null && locations.isNotEmpty) {
+      return filterForTripLocations(places: places, locations: locations);
+    }
+
+    return filterForTrip(
+      places: places,
+      location: location ?? '',
+    );
   }
 
   Future<List<Place>> getRoutablePlaces() async {
@@ -187,6 +198,29 @@ class PlaceService {
         .where(
           (place) =>
               isInLocation(place: place, location: location) &&
+              hasUsableCoordinates(place),
+        )
+        .toList();
+  }
+
+  static List<Place> filterForTripLocations({
+    required Iterable<Place> places,
+    required Iterable<String> locations,
+  }) {
+    final normalizedLocations = locations
+        .map(_normalizeTaiwanText)
+        .where((location) => location.isNotEmpty)
+        .toSet();
+
+    if (normalizedLocations.contains('全台') ||
+        normalizedLocations.contains('台灣')) {
+      return places.where(hasUsableCoordinates).toList();
+    }
+
+    return places
+        .where(
+          (place) =>
+              normalizedLocations.contains(countyFor(place)) &&
               hasUsableCoordinates(place),
         )
         .toList();
