@@ -1,20 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-import '../services/saved_itinerary_service.dart';
-import '../services/language_service.dart';
 import '../features/route_planning/pages/itinerary_result_page.dart' as planner;
 import '../features/route_planning/models/route_itinerary.dart';
 import '../features/route_planning/services/itinerary_planning_service.dart';
 import '../features/route_planning/services/itinerary_place_resolver.dart';
 import '../services/place_service.dart';
-import '../widgets/trip/planner_item_picker.dart';
 import '../widgets/trip/planner_favorite_picker_dialog.dart';
 import '../models/place.dart';
-
-
-import '../features/route_planning/models/route_itinerary.dart';
 import '../features/route_planning/models/route_place_input.dart';
-import '../theme/app_typography.dart';
 import '../theme/app_colors.dart';
 
 
@@ -24,7 +16,6 @@ class ItineraryResultPage extends StatefulWidget {
   final Map<String, dynamic>? initialSnapshot;
   final String? savedItineraryId;
   final String? savedItineraryUserId;
-  final Future<bool> Function()? onDelete;
 
   const ItineraryResultPage({
     super.key,
@@ -32,7 +23,6 @@ class ItineraryResultPage extends StatefulWidget {
     this.initialSnapshot,
     this.savedItineraryId,
     this.savedItineraryUserId,
-    this.onDelete,
   });
 
   @override
@@ -50,7 +40,6 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
 
   List<Map<String, dynamic>> _daysData = [];
   final Set<String> _expandedReasons = {};
-  bool _isExporting = false;
   
 
   @override
@@ -194,45 +183,6 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
       );
     }
   }
-  // ☁️ 匯出行程至 Supabase
-  Future<void> _exportItinerary() async {
-    final user = Supabase.instance.client.auth.currentUser;
-    if (user == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('請先登入帳號以儲存行程 🌿')),
-      );
-      return;
-    }
-
-    setState(() => _isExporting = true);
-    try {
-      final savedService = SavedItineraryService(Supabase.instance.client);
-      final String snapshotId = widget.savedItineraryId ?? DateTime.now()
-          .millisecondsSinceEpoch
-          .toRadixString(16)
-          .padLeft(32, '0');
-
-      await savedService.save(
-        userId: user.id,
-        id: snapshotId,
-        title: widget.tripTitle,
-        snapshot: widget.initialSnapshot ?? {},
-      );
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('「${widget.tripTitle}」已成功儲存至個人紀錄！🎉')),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('儲存失敗：$e')),
-      );
-    } finally {
-      if (mounted) setState(() => _isExporting = false);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -268,31 +218,6 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
                     textColor: textDark,
                     onTap: _backToEditPage,
                   ),
-                  const SizedBox(width: 8),
-                  // 🌟 匯出儲存按鈕
-                  _isExporting
-                      ? SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: textDark),
-                        )
-                      : _buildCapsuleButton(
-                          label: "匯出",
-                          icon: Icons.bookmark_add_outlined,
-                          bgColor: AppColors.primary,
-                          textColor: Colors.white,
-                          onTap: _exportItinerary,
-                        ),
-                  if (widget.onDelete != null)
-                    IconButton(
-                      tooltip: LanguageService.tr(context, 'delete_trip'),
-                      onPressed: () async {
-                        if (await widget.onDelete!() && mounted) {
-                          Navigator.pop(context);
-                        }
-                      },
-                      icon: Icon(Icons.delete_outline, color: textSub),
-                    ),
                 ],
               ),
             ),

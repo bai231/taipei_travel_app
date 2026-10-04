@@ -130,29 +130,6 @@ Future<bool> _confirmDelete({required String title, required String name}) async
   return confirmed == true;
 }
 
-Future<bool> _deleteSavedTrip(String id, String title) async {
-  if (!await _confirmDelete(
-    title: LanguageService.tr(context, 'delete_trip'),
-    name: title,
-  )) return false;
-  try {
-    await _savedItineraryService.delete(id);
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${LanguageService.tr(context, 'delete_success')}「$title」')),
-      );
-    }
-    return true;
-  } catch (_) {
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(LanguageService.tr(context, 'delete_failed'))),
-      );
-    }
-    return false;
-  }
-}
-
 Future<bool> _deleteSavedFolder(Map<String, dynamic> folder) async {
   final id = (folder['id'] as num?)?.toInt();
   if (id == null) return false;
@@ -780,10 +757,6 @@ Future<bool> _deleteSavedFolder(Map<String, dynamic> folder) async {
                                 MaterialPageRoute<void>(
                                   builder: (_) => SavedItineraryResultPage(
                                     id: tripId,
-                                    onDelete: () => _deleteSavedTrip(
-                                      tripId,
-                                      (trip['title'] ?? LanguageService.tr(context, 'my_trips')).toString(),
-                                    ),
                                   ),
                                 ),
                               );

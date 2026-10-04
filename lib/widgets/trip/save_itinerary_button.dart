@@ -13,7 +13,6 @@ class SaveItineraryButton extends StatefulWidget {
   final bool enabled;
   final SavedItineraryGateway? gateway;
   final String? savedItineraryId;
-  final String? savedItineraryUserId;
   final ValueChanged<String>? onSaved;
   const SaveItineraryButton({
     super.key,
@@ -21,7 +20,6 @@ class SaveItineraryButton extends StatefulWidget {
     this.enabled = true,
     this.gateway,
     this.savedItineraryId,
-    this.savedItineraryUserId,
     this.onSaved,
   });
   @override
@@ -52,12 +50,8 @@ class _SaveItineraryButtonState extends State<SaveItineraryButton> {
       }
       setState(() => _saving = true);
       final random = Random.secure();
-      final canOverwriteSavedTrip = widget.savedItineraryId != null &&
-          (widget.savedItineraryUserId == null ||
-              widget.savedItineraryUserId == userId);
-      final id = canOverwriteSavedTrip
-          ? widget.savedItineraryId!
-          : _idsByUser.putIfAbsent(
+      final id = widget.savedItineraryId ??
+          _idsByUser.putIfAbsent(
               userId,
               () => List.generate(
                 16,
@@ -77,12 +71,9 @@ class _SaveItineraryButtonState extends State<SaveItineraryButton> {
       );
       if (gateway.currentUserId != userId) {
         message('帳號已變更，請在原帳號確認儲存結果');
-      } else if (canOverwriteSavedTrip) {
-        widget.onSaved?.call(id);
-        message('已更新原行程');
       } else {
         widget.onSaved?.call(id);
-        message('已儲存行程；後續修改請再次儲存');
+        message('已儲存按下按鈕時的完整行程；後續修改請再次儲存');
       }
     } catch (_) {
       message('儲存失敗，請確認網路、登入及資料表設定後重試');

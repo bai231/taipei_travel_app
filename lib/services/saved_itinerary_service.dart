@@ -2,7 +2,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter/foundation.dart';
 import 'itinerary_snapshot.dart';
 
-/// 已儲存行程服務介面契約
 abstract interface class SavedItineraryGateway {
   String? get currentUserId;
 
@@ -55,7 +54,6 @@ class SavedItineraryService implements SavedItineraryGateway {
         'user_id': userId,
         'title': title,
         'snapshot': snapshot,
-        'updated_at': DateTime.now().toIso8601String(),
       }, onConflict: 'user_id,id');
 
     if (currentUserId != userId) {
@@ -105,19 +103,5 @@ class SavedItineraryService implements SavedItineraryGateway {
     if (currentUserId != uid) throw StateError('帳號已變更');
     final snapshot = Map<String, dynamic>.from(row['snapshot'] as Map);
     return decodeItinerarySnapshot(snapshot);
-  }
-
-  Future<void> delete(String id) async {
-    final uid = currentUserId;
-    if (uid == null) throw StateError('請先登入');
-
-    await client
-        .from('saved_itineraries')
-        .delete()
-        .eq('user_id', uid)
-        .eq('id', id);
-
-    if (currentUserId != uid) throw StateError('帳號已變更');
-    changes.value++;
   }
 }

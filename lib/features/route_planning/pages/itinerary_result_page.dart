@@ -312,7 +312,6 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
           SaveItineraryButton(
             itinerary: _itinerary,
             savedItineraryId: _savedItineraryId,
-            savedItineraryUserId: widget.savedItineraryUserId,
             onSaved: (id) {
               if (!mounted) return;
               setState(() {

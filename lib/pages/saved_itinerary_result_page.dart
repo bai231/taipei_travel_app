@@ -12,18 +12,14 @@ import '../models/trip_place_constraint.dart';
 import '../services/itinerary_snapshot_reader.dart';
 import '../services/place_service.dart';
 import '../services/saved_itinerary_service.dart';
+import 'saved_itinerary_preview_page.dart';
 import 'trip_planner_page.dart';
 
 /// A saved result is displayed from its snapshot; route APIs are only called
 /// after the user explicitly generates a new preview in the planner.
 class SavedItineraryResultPage extends StatefulWidget {
   final String id;
-  final Future<bool> Function()? onDelete;
-  const SavedItineraryResultPage({
-    super.key,
-    required this.id,
-    this.onDelete,
-  });
+  const SavedItineraryResultPage({super.key, required this.id});
 
   @override
   State<SavedItineraryResultPage> createState() =>
@@ -49,10 +45,10 @@ class _SavedItineraryResultPageState extends State<SavedItineraryResultPage> {
     _itinerary = _load();
   }
 
-  Future<void> _edit(RouteItinerary itinerary) async {
+  Future<RouteItinerary?> _edit(RouteItinerary itinerary) async {
     try {
       final catalog = await _loadCatalog();
-      if (!mounted) return;
+      if (!mounted) return null;
       await Navigator.of(context).push(
         MaterialPageRoute<void>(
           builder: (_) => TripPlannerPage(
@@ -64,12 +60,14 @@ class _SavedItineraryResultPageState extends State<SavedItineraryResultPage> {
           ),
         ),
       );
-      if (mounted) setState(() => _itinerary = _load());
+      if (!mounted) return null;
+      return await _load();
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted) return null;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('無法開啟行程編輯：$error')));
+      return null;
     }
   }
 
@@ -95,6 +93,38 @@ class _SavedItineraryResultPageState extends State<SavedItineraryResultPage> {
     reusableItinerary: previous,
   );
 
+  Future<void> _openEditable(RouteItinerary itinerary) async {
+    var currentItinerary = itinerary;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => StatefulBuilder(
+          builder: (routeContext, setRouteState) => ItineraryResultPage(
+            key: ValueKey(currentItinerary),
+            itinerary: currentItinerary,
+            savedItineraryId: widget.id,
+            onEditItinerary: (updated) async {
+              final saved = await _edit(updated);
+              if (saved != null && routeContext.mounted) {
+                setRouteState(() => currentItinerary = saved);
+              }
+            },
+            onRecalculate: _recalculate,
+            onResolvePlaceQuery: (query, excludedIds) async {
+              final catalog = await _loadCatalog();
+              return const ItineraryPlaceResolver().search(
+                query: query,
+                places: catalog,
+                excludedPlaceIds: excludedIds,
+                preferredLocations: currentItinerary.request.locations,
+              );
+            },
+          ),
+        ),
+      ),
+    );
+    if (mounted) setState(() => _itinerary = _load());
+  }
+
   @override
   Widget build(BuildContext context) => FutureBuilder<RouteItinerary>(
     future: _itinerary,
@@ -118,23 +148,9 @@ class _SavedItineraryResultPageState extends State<SavedItineraryResultPage> {
           ),
         );
       }
-      return ItineraryResultPage(
-        key: ValueKey('${widget.id}:${snapshot.data!.generatedAt}'),
+      return SavedItineraryPreviewPage(
         itinerary: snapshot.data!,
-        savedItineraryId: widget.id,
-        savedItineraryUserId: _service.currentUserId,
-        onDelete: widget.onDelete,
-        onEditItinerary: _edit,
-        onRecalculate: _recalculate,
-        onResolvePlaceQuery: (query, excludedIds) async {
-          final catalog = await _loadCatalog();
-          return const ItineraryPlaceResolver().search(
-            query: query,
-            places: catalog,
-            excludedPlaceIds: excludedIds,
-            preferredLocations: snapshot.data!.request.locations,
-          );
-        },
+        onEdit: () => _openEditable(snapshot.data!),
       );
     },
   );
