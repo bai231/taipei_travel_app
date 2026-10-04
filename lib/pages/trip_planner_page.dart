@@ -60,7 +60,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
   final ItineraryPlanningService _planningService = ItineraryPlanningService();
   late final Set<String> _mustVisitPlaceIds;
   late final Set<String> _conflictingMustVisitPlaceIds;
-  late final Map<String, num> _candidateScoresByPlaceId;
+  Map<String, num> _candidateScoresByPlaceId = {};
   final TripAutoFillService _autoFillService = const TripAutoFillService();
   final Set<String> _autoRecommendedPlaceIds = {};
   final Map<String, List<String>> _autoRecommendationReasonsByPlaceId = {};
@@ -87,6 +87,8 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
   ItineraryPlanningControl? _planningControl;
 
   void _showPlacePicker() {
+    _refreshCandidateScores();
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -222,6 +224,39 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
         );
       }
     }
+  }
+
+  void _refreshCandidateScores() {
+    final manuallySelectedAttractions = _selectedPlaces
+        .where(
+          (constraint) =>
+              constraint.place.type == PlaceType.attraction &&
+              !_autoRecommendedPlaceIds.contains(constraint.place.id),
+        )
+        .map((constraint) => constraint.place)
+        .toList();
+
+    final allAttractions = widget.places
+        .where((place) => place.type == PlaceType.attraction)
+        .toList();
+
+    final rankingCandidates = RecommendationCandidateFilter.filter(
+      places: allAttractions,
+      criteria: _recommendationCriteria,
+      applyLocation: false,
+    );
+
+    final rankedRecommendations = PlaceRecommendationService().rank(
+      candidates: rankingCandidates,
+      criteria: _recommendationCriteria,
+      manuallySelectedPlaces: manuallySelectedAttractions,
+    );
+
+    _candidateScoresByPlaceId = {
+      ...widget.candidateScoresByPlaceId,
+      for (final recommendation in rankedRecommendations)
+        recommendation.place.id: recommendation.totalScore,
+    };
   }
 
   Future<void> _showRecommendationConflictDialog() async {
@@ -1902,11 +1937,26 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
         .map((constraint) => constraint.place)
         .toList();
 
+    final manuallySelectedAttractions = _selectedPlaces
+        .where(
+          (constraint) =>
+              constraint.place.type == PlaceType.attraction &&
+              !_autoRecommendedPlaceIds.contains(constraint.place.id),
+        )
+        .map((constraint) => constraint.place)
+        .toList();
+
+    final rankedRecommendations = PlaceRecommendationService().rank(
+      candidates: _candidatePlaces,
+      criteria: _recommendationCriteria,
+      manuallySelectedPlaces: manuallySelectedAttractions,
+    );
+
     final plan = _autoFillService.createPlan(
       days: widget.request.days,
       pace: _recommendationCriteria.pace,
       selectedAttractions: selectedAttractions,
-      rankedRecommendations: _recommendations,
+      rankedRecommendations: rankedRecommendations,
     );
 
     if (plan.alreadyEnough) {
@@ -1939,7 +1989,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
         .toSet();
 
     final recommendationsByPlaceId = {
-      for (final recommendation in _recommendations)
+      for (final recommendation in rankedRecommendations)
         recommendation.place.id: recommendation,
     };
 
