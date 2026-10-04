@@ -9,11 +9,7 @@ class PlaceCard extends StatefulWidget {
   final Place place;
   final VoidCallback? onDetailPressed;
 
-  const PlaceCard({
-    super.key,
-    required this.place,
-    this.onDetailPressed,
-  });
+  const PlaceCard({super.key, required this.place, this.onDetailPressed});
 
   @override
   State<PlaceCard> createState() => _PlaceCardState();
@@ -28,9 +24,7 @@ class _PlaceCardState extends State<PlaceCard> {
     } else {
       Navigator.push(
         context,
-        MaterialPageRoute(
-          builder: (_) => PlaceDetailPage(place: widget.place),
-        ),
+        MaterialPageRoute(builder: (_) => PlaceDetailPage(place: widget.place)),
       ).then((_) {
         if (mounted) setState(() {}); // 從詳細頁返回時刷新愛心
       });
@@ -65,7 +59,9 @@ class _PlaceCardState extends State<PlaceCard> {
             Stack(
               children: [
                 ClipRRect(
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(20),
+                  ),
                   child: Container(
                     height: 100,
                     width: double.infinity,
@@ -79,9 +75,11 @@ class _PlaceCardState extends State<PlaceCard> {
                   right: 6,
                   child: GestureDetector(
                     behavior: HitTestBehavior.opaque,
-                    onTap: () async{
+                    onTap: () {
                       // 🌟 關鍵：當下立刻切換變色，不用等網路！
-                      final added = await _favoriteService.toggleFavorite(widget.place);
+                      final added = _favoriteService.toggleFavorite(
+                        widget.place,
+                      );
                       setState(() {}); // 局部刷新自身，瞬間變色
 
                       ScaffoldMessenger.of(context).hideCurrentSnackBar();
@@ -109,7 +107,9 @@ class _PlaceCardState extends State<PlaceCard> {
                         ],
                       ),
                       child: Icon(
-                        isFav ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                        isFav
+                            ? Icons.favorite_rounded
+                            : Icons.favorite_border_rounded,
                         size: 18,
                         color: isFav ? Colors.redAccent : AppColors.primaryDark,
                       ),
@@ -120,26 +120,41 @@ class _PlaceCardState extends State<PlaceCard> {
                   Positioned(
                     top: 8,
                     left: 8,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3.5),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.65), // 半透明黑底
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.near_me_rounded, color: Colors.white, size: 10),
-                          const SizedBox(width: 3),
-                          Text(
-                            widget.place.formattedDistance,
-                            style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 10.5,
-                            fontWeight: FontWeight.bold,
+                    right: 42,
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 7,
+                          vertical: 3.5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.65), // 半透明黑底
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.near_me_rounded,
+                              color: Colors.white,
+                              size: 10,
                             ),
-                          ),
-                        ],
+                            const SizedBox(width: 3),
+                            Flexible(
+                              child: Text(
+                                widget.place.formattedDistance,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -165,23 +180,34 @@ class _PlaceCardState extends State<PlaceCard> {
                   const SizedBox(height: 6),
                   Row(
                     children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: AppColors.primary.withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(
-                          widget.place.category,
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.primaryDark,
+                      Flexible(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppColors.primary.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            widget.place.category,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.primaryDark,
+                            ),
                           ),
                         ),
                       ),
-                      const Spacer(),
-                      Icon(Icons.star_rounded, size: 16, color: AppColors.accent),
+                      const SizedBox(width: 6),
+                      Icon(
+                        Icons.star_rounded,
+                        size: 16,
+                        color: AppColors.accent,
+                      ),
                       const SizedBox(width: 2),
                       Text(
                         widget.place.rating.toStringAsFixed(1),
