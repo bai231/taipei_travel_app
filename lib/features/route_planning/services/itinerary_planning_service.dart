@@ -1,5 +1,6 @@
 import 'dart:math';
 import '../../../services/route_error_message.dart';
+import 'package:flutter/material.dart';
 
 import '../../../algorithm/route_optimizer.dart';
 import '../../../models/place.dart';
@@ -500,11 +501,12 @@ class ItineraryPlanningService {
     };
     final hotelEndPoints = effectiveConstraints
         .where((input) => input.kind == VisitKind.hotelStay)
-        .map(_toRouteStop)
+        .map((input) => _toRouteStop(input, date: date))
         .toList();
+
     final stops = effectiveConstraints
         .where((input) => input.kind != VisitKind.hotelStay)
-        .map(_toRouteStop)
+        .map((input) => _toRouteStop(input, date: date))
         .toList();
     final orderedStops = [
       ..._orderStops(
@@ -741,21 +743,59 @@ class ItineraryPlanningService {
           '${constraint.place.name} 預計 ${_formatMinutes(schedule.visitStartMinutes)} 抵達，晚於指定時間 ${_formatMinutes(constraint.startMinutes!)}。',
         );
       }
+      final openingPeriods = constraint.place.getOpeningPeriodsForDate(date);
+
+      // Debugging output for opening hours and periods
+      debugPrint(
+        '[OpeningHours] ${constraint.place.name} '
+        'date=$date '
+        'weekday=${date.weekday}',
+      );
+
+      debugPrint(
+        '[OpeningHours] all periods: ${constraint.place.openingPeriods.map((p) => 'openDay=${p.openDay}, '
+            'closeDay=${p.closeDay}, '
+            'open=${_formatMinutes(p.openMinutes)}, '
+            'close=${_formatMinutes(p.closeMinutes)}').join(' | ')}',
+      );
+
+      debugPrint(
+        '[OpeningHours] today periods: ${openingPeriods.map((p) => '${_formatMinutes(p.openMinutes)}-'
+            '${_formatMinutes(p.closeMinutes)}').join(' | ')}',
+      );
+      debugPrint(
+        '[OpeningHoursRaw] ${constraint.place.name}: '
+        '${constraint.place.openingHoursRaw}',
+      );
+      //
       final usesOpeningHours =
-          constraint.kind == VisitKind.activity &&
-          constraint.place.hasKnownOpeningHours;
+          constraint.kind == VisitKind.activity && openingPeriods.isNotEmpty;
+
+      bool fitsOpeningPeriod(int startMinutes, int endMinutes) {
+        return openingPeriods.any(
+          (period) =>
+              startMinutes >= period.openMinutes &&
+              endMinutes <= period.closeMinutes,
+        );
+      }
+
       final fixedTimeOutsideOpeningHours =
           usesOpeningHours &&
           constraint.locked &&
           constraint.startMinutes != null &&
-          (constraint.startMinutes! < constraint.place.openMinutes ||
-              constraint.startMinutes! + constraint.stayMinutes >
-                  constraint.place.closeMinutes);
+          !fitsOpeningPeriod(
+            constraint.startMinutes!,
+            constraint.startMinutes! + constraint.stayMinutes,
+          );
+
       if (fixedTimeOutsideOpeningHours) {
         warnings.add('${constraint.place.name} 的指定時間不在景點營業時間內。');
       } else if (usesOpeningHours &&
-          schedule.visitEndMinutes > constraint.place.closeMinutes) {
-        warnings.add('${constraint.place.name} 的停留時間超過景點營業時間。');
+          !fitsOpeningPeriod(
+            schedule.visitStartMinutes,
+            schedule.visitEndMinutes,
+          )) {
+        warnings.add('${constraint.place.name} 的停留時間超過景點營業時間或落在休息時段。');
       }
       if (constraint.kind == VisitKind.hotelStay &&
           schedule.visitStartMinutes <
@@ -765,7 +805,7 @@ class ItineraryPlanningService {
       if (schedule.visitEndMinutes > 1440) {
         warnings.add('${constraint.place.name} 已超出當天時間，請減少項目或調整日期。');
       }
-      final information = _visitInformation(constraint, schedule);
+      final information = _visitInformation(constraint, schedule, date);
       if (constraint.place.type == PlaceType.restaurant &&
           [
             MealType.breakfast,
@@ -1106,6 +1146,7 @@ class ItineraryPlanningService {
   List<String> _visitInformation(
     RoutePlaceInput input,
     ScheduledVisit schedule,
+    DateTime date,
   ) {
     final place = input.place;
     final preferences = input.preferences;
@@ -1128,11 +1169,21 @@ class ItineraryPlanningService {
       ]);
       return details;
     }
-    details.add(
-      place.hasKnownOpeningHours
-          ? '資料庫提供營業區間 ${_formatMinutes(place.openMinutes)}–${_formatMinutes(place.closeMinutes)}；每日及假日例外待確認。'
-          : '營業時間未知，尚未驗證能否在安排時段進入。',
-    );
+    final openingPeriods = place.getOpeningPeriodsForDate(date);
+
+    if (openingPeriods.isEmpty) {
+      details.add('當日營業時間未知，尚未驗證能否在安排時段進入。');
+    } else {
+      final openingText = openingPeriods
+          .map(
+            (period) =>
+                '${_formatMinutes(period.openMinutes)}–'
+                '${_formatMinutes(period.closeMinutes)}',
+          )
+          .join('、');
+
+      details.add('資料庫提供當日營業區間 $openingText；特殊假日仍需另外確認。');
+    }
     if (place.openingHoursRaw.isNotEmpty) {
       details.add('營業時間原文（未完整解析）：${place.openingHoursRaw}');
     }
@@ -1375,13 +1426,32 @@ class ItineraryPlanningService {
     );
   }
 
-  RouteStop _toRouteStop(RoutePlaceInput constraint) {
+  RouteStop _toRouteStop(RoutePlaceInput constraint, {DateTime? date}) {
     final place = constraint.place;
     final requestedStart = constraint.locked ? constraint.startMinutes : null;
-    var earliest = place.hasKnownOpeningHours ? place.openMinutes : 0;
-    var latest =
-        (place.hasKnownOpeningHours ? place.closeMinutes : 1440) -
-        constraint.stayMinutes;
+
+    var earliest = 0;
+    var latest = 1440 - constraint.stayMinutes;
+
+    // 有實際日期時，使用當天的 openingPeriods
+    if (date != null) {
+      final periods = place.getOpeningPeriodsForDate(date);
+
+      if (periods.isNotEmpty) {
+        earliest = periods.map((period) => period.openMinutes).reduce(min);
+
+        latest =
+            periods.map((period) => period.closeMinutes).reduce(max) -
+            constraint.stayMinutes;
+      }
+    } else if (place.hasKnownOpeningHours) {
+      // 過渡期：
+      // 某些非正式排程用途目前沒有日期，
+      // 暫時維持舊行為，避免其他功能一起被改動。
+      earliest = place.openMinutes;
+      latest = place.closeMinutes - constraint.stayMinutes;
+    }
+
     if (place.type == PlaceType.restaurant) {
       earliest = max(
         earliest,
@@ -1389,6 +1459,7 @@ class ItineraryPlanningService {
             constraint.effectiveMealType.startMinutes ??
             0,
       );
+
       latest = min(
         latest,
         constraint.preferences.mealWindowEnd ??
@@ -1396,10 +1467,12 @@ class ItineraryPlanningService {
             1440,
       );
     }
+
     if (constraint.kind != VisitKind.activity) {
       earliest = constraint.preferences.hotelStay!.effectiveCheckInFrom;
       latest = 1440 - constraint.stayMinutes;
     }
+
     return RouteStop(
       id: constraint.occurrenceId,
       name: constraint.kind == VisitKind.activity

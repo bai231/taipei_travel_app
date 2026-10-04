@@ -110,6 +110,7 @@ class WeatherAlternativeCandidateService {
 
         if (!_fitsOpeningHours(
           place: place,
+          date: request.dayDate,
           startMinutes: originalRequestPlace.startMinutes,
           endMinutes: originalRequestPlace.endMinutes,
         )) {
@@ -207,16 +208,21 @@ class WeatherAlternativeCandidateService {
 
   bool _fitsOpeningHours({
     required Place place,
+    required DateTime date,
     required int startMinutes,
     required int endMinutes,
   }) {
-    if (!place.hasKnownOpeningHours) {
-      // 未知營業時間暫時保留，預覽時再提示。
+    final periods = place.getOpeningPeriodsForDate(date);
+
+    if (periods.isEmpty) {
       return true;
     }
 
-    return startMinutes >= place.openMinutes &&
-        endMinutes <= place.closeMinutes;
+    return periods.any(
+      (period) =>
+          startMinutes >= period.openMinutes &&
+          endMinutes <= period.closeMinutes,
+    );
   }
 
   String _normalize(String value) {
