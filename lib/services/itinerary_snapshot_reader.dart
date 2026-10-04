@@ -22,6 +22,9 @@ RouteItinerary itineraryFromSnapshot(Map<String, dynamic> raw) {
     title: _string(requestData['title']),
     startDate: _date(requestData['startDate'], 'request.startDate'),
     endDate: _date(requestData['endDate'], 'request.endDate'),
+    locations: requestData['locations'] is List
+        ? _strings(requestData['locations'])
+        : null,
     location: _string(requestData['location']),
     people: _int(requestData['people'], 1),
     budget_level: _int(requestData['budgetLevel'], 0),
@@ -235,6 +238,7 @@ Place _place(Map<String, dynamic> data) => Place(
   district: _string(data['district']),
   openingHoursRaw: _string(data['openingHoursRaw']),
   openingHours: _strings(data['openingHours']),
+  openingPeriods: _openingPeriods(data['openingPeriods']),
   openingHoursProvided: data['openingHoursProvided'] is bool
       ? data['openingHoursProvided'] as bool
       : null,
@@ -247,6 +251,21 @@ Place _place(Map<String, dynamic> data) => Place(
   openMinutes: _int(data['openMinutes'], 0),
   closeMinutes: _int(data['closeMinutes'], 1440),
 );
+
+List<OpeningPeriod> _openingPeriods(Object? value) {
+  if (value is! List) return const [];
+
+  return [
+    for (final item in value)
+      if (item is Map)
+        OpeningPeriod(
+          openDay: _int(item['openDay'], 0),
+          closeDay: _int(item['closeDay'], 0),
+          openMinutes: _int(item['openMinutes'], 0),
+          closeMinutes: _int(item['closeMinutes'], 0),
+        ),
+  ];
+}
 
 VisitPreferences _preferences(Object? value) {
   if (value == null) return const VisitPreferences();

@@ -35,11 +35,16 @@ class RecommendationCandidateFilter {
       return false;
     }
 
-    // 全台不需要限制縣市。
-    if (applyLocation && !_isAllTaiwan(criteria.location)) {
-      final placeCounty = PlaceService.countyFor(place);
+    // 多縣市：景點只要位於任一選取縣市即可。
+    if (applyLocation && !_isAllTaiwan(criteria.locations)) {
+      final placeCounty = _normalizeTaiwanText(PlaceService.countyFor(place));
 
-      if (placeCounty != _normalizeTaiwanText(criteria.location)) {
+      final allowedLocations = criteria.locations
+          .map(_normalizeTaiwanText)
+          .where((location) => location.isNotEmpty)
+          .toSet();
+
+      if (!allowedLocations.contains(placeCounty)) {
         return false;
       }
     }
@@ -98,10 +103,15 @@ class RecommendationCandidateFilter {
     });
   }
 
-  static bool _isAllTaiwan(String location) {
-    final normalized = _normalizeTaiwanText(location);
+  static bool _isAllTaiwan(Iterable<String> locations) {
+    final normalized = locations
+        .map(_normalizeTaiwanText)
+        .where((location) => location.isNotEmpty)
+        .toSet();
 
-    return normalized.isEmpty || normalized == '全台' || normalized == '台灣';
+    return normalized.isEmpty ||
+        normalized.contains('全台') ||
+        normalized.contains('台灣');
   }
 
   static String _normalizeTaiwanText(String value) {

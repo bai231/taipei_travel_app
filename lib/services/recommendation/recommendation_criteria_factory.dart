@@ -244,7 +244,13 @@ class RecommendationCriteriaFactory {
       mustVisitPlaceNames: Set.unmodifiable(
         _normalizeTerms(aiPreference?.mustVisitPlaceNames ?? const <String>[]),
       ),
-      location: request.location.trim(),
+      locations: List.unmodifiable(
+        request.locations
+            .map((location) => location.trim().replaceAll('臺', '台'))
+            .where((location) => location.isNotEmpty)
+            .toSet()
+            .toList(),
+      ),
       budgetLevel: request.budget_level.clamp(1, 5),
       people: request.people,
       days: request.days,
