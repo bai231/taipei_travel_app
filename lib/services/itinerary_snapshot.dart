@@ -176,6 +176,15 @@ Map<String, dynamic> _place(Place place) => {
   'district': place.district,
   'openingHoursRaw': place.openingHoursRaw,
   'openingHours': place.openingHours,
+  'openingPeriods': [
+    for (final period in place.openingPeriods)
+      {
+        'openDay': period.openDay,
+        'closeDay': period.closeDay,
+        'openMinutes': period.openMinutes,
+        'closeMinutes': period.closeMinutes,
+      },
+  ],
   'openingHoursProvided': place.openingHoursProvided,
   'phone': place.phone,
   'website': place.website,
