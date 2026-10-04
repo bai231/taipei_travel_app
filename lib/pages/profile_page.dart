@@ -1,6 +1,7 @@
-import 'dart:ui';
+import 'dart:ui' show ImageFilter;
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/widgets.dart' as flutter_widgets;
 
 import '../theme/app_theme.dart';
 import '../services/favorite_service.dart';
@@ -8,7 +9,7 @@ import '../models/place.dart';
 import 'itinerary_result_page.dart';
 import 'place_detail_page.dart';
 import '../services/user_data_service.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' hide Container;
 import '../services/saved_itinerary_service.dart';
 import 'saved_itinerary_result_page.dart';
 
@@ -37,13 +38,10 @@ class _ProfilePageState extends State<ProfilePage> {
   // 模擬行程與資料夾資料（指定明確型別避免轉型錯誤）
   final List<String> _itineraries = ["台北一日遊", "九份文化之旅"];
   List<Map<String, dynamic>> _folders = [];
-  bool _isLoadingFolders = true;
   /*final List<Map<String, dynamic>> _folders = [
     {"title": "必去美食", "places": <Place>[]},
     {"title": "拍照打卡", "places": <Place>[]},
   ];*/
-  List<Map<String, dynamic>> _exportedTrips = [];
-  bool _isLoadingExportedTrips = true;
 
   @override
   void initState() {
@@ -69,7 +67,6 @@ class _ProfilePageState extends State<ProfilePage> {
     if (mounted) {
       setState(() {
         _folders = cloudFolders;
-        _isLoadingFolders = false;
       });
     }
   }
@@ -101,7 +98,7 @@ class _ProfilePageState extends State<ProfilePage> {
               borderRadius: BorderRadius.circular(20),
               child: BackdropFilter(
                 filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-                child: Container(
+                child: flutter_widgets.Container(
                   width: 190,
                   padding: const EdgeInsets.symmetric(
                     vertical: 10,
@@ -301,7 +298,7 @@ class _ProfilePageState extends State<ProfilePage> {
                                 horizontal: 4,
                                 vertical: 2,
                               ),
-                              leading: Container(
+                              leading: flutter_widgets.Container(
                                 width: 40,
                                 height: 40,
                                 decoration: BoxDecoration(
@@ -331,7 +328,26 @@ class _ProfilePageState extends State<ProfilePage> {
                                   size: 20,
                                 ),
                                 tooltip: "移出資料夾",
-                                onPressed: () {
+                                onPressed: () async {
+                                  final folderId =
+                                      (folder["id"] as num?)?.toInt();
+                                  if (folderId == null) return;
+
+                                  final removed = await _userDataService
+                                      .removePlaceFromFolder(folderId, place);
+                                  if (!dialogCtx.mounted) return;
+                                  if (!removed) {
+                                    if (parentContext.mounted) {
+                                      ScaffoldMessenger.of(parentContext)
+                                          .showSnackBar(
+                                        const SnackBar(
+                                          content: Text("移出資料夾失敗，請稍後再試"),
+                                        ),
+                                      );
+                                    }
+                                    return;
+                                  }
+
                                   setModalState(() {
                                     places.removeAt(index);
                                     folder["places"] = places;
@@ -782,7 +798,7 @@ class _ProfilePageState extends State<ProfilePage> {
         context,
         MaterialPageRoute(builder: (_) => PlaceDetailPage(place: place)),
       ),
-      child: Container(
+      child: flutter_widgets.Container(
         width: 110,
         decoration: BoxDecoration(
           color: AppColors.primary,
@@ -852,7 +868,7 @@ class _ProfilePageState extends State<ProfilePage> {
           ),
         );
       },
-      child: Container(
+      child: flutter_widgets.Container(
         width: 110,
         decoration: BoxDecoration(
           color: AppColors.primary,
@@ -890,7 +906,7 @@ class _ProfilePageState extends State<ProfilePage> {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () => _showFolderContentDialog(context, folder),
-      child: Container(
+    child: flutter_widgets.Container(
         width: 110,
         decoration: BoxDecoration(
           color: AppColors.primary,
@@ -913,7 +929,7 @@ class _ProfilePageState extends State<ProfilePage> {
                     Positioned(
                       top: -4,
                       right: -6,
-                      child: Container(
+                      child: flutter_widgets.Container(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 5,
                           vertical: 1,
@@ -958,7 +974,7 @@ class _ProfilePageState extends State<ProfilePage> {
 
   // 空狀態
   Widget _buildEmptyState(String text) {
-    return Container(
+    return flutter_widgets.Container(
       alignment: Alignment.centerLeft,
       padding: const EdgeInsets.only(left: 8.0),
       child: Text(
