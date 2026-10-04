@@ -25,7 +25,7 @@ class ItineraryPlaceResolver {
     required String query,
     required Iterable<Place> places,
     required Set<String> excludedPlaceIds,
-    String? preferredLocation,
+    List<String> preferredLocations = const [],
     // 保留較寬的初步候選池，再由 ranker 依距離、評分、
     // 多樣性與預算排序，避免「自然景點」這類查詢過早淘汰好候選。
     int limit = 50,
@@ -123,11 +123,15 @@ class ItineraryPlaceResolver {
         continue;
       }
 
-      final normalizedLocation = _normalize(preferredLocation ?? '');
+      final normalizedPreferredLocations = preferredLocations
+          .map(_normalize)
+          .where((location) => location.isNotEmpty)
+          .toSet();
 
-      if (normalizedLocation.isNotEmpty &&
-          normalizedLocation != '全台' &&
-          placeCounty == normalizedLocation) {
+      if (normalizedPreferredLocations.isNotEmpty &&
+          !normalizedPreferredLocations.contains('全台') &&
+          !normalizedPreferredLocations.contains('台灣') &&
+          normalizedPreferredLocations.contains(placeCounty)) {
         score += 15;
         reason = '$reason，且位於旅遊範圍內';
       }

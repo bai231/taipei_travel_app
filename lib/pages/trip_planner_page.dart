@@ -442,7 +442,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
-                  '地區：${_recommendationCriteria.location}\n'
+                  '地區：${_recommendationCriteria.locationLabel}\n'
                   '最高價格等級：'
                   '${_recommendationCriteria.budgetLevel}',
                 ),
@@ -2005,7 +2005,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
       query: query,
       places: widget.places,
       excludedPlaceIds: excludedPlaceIds,
-      preferredLocation: widget.request.location,
+      preferredLocations: widget.request.locations,
       recommendationScoresByPlaceId: _candidateScoresByPlaceId,
     );
   }
