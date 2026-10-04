@@ -1,5 +1,9 @@
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
+String guardianDemoNotificationTitle(String title) {
+  return title.replaceFirst(RegExp(r'^模擬[:：]\s*'), '').trim();
+}
+
 abstract interface class TripNotificationGateway {
   Future<void> initialize();
 
@@ -222,13 +226,13 @@ class TripNotificationService implements TripNotificationGateway {
     if (_testNotificationId > 7999) _testNotificationId = 7901;
     await _plugin.show(
       _testNotificationId,
-      '[測試] $title',
-      '$body（模擬資料，非真實旅遊警報）',
+      guardianDemoNotificationTitle(title),
+      body,
       const NotificationDetails(
         android: AndroidNotificationDetails(
-          'trip_guardian_debug',
-          '保母模式測試通知',
-          channelDescription: '模擬 GPS、班次與天氣事件的手機通知',
+          'trip_guardian_promo_reason',
+          '行程提醒',
+          channelDescription: '行程、交通與天氣提醒',
           importance: Importance.max,
           priority: Priority.high,
         ),
