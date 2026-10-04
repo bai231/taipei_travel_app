@@ -143,7 +143,7 @@ class TransitRealtimeMonitor {
     required LocationPoint location,
     required DateTime now,
   }) async {
-    final sections = _sections(day);
+    final sections = transitSectionsForDay(day);
     final observations = <String, TransitRealtimeObservation?>{};
     Future<TransitRealtimeObservation?> observationFor(
       TransitSectionIdentity identity,
@@ -269,46 +269,6 @@ class TransitRealtimeMonitor {
     return null;
   }
 
-  List<TransitSectionIdentity> _sections(RouteDay day) {
-    final result = <TransitSectionIdentity>[];
-    for (var legIndex = 0; legIndex < day.travelLegs.length; legIndex++) {
-      final leg = day.travelLegs[legIndex];
-      // Google transit suggestions do not carry TDX route/stop identifiers.
-      // Never treat them as verified bus or TRA services in realtime checks.
-      if (leg.effectiveRouteProvider != RouteProvider.tdx) continue;
-      final route = leg.route;
-      if (route == null) continue;
-      for (
-        var sectionIndex = 0;
-        sectionIndex < route.sections.length;
-        sectionIndex++
-      ) {
-        final section = route.sections[sectionIndex];
-        final provider = TransitSectionIdentity.providerFor(section);
-        if (provider == null) continue;
-        var transferWalk = Duration.zero;
-        for (var index = sectionIndex - 1; index >= 0; index--) {
-          final previous = route.sections[index];
-          if (TransitSectionIdentity.providerFor(previous) != null) break;
-          if (_isWalking(previous.mode)) {
-            transferWalk += Duration(seconds: previous.travelTime);
-          }
-        }
-        result.add(
-          TransitSectionIdentity(
-            provider: provider,
-            legIndex: legIndex,
-            sectionIndex: sectionIndex,
-            serviceDate: day.date,
-            section: section,
-            transferWalkFromPrevious: transferWalk,
-          ),
-        );
-      }
-    }
-    return result;
-  }
-
   _IncomingConnection? _previousTransitConnection(
     List<TransitSectionIdentity> sections,
     int currentIndex,
@@ -342,6 +302,46 @@ class TransitRealtimeMonitor {
   }
 }
 
+/// The same TDX bus/TRA section list used by monitoring and the Debug console.
+/// Google transit routes lack verified TDX service identifiers and are omitted.
+List<TransitSectionIdentity> transitSectionsForDay(RouteDay day) {
+  final result = <TransitSectionIdentity>[];
+  for (var legIndex = 0; legIndex < day.travelLegs.length; legIndex++) {
+    final leg = day.travelLegs[legIndex];
+    if (leg.effectiveRouteProvider != RouteProvider.tdx) continue;
+    final route = leg.route;
+    if (route == null) continue;
+    for (
+      var sectionIndex = 0;
+      sectionIndex < route.sections.length;
+      sectionIndex++
+    ) {
+      final section = route.sections[sectionIndex];
+      final provider = TransitSectionIdentity.providerFor(section);
+      if (provider == null) continue;
+      var transferWalk = Duration.zero;
+      for (var index = sectionIndex - 1; index >= 0; index--) {
+        final previous = route.sections[index];
+        if (TransitSectionIdentity.providerFor(previous) != null) break;
+        if (_isWalking(previous.mode)) {
+          transferWalk += Duration(seconds: previous.travelTime);
+        }
+      }
+      result.add(
+        TransitSectionIdentity(
+          provider: provider,
+          legIndex: legIndex,
+          sectionIndex: sectionIndex,
+          serviceDate: day.date,
+          section: section,
+          transferWalkFromPrevious: transferWalk,
+        ),
+      );
+    }
+  }
+  return result;
+}
+
 class ForegroundTransitGuardian {
   final TransitRealtimeMonitor monitor;
   final Duration minimumCheckInterval;
@@ -360,9 +360,11 @@ class ForegroundTransitGuardian {
     required LocationPoint location,
     required DateTime now,
   }) async {
-    if (_lastCheckedAt != null &&
-        now.difference(_lastCheckedAt!) < minimumCheckInterval) {
-      return null;
+    if (_lastCheckedAt != null) {
+      final sinceLastCheck = now.difference(_lastCheckedAt!);
+      if (!sinceLastCheck.isNegative && sinceLastCheck < minimumCheckInterval) {
+        return null;
+      }
     }
     _lastCheckedAt = now;
     TransitConnectionRisk? risk;
@@ -374,8 +376,12 @@ class ForegroundTransitGuardian {
     if (risk == null) return null;
     final key = '${risk.kind.name}|${risk.affectedSection.stableKey}';
     final previous = _lastAlertAt[key];
-    if (previous != null && now.difference(previous) < repeatedAlertCooldown) {
-      return null;
+    if (previous != null) {
+      final sinceLastAlert = now.difference(previous);
+      if (!sinceLastAlert.isNegative &&
+          sinceLastAlert < repeatedAlertCooldown) {
+        return null;
+      }
     }
     _lastAlertAt[key] = now;
     return risk;

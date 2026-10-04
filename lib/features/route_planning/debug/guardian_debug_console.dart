@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../services/location_service.dart';
+import '../../../services/transit_realtime_monitor.dart';
 import '../models/route_day.dart';
 import '../models/route_itinerary.dart';
 import 'guardian_debug_controller.dart';
@@ -29,6 +30,19 @@ class GuardianDebugConsole extends StatelessWidget {
         );
         final day = schedule.day;
         final boarding = day == null ? null : _nextBoardingStop(day);
+        final placeName = _placeNameAtLocation(day);
+        final transitSections = day == null
+            ? <TransitSectionIdentity>[]
+            : transitSectionsForDay(day);
+        final targetIndex = transitSections.indexWhere(
+          (section) => _sameSection(section, controller.transitTarget),
+        );
+        final transitTarget = targetIndex < 0
+            ? null
+            : transitSections[targetIndex];
+        final incoming = targetIndex < 0
+            ? null
+            : _incomingSection(transitSections, targetIndex);
         return SafeArea(
           child: Padding(
             padding: EdgeInsets.fromLTRB(
@@ -59,16 +73,16 @@ class GuardianDebugConsole extends StatelessWidget {
                   ],
                 ),
                 const Text(
-                  '僅 Debug 版本可用；GPS、班次即時狀態與天氣使用模擬資料。交通備案會查真實 TDX，步行、汽車與 TDX 失敗時的大眾運輸備援會查真實 Google Maps（可能消耗額度）；提醒仍會發送標明「測試」的手機通知。',
+                  '僅 Debug 版本可用；GPS、班次即時狀態與天氣使用模擬資料。交通備案會查真實 TDX，步行、汽車與 TDX 失敗時的大眾運輸備援會查真實 Google Maps（可能消耗額度）；手機通知採宣傳展示文案，請勿將模擬事件當作真實警報。',
                 ),
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
                   title: const Text('啟用模擬模式'),
                   subtitle: isTracking
-                      ? const Text('追蹤已啟動；切換模式後請先停止，再重新開始行程。')
+                      ? const Text('追蹤已啟動；請先停止行程，再切換模擬模式。')
                       : const Text('啟用後回到結果頁按「開始行程」。'),
                   value: controller.enabled,
-                  onChanged: controller.setEnabled,
+                  onChanged: isTracking ? null : controller.setEnabled,
                 ),
                 if (controller.enabled) ...[
                   const Divider(),
@@ -98,7 +112,7 @@ class GuardianDebugConsole extends StatelessWidget {
                         onChanged: (value) {
                           if (value == null) return;
                           final chosen = itinerary.day(value);
-                          controller.setTime(_suggestedTime(chosen));
+                          _jumpToDay(chosen);
                         },
                       ),
                     ),
@@ -107,9 +121,7 @@ class GuardianDebugConsole extends StatelessWidget {
                     spacing: 8,
                     children: [
                       OutlinedButton(
-                        onPressed: day == null
-                            ? null
-                            : () => controller.setTime(_suggestedTime(day)),
+                        onPressed: day == null ? null : () => _jumpToDay(day),
                         child: const Text('跳到行程時段'),
                       ),
                       OutlinedButton(
@@ -135,6 +147,9 @@ class GuardianDebugConsole extends StatelessWidget {
                       '快速跳到原訂時段',
                       style: TextStyle(fontWeight: FontWeight.bold),
                     ),
+                    const Text(
+                      '選擇時段會同步設定模擬時間與位置；交通時段定位到該段起點，停留時段定位到景點。按「送出模擬 GPS 更新」後才會檢查延誤與備案。',
+                    ),
                     Wrap(
                       spacing: 8,
                       runSpacing: 4,
@@ -151,8 +166,11 @@ class GuardianDebugConsole extends StatelessWidget {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
-                              onPressed: () =>
-                                  controller.setTime(segment.start),
+                              onPressed: () => controller.jumpTo(
+                                time: segment.start,
+                                location: segment.location,
+                                locationName: segment.locationName,
+                              ),
                             ),
                           ),
                       ],
@@ -160,8 +178,9 @@ class GuardianDebugConsole extends StatelessWidget {
                   ],
                   const SizedBox(height: 8),
                   Text(
-                    '模擬位置：${controller.simulatedLocation.latitude.toStringAsFixed(5)}, '
-                    '${controller.simulatedLocation.longitude.toStringAsFixed(5)}',
+                    '待送出的模擬位置：${controller.simulatedLocation.latitude.toStringAsFixed(5)}, '
+                    '${controller.simulatedLocation.longitude.toStringAsFixed(5)}'
+                    '${placeName == null ? '' : '（$placeName）'}',
                   ),
                   Wrap(
                     spacing: 8,
@@ -190,15 +209,93 @@ class GuardianDebugConsole extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 8),
+                  const Text(
+                    '指定模擬班次',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  if (transitSections.isEmpty)
+                    const Text('這一天沒有可辨識的 TDX 公車／臺鐵班次，無法逐段模擬轉乘。')
+                  else ...[
+                    DropdownButtonFormField<int>(
+                      key: ValueKey(
+                        'transit-target-${day?.day}-${targetIndex + 1}',
+                      ),
+                      initialValue: targetIndex + 1,
+                      isExpanded: true,
+                      decoration: const InputDecoration(labelText: '要影響哪一班'),
+                      items: [
+                        const DropdownMenuItem(value: 0, child: Text('全部班次')),
+                        for (
+                          var index = 0;
+                          index < transitSections.length;
+                          index++
+                        )
+                          DropdownMenuItem(
+                            value: index + 1,
+                            child: Text(
+                              _sectionLabel(transitSections[index], index + 1),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                      ],
+                      onChanged: (value) {
+                        if (value == null) return;
+                        final selected = value == 0
+                            ? null
+                            : transitSections[value - 1];
+                        controller.setTransitTarget(
+                          selected,
+                          incoming: value <= 0
+                              ? null
+                              : _incomingSection(transitSections, value - 1),
+                        );
+                      },
+                    ),
+                    if (transitTarget != null) ...[
+                      Text(
+                        incoming == null
+                            ? '只有這班會受所選情境影響；此班不是同一路段的轉乘班次。'
+                            : '只有所選班次會受誤點／取消等情境影響；「錯過所選轉乘」則模擬前一班晚到。',
+                      ),
+                      if (incoming != null &&
+                          transitTarget.scheduledDeparture != null &&
+                          transitTarget.section.departureLatitude != null &&
+                          transitTarget.section.departureLongitude != null)
+                        OutlinedButton(
+                          onPressed: () => controller.jumpTo(
+                            time: transitTarget.scheduledDeparture!.subtract(
+                              const Duration(minutes: 1),
+                            ),
+                            location: LocationPoint(
+                              latitude:
+                                  transitTarget.section.departureLatitude!,
+                              longitude:
+                                  transitTarget.section.departureLongitude!,
+                            ),
+                            locationName:
+                                transitTarget.section.departureTitle ?? '轉乘站',
+                          ),
+                          child: const Text('跳到所選轉乘前 1 分鐘'),
+                        ),
+                    ],
+                  ],
+                  const SizedBox(height: 8),
                   DropdownButtonFormField<GuardianTransitScenario>(
+                    key: ValueKey(
+                      'transit-scenario-${controller.transitScenario.name}',
+                    ),
                     initialValue: controller.transitScenario,
                     decoration: const InputDecoration(labelText: '班次即時情境（模擬）'),
                     items: [
                       for (final value in GuardianTransitScenario.values)
-                        DropdownMenuItem(
-                          value: value,
-                          child: Text(value.label),
-                        ),
+                        if (value != GuardianTransitScenario.missedTransfer ||
+                            (incoming != null &&
+                                transitTarget?.scheduledDeparture != null))
+                          DropdownMenuItem(
+                            value: value,
+                            child: Text(value.label),
+                          ),
                     ],
                     onChanged: (value) {
                       if (value != null) controller.setTransitScenario(value);
@@ -334,6 +431,64 @@ class GuardianDebugConsole extends StatelessWidget {
       day.date.month,
       day.date.day,
     ).add(Duration(minutes: firstStart - 10));
+  }
+
+  void _jumpToDay(RouteDay day) {
+    controller.setTransitTarget(null);
+    controller.jumpTo(
+      time: _suggestedTime(day),
+      location: LocationPoint(
+        latitude: day.origin.latitude,
+        longitude: day.origin.longitude,
+      ),
+      locationName: day.origin.name,
+    );
+  }
+
+  String? _placeNameAtLocation(RouteDay? selectedDay) {
+    final point = controller.simulatedLocation;
+    final days = [
+      ?selectedDay,
+      for (final day in itinerary.days)
+        if (!identical(day, selectedDay)) day,
+    ];
+    for (final day in days) {
+      for (final visit in day.visits) {
+        if ((visit.place.latitude - point.latitude).abs() < 0.00005 &&
+            (visit.place.longitude - point.longitude).abs() < 0.00005) {
+          return visit.place.name;
+        }
+      }
+    }
+    return null;
+  }
+
+  TransitSectionIdentity? _incomingSection(
+    List<TransitSectionIdentity> sections,
+    int index,
+  ) {
+    if (index <= 0) return null;
+    final candidate = sections[index - 1];
+    return candidate.legIndex == sections[index].legIndex ? candidate : null;
+  }
+
+  bool _sameSection(
+    TransitSectionIdentity section,
+    TransitSectionIdentity? selected,
+  ) =>
+      selected != null &&
+      section.legIndex == selected.legIndex &&
+      section.sectionIndex == selected.sectionIndex &&
+      section.stableKey == selected.stableKey &&
+      section.serviceDate == selected.serviceDate;
+
+  String _sectionLabel(TransitSectionIdentity section, int number) {
+    final mode = section.provider == TransitProvider.tra ? '臺鐵' : '公車';
+    final line = section.section.lineName ?? section.section.serviceId ?? '';
+    final stop = section.section.departureTitle ?? '上車站';
+    final departure = section.scheduledDeparture;
+    return '第 $number 班・$mode $line・$stop'
+        '${departure == null ? '' : ' ${_hm(departure)}'}';
   }
 }
 

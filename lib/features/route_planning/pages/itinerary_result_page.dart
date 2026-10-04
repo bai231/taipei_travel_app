@@ -230,6 +230,8 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
         LiveItineraryTrackingService(
           locationGateway: _dependencies.locationGateway,
           now: _dependencies.now,
+          allowClockChecks: () =>
+              _dependencies.debugController?.enabled != true,
         );
     _transitGuardian = ForegroundTransitGuardian(
       monitor: TransitRealtimeMonitor(gateway: _dependencies.realtimeGateway),
@@ -1524,7 +1526,10 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
         );
         _guardianSession = pendingSession;
       }
-      final started = await _tripTracker.start(_itinerary);
+      final started = await _tripTracker.start(
+        _itinerary,
+        evaluateInitialLocation: _dependencies.debugController?.enabled != true,
+      );
       if (!mounted) return;
       if (!started) {
         _guardianSession = null;
@@ -2554,10 +2559,27 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
   /// The traveller confirms a contiguous completed prefix. GPS proximity or
   /// the scheduled end time alone must not silently mark a visit complete.
   Future<int?> _confirmCompletedCount(RouteDay day) async {
-    var count = (_confirmedCompletedCounts[day.day] ?? 0).clamp(
-      0,
-      day.visits.length,
-    );
+    final now = _dependencies.now();
+    final dayStart = DateTime(day.date.year, day.date.month, day.date.day);
+    final suggestedCount = day.visits
+        .takeWhile(
+          (visit) =>
+              !dayStart.add(Duration(minutes: visit.endMinutes)).isAfter(now),
+        )
+        .length;
+    final isDebugSimulation = _dependencies.debugController?.enabled == true;
+    final hasConfirmedProgress = _confirmedCompletedCounts.containsKey(day.day);
+    var count =
+        (_confirmedCompletedCounts[day.day] ??
+                (isDebugSimulation && suggestedCount < day.visits.length
+                    ? suggestedCount
+                    : 0))
+            .clamp(0, day.visits.length);
+    final suggestedLabel = suggestedCount == 0
+        ? '尚無已完成項目'
+        : suggestedCount == day.visits.length
+        ? '原訂項目均已結束'
+        : '已完成至 ${day.visits[suggestedCount - 1].label}';
     final selected = await showDialog<int>(
       context: context,
       barrierDismissible: false,
@@ -2575,8 +2597,24 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
                     '請選擇最後一個已完成的項目；系統不會只因原訂時間已過或 GPS 靠近就判定完成。正在進行的項目請勿選入。',
                   ),
                   const SizedBox(height: 12),
+                  Text(
+                    'Day ${day.day}・${day.date.year}/${day.date.month}/${day.date.day} '
+                    '${isDebugSimulation ? '模擬' : '目前'}時間 ${_formatMinutes(now.hour * 60 + now.minute)}：'
+                    '依原訂結束時間推估，$suggestedLabel。'
+                    '這只是參考，請以實際完成進度為準。',
+                  ),
+                  if (isDebugSimulation &&
+                      hasConfirmedProgress &&
+                      count != suggestedCount) ...[
+                    const SizedBox(height: 8),
+                    const Text('上次確認的進度與目前模擬時間不同，請重新核對。'),
+                  ],
+                  const SizedBox(height: 8),
                   ListTile(
                     title: const Text('尚無已完成項目'),
+                    subtitle: suggestedCount == 0
+                        ? const Text('依原訂時間推估')
+                        : null,
                     leading: Icon(
                       count == 0
                           ? Icons.radio_button_checked
@@ -2587,6 +2625,10 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
                   for (var index = 0; index < day.visits.length; index++)
                     ListTile(
                       title: Text('已完成至 ${day.visits[index].label}'),
+                      subtitle: Text(
+                        '原訂 ${_formatMinutes(day.visits[index].endMinutes)} 結束'
+                        '${suggestedCount == index + 1 ? '・依原訂時間推估' : ''}',
+                      ),
                       leading: Icon(
                         count == index + 1
                             ? Icons.radio_button_checked
@@ -2594,6 +2636,12 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
                       ),
                       onTap: () => setDialogState(() => count = index + 1),
                     ),
+                  if (isDebugSimulation &&
+                      count == day.visits.length &&
+                      day.visits.isNotEmpty)
+                    const Text('已選全部完成，沒有剩餘項目可產生備案；若仍有未完成項目，請改選最後實際完成的項目。'),
+                  if (isDebugSimulation && count > suggestedCount)
+                    const Text('所選項目在模擬時間尚未到原訂結束時間；請先調整模擬時間或改選進度。'),
                 ],
               ),
             ),
@@ -2604,7 +2652,11 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
               child: const Text('取消'),
             ),
             FilledButton(
-              onPressed: () => Navigator.of(dialogContext).pop(count),
+              onPressed:
+                  (isDebugSimulation && count == day.visits.length) ||
+                      (isDebugSimulation && count > suggestedCount)
+                  ? null
+                  : () => Navigator.of(dialogContext).pop(count),
               child: const Text('確認進度'),
             ),
           ],
@@ -2728,6 +2780,13 @@ class _ItineraryResultPageState extends State<ItineraryResultPage> {
       _currentLocation = update.location;
       _trackedRoute = update.route;
     });
+    // In simulation, the controller's location stream only emits when the
+    // tester presses "送出模擬 GPS 更新". Initial samples and clock checks may
+    // refresh the marker but must never open a risk or alternative dialog.
+    if (_dependencies.debugController?.enabled == true &&
+        !update.isLocationStreamUpdate) {
+      return;
+    }
     if (_isEvaluatingTrackingUpdate || _isAlternativePromptOpen) return;
     _isEvaluatingTrackingUpdate = true;
     try {

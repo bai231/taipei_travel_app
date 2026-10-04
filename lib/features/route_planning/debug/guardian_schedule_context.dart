@@ -1,5 +1,7 @@
 import '../models/route_day.dart';
 import '../models/route_itinerary.dart';
+import '../models/travel_leg.dart';
+import '../../../services/location_service.dart';
 
 enum GuardianSchedulePhase {
   outsideTrip,
@@ -19,6 +21,8 @@ class GuardianScheduledSegment {
   final String label;
   final GuardianSchedulePhase phase;
   final String? detail;
+  final LocationPoint location;
+  final String locationName;
 
   const GuardianScheduledSegment({
     required this.day,
@@ -26,6 +30,8 @@ class GuardianScheduledSegment {
     required this.end,
     required this.label,
     required this.phase,
+    required this.location,
+    required this.locationName,
     this.detail,
   });
 }
@@ -118,6 +124,8 @@ List<GuardianScheduledSegment> guardianDaySegments(RouteDay day) {
           label: '${leg.origin.name} → ${leg.destination.name}',
           phase: GuardianSchedulePhase.travel,
           detail: leg.travelMode.label,
+          location: _travelStartLocation(leg),
+          locationName: _travelStartName(leg),
         ),
     for (final visit in day.visits)
       if (visit.endMinutes > visit.startMinutes)
@@ -127,9 +135,40 @@ List<GuardianScheduledSegment> guardianDaySegments(RouteDay day) {
           end: at(visit.endMinutes),
           label: visit.label,
           phase: GuardianSchedulePhase.visit,
+          location: LocationPoint(
+            latitude: visit.place.latitude,
+            longitude: visit.place.longitude,
+          ),
+          locationName: visit.place.name,
         ),
   ]..sort(_compareSegments);
   return segments;
+}
+
+LocationPoint _travelStartLocation(TravelLeg leg) {
+  for (final section in leg.route?.sections ?? const []) {
+    if (section.departureLatitude != null &&
+        section.departureLongitude != null) {
+      return LocationPoint(
+        latitude: section.departureLatitude!,
+        longitude: section.departureLongitude!,
+      );
+    }
+  }
+  return LocationPoint(
+    latitude: leg.origin.latitude,
+    longitude: leg.origin.longitude,
+  );
+}
+
+String _travelStartName(TravelLeg leg) {
+  for (final section in leg.route?.sections ?? const []) {
+    if (section.departureLatitude != null &&
+        section.departureLongitude != null) {
+      return section.departureTitle ?? leg.origin.name;
+    }
+  }
+  return leg.origin.name;
 }
 
 int _compareSegments(GuardianScheduledSegment a, GuardianScheduledSegment b) {

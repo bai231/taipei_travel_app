@@ -26,7 +26,6 @@ class ActiveGuardianSession with WidgetsBindingObserver {
   RouteItinerary itinerary;
   final ForegroundTransitGuardian _transitGuardian;
   StreamSubscription<TripTrackingUpdate>? _updates;
-  StreamSubscription<void>? _debugClockChanges;
   Timer? _clock;
   bool _pageAttached = false;
   bool _appVisible = true;
@@ -57,11 +56,10 @@ class ActiveGuardianSession with WidgetsBindingObserver {
     _activeListenable.value = this;
     WidgetsBinding.instance.addObserver(this);
     _updates = tracker.updates.listen(_onUpdate);
-    _debugClockChanges = dependencies.debugController?.clockChanges.listen((_) {
-      tracker.checkNow();
-    });
     _clock = Timer.periodic(const Duration(seconds: 30), (_) {
-      tracker.checkNow();
+      // Simulation evaluates only on the explicit GPS submit action. Live
+      // tracking still checks the last location as time advances.
+      if (dependencies.debugController?.enabled != true) tracker.checkNow();
     });
   }
 
@@ -108,6 +106,10 @@ class ActiveGuardianSession with WidgetsBindingObserver {
 
   void _onUpdate(TripTrackingUpdate update) {
     latestUpdate = update;
+    if (dependencies.debugController?.enabled == true &&
+        !update.isLocationStreamUpdate) {
+      return;
+    }
     if (!isForegroundVisible) unawaited(_evaluateHeadless(update));
   }
 
@@ -200,8 +202,6 @@ class ActiveGuardianSession with WidgetsBindingObserver {
     _clock = null;
     await _updates?.cancel();
     _updates = null;
-    await _debugClockChanges?.cancel();
-    _debugClockChanges = null;
     WidgetsBinding.instance.removeObserver(this);
     await tracker.stop();
     if (!_pageAttached) {

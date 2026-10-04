@@ -23,12 +23,16 @@ class TripTrackingUpdate {
   final List<LocationPoint> route;
   final TripDelayAlert? delayAlert;
   final DateTime observedAt;
+  final bool isInitialSample;
+  final bool isLocationStreamUpdate;
 
   const TripTrackingUpdate({
     required this.location,
     required this.route,
     required this.observedAt,
     this.delayAlert,
+    this.isInitialSample = false,
+    this.isLocationStreamUpdate = false,
   });
 }
 
@@ -39,6 +43,7 @@ enum DebugDelayScenario { stayTooLong, farFromNextStop }
 class LiveItineraryTrackingService {
   final LocationTrackingGateway _locationGateway;
   final DateTime Function() _now;
+  final bool Function()? allowClockChecks;
   final StreamController<TripTrackingUpdate> _updates =
       StreamController.broadcast();
   final List<LocationPoint> _route = [];
@@ -50,18 +55,27 @@ class LiveItineraryTrackingService {
   LiveItineraryTrackingService({
     LocationTrackingGateway? locationGateway,
     DateTime Function()? now,
+    this.allowClockChecks,
   }) : _locationGateway = locationGateway ?? LocationService(),
        _now = now ?? DateTime.now;
 
   Stream<TripTrackingUpdate> get updates => _updates.stream;
   bool get isTracking => _subscription != null;
 
-  Future<bool> start(RouteItinerary itinerary) async {
+  Future<bool> start(
+    RouteItinerary itinerary, {
+    bool evaluateInitialLocation = true,
+  }) async {
     if (isTracking) return true;
     _itinerary = itinerary;
     final location = await _locationGateway.getCurrentLocation();
     if (location == null) return false;
-    _record(location);
+    _recordAt(
+      location,
+      _now(),
+      evaluateDelay: evaluateInitialLocation,
+      isInitialSample: true,
+    );
     _subscription = _locationGateway.watchLocation().listen(
       _record,
       onError: (_) {},
@@ -74,24 +88,29 @@ class LiveItineraryTrackingService {
   /// Re-evaluate the last known position when time advances without GPS motion.
   /// A clock tick is not appended to the travelled route.
   void checkNow() {
+    if (allowClockChecks?.call() == false) return;
     final location = _lastLocation;
     if (!isTracking || location == null) return;
     _recordAt(location, _now(), appendRoute: false);
   }
 
-  void _record(LocationPoint location) => _recordAt(location, _now());
+  void _record(LocationPoint location) =>
+      _recordAt(location, _now(), isLocationStreamUpdate: true);
 
   void _recordAt(
     LocationPoint location,
     DateTime observedAt, {
     bool appendRoute = true,
+    bool evaluateDelay = true,
+    bool isInitialSample = false,
+    bool isLocationStreamUpdate = false,
   }) {
     _lastLocation = location;
     if (appendRoute) {
       _route.add(location);
       if (_route.length > 500) _route.removeAt(0);
     }
-    final alert = _delayFor(location, observedAt);
+    final alert = evaluateDelay ? _delayFor(location, observedAt) : null;
     if (alert != null) _lastAlertAt = observedAt;
     _updates.add(
       TripTrackingUpdate(
@@ -99,6 +118,8 @@ class LiveItineraryTrackingService {
         route: List.unmodifiable(_route),
         observedAt: observedAt,
         delayAlert: alert,
+        isInitialSample: isInitialSample,
+        isLocationStreamUpdate: isLocationStreamUpdate,
       ),
     );
   }
@@ -170,9 +191,13 @@ class LiveItineraryTrackingService {
 
   TripDelayAlert? _delayFor(LocationPoint location, DateTime now) {
     final itinerary = _itinerary;
+    final sinceLastAlert = _lastAlertAt == null
+        ? null
+        : now.difference(_lastAlertAt!);
     if (itinerary == null ||
-        (_lastAlertAt != null &&
-            now.difference(_lastAlertAt!) < const Duration(minutes: 15))) {
+        (sinceLastAlert != null &&
+            !sinceLastAlert.isNegative &&
+            sinceLastAlert < const Duration(minutes: 15))) {
       return null;
     }
     final day = itinerary.days

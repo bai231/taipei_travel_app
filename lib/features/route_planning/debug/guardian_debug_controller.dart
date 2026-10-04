@@ -18,7 +18,8 @@ enum GuardianTransitScenario {
   cancelled('班次取消'),
   disrupted('營運中斷'),
   stale('過期資料'),
-  failed('即時班次查詢失敗');
+  failed('即時班次查詢失敗'),
+  missedTransfer('前段晚到，錯過所選轉乘');
 
   final String label;
   const GuardianTransitScenario(this.label);
@@ -58,14 +59,13 @@ class GuardianDebugController extends ChangeNotifier
   final DateTime Function() realNow;
   final StreamController<LocationPoint> _locations =
       StreamController<LocationPoint>.broadcast();
-  final StreamController<void> _clockChanges =
-      StreamController<void>.broadcast();
-  Stream<void> get clockChanges => _clockChanges.stream;
 
   bool enabled = false;
   DateTime simulatedNow;
   LocationPoint simulatedLocation;
   GuardianTransitScenario transitScenario = GuardianTransitScenario.onTime;
+  TransitSectionIdentity? transitTarget;
+  TransitSectionIdentity? transitIncoming;
   GuardianWeatherScenario weatherScenario = GuardianWeatherScenario.normal;
   final List<String> events = [];
 
@@ -94,14 +94,22 @@ class GuardianDebugController extends ChangeNotifier
 
   void advance(Duration duration) {
     simulatedNow = simulatedNow.add(duration);
-    _record('時間前進 ${duration.inMinutes} 分鐘。');
-    _clockChanges.add(null);
+    _record('時間前進 ${duration.inMinutes} 分鐘；尚未送出 GPS 更新。');
   }
 
   void setTime(DateTime value) {
     simulatedNow = value;
-    _record('模擬時間已切換到行程日期。');
-    _clockChanges.add(null);
+    _record('模擬時間已切換到行程日期；尚未送出 GPS 更新。');
+  }
+
+  void jumpTo({
+    required DateTime time,
+    required LocationPoint location,
+    required String locationName,
+  }) {
+    simulatedNow = time;
+    simulatedLocation = location;
+    _record('模擬時間與位置已切換至 $locationName；尚未送出 GPS 更新。');
   }
 
   void setLocation(LocationPoint location, {String? label}) {
@@ -116,8 +124,28 @@ class GuardianDebugController extends ChangeNotifier
   }
 
   void setTransitScenario(GuardianTransitScenario value) {
+    if (value == GuardianTransitScenario.missedTransfer &&
+        transitIncoming == null) {
+      _record('請先選擇有前一段公車或臺鐵的轉乘班次。');
+      return;
+    }
     transitScenario = value;
     _record('TDX 情境改為「${value.label}」。');
+  }
+
+  void setTransitTarget(
+    TransitSectionIdentity? target, {
+    TransitSectionIdentity? incoming,
+  }) {
+    transitTarget = target;
+    transitIncoming = incoming;
+    transitScenario = GuardianTransitScenario.onTime;
+    _record(
+      target == null
+          ? '模擬目標改為當日所有班次。'
+          : '模擬目標改為第 ${target.legIndex + 1} 段路程的'
+                '${target.section.lineName ?? target.provider.name}班次；其他班次維持準點。',
+    );
   }
 
   void setWeatherScenario(GuardianWeatherScenario value) {
@@ -139,34 +167,72 @@ class GuardianDebugController extends ChangeNotifier
   ) async {
     if (!enabled) return realRealtime.load(identity);
     _record('讀取模擬 TDX：${identity.section.lineName ?? identity.provider.name}。');
-    if (transitScenario == GuardianTransitScenario.failed) {
+    final isIncomingForMissedTransfer =
+        transitScenario == GuardianTransitScenario.missedTransfer &&
+        _sameSection(identity, transitIncoming);
+    final scenario = transitScenario == GuardianTransitScenario.missedTransfer
+        ? (isIncomingForMissedTransfer
+              ? GuardianTransitScenario.missedTransfer
+              : GuardianTransitScenario.onTime)
+        : transitTarget == null || _sameSection(identity, transitTarget)
+        ? transitScenario
+        : GuardianTransitScenario.onTime;
+    if (scenario == GuardianTransitScenario.failed) {
       throw const TdxRealtimeException(503);
     }
     final baseDeparture = identity.scheduledDeparture ?? simulatedNow;
     final baseArrival =
         identity.scheduledArrival ??
         baseDeparture.add(const Duration(minutes: 20));
-    final delay = transitScenario == GuardianTransitScenario.delayed
+    final delay = scenario == GuardianTransitScenario.delayed
         ? const Duration(minutes: 10)
         : Duration.zero;
+    var expectedArrival = baseArrival.add(delay);
+    if (isIncomingForMissedTransfer) {
+      final target = transitTarget!;
+      final targetDeparture = target.scheduledDeparture!;
+      final boardingBuffer = target.provider == TransitProvider.tra
+          ? const Duration(minutes: 10)
+          : const Duration(minutes: 3);
+      final missedArrival = targetDeparture
+          .subtract(target.transferWalkFromPrevious)
+          .subtract(boardingBuffer)
+          .add(const Duration(minutes: 5));
+      if (expectedArrival.isBefore(missedArrival)) {
+        expectedArrival = missedArrival;
+      }
+      final afterNow = simulatedNow.add(const Duration(minutes: 2));
+      if (expectedArrival.isBefore(afterNow)) expectedArrival = afterNow;
+    }
     return TransitRealtimeObservation(
       expectedDeparture: baseDeparture.add(delay),
-      expectedArrival: baseArrival.add(delay),
-      updatedAt: transitScenario == GuardianTransitScenario.stale
+      expectedArrival: expectedArrival,
+      updatedAt: scenario == GuardianTransitScenario.stale
           ? simulatedNow.subtract(const Duration(minutes: 10))
           : simulatedNow,
-      cancelled: transitScenario == GuardianTransitScenario.cancelled,
-      disrupted: transitScenario == GuardianTransitScenario.disrupted,
-      message: switch (transitScenario) {
-        GuardianTransitScenario.delayed => '模擬班次延誤 10 分鐘。',
-        GuardianTransitScenario.cancelled => '模擬班次已取消。',
-        GuardianTransitScenario.disrupted => '模擬路線營運中斷。',
-        GuardianTransitScenario.stale => '這是一筆過期的模擬資料。',
+      cancelled: scenario == GuardianTransitScenario.cancelled,
+      disrupted: scenario == GuardianTransitScenario.disrupted,
+      message: switch (scenario) {
+        GuardianTransitScenario.delayed => '班次延誤 10 分鐘。',
+        GuardianTransitScenario.cancelled => '班次已取消。',
+        GuardianTransitScenario.disrupted => '路線營運中斷。',
+        GuardianTransitScenario.stale => '班次資訊已過期。',
+        GuardianTransitScenario.missedTransfer => '前段班次晚到，可能錯過轉乘。',
         _ => null,
       },
       source: 'Debug TDX',
     );
   }
+
+  bool _sameSection(
+    TransitSectionIdentity identity,
+    TransitSectionIdentity? selected,
+  ) =>
+      selected != null &&
+      identity.legIndex == selected.legIndex &&
+      identity.sectionIndex == selected.sectionIndex &&
+      identity.stableKey == selected.stableKey &&
+      identity.serviceDate == selected.serviceDate;
 
   @override
   Future<List<TdxRoute>> getRoutingOptions({
@@ -243,20 +309,20 @@ class GuardianDebugController extends ChangeNotifier
       GuardianWeatherScenario.normal || GuardianWeatherScenario.failed => null,
       GuardianWeatherScenario.rain => const WeatherAdvisory(
         kind: 'rain',
-        title: '模擬：稍後可能下雨',
-        body: '模擬高降雨機率提醒。',
+        title: '稍後可能下雨',
+        body: '目前位置稍後可能下雨，請備妥雨具。',
         level: WeatherRiskLevel.warning,
       ),
       GuardianWeatherScenario.heat => const WeatherAdvisory(
         kind: 'heat',
-        title: '模擬：天氣炎熱',
-        body: '模擬高溫提醒。',
+        title: '天氣炎熱',
+        body: '請補充水分，並注意防曬。',
         level: WeatherRiskLevel.warning,
       ),
       GuardianWeatherScenario.uv => const WeatherAdvisory(
         kind: 'uv',
-        title: '模擬：紫外線很強',
-        body: '模擬高紫外線提醒。',
+        title: '紫外線偏強',
+        body: '外出請注意防曬。',
         level: WeatherRiskLevel.warning,
       ),
     };
@@ -372,7 +438,6 @@ class GuardianDebugController extends ChangeNotifier
   void dispose() {
     realWeather.dispose();
     _locations.close();
-    _clockChanges.close();
     super.dispose();
   }
 }

@@ -9,6 +9,7 @@ import 'package:taipei_travel_app/features/route_planning/models/route_travel_mo
 import 'package:taipei_travel_app/features/route_planning/models/route_visit.dart';
 import 'package:taipei_travel_app/features/route_planning/models/travel_leg.dart';
 import 'package:taipei_travel_app/features/route_planning/debug/guardian_debug_controller.dart';
+import 'package:taipei_travel_app/features/route_planning/debug/guardian_debug_console.dart';
 import 'package:taipei_travel_app/features/route_planning/pages/itinerary_result_dependencies.dart';
 import 'package:taipei_travel_app/features/route_planning/pages/itinerary_result_page.dart';
 import 'package:taipei_travel_app/features/route_planning/services/active_guardian_session.dart';
@@ -43,6 +44,35 @@ void main() {
     await Future<void>.delayed(Duration.zero);
     expect(updates.last.delayAlert?.lateMinutes, 30);
     expect(updates.last.route, hasLength(1));
+    await subscription.cancel();
+    await tracker.dispose();
+    await location.close();
+  });
+
+  test('模擬啟動時的初始位置不佔用延誤警示冷卻時間', () async {
+    final now = DateTime(2026, 9, 22, 10, 30);
+    const farAway = LocationPoint(latitude: 23.05, longitude: 120.2);
+    final location = _FakeLocationGateway(farAway);
+    final tracker = LiveItineraryTrackingService(
+      locationGateway: location,
+      now: () => now,
+    );
+    final updates = <TripTrackingUpdate>[];
+    final subscription = tracker.updates.listen(updates.add);
+    expect(
+      await tracker.start(
+        _delayedItinerary(now),
+        evaluateInitialLocation: false,
+      ),
+      isTrue,
+    );
+    await Future<void>.delayed(Duration.zero);
+    expect(updates.single.isInitialSample, isTrue);
+    expect(updates.single.delayAlert, isNull);
+    location.emit(farAway);
+    await Future<void>.delayed(Duration.zero);
+    expect(updates.last.isInitialSample, isFalse);
+    expect(updates.last.delayAlert, isNotNull);
     await subscription.cancel();
     await tracker.dispose();
     await location.close();
@@ -459,10 +489,12 @@ void main() {
     await tester.scrollUntilVisible(
       find.text('模擬時間：2026/09/22 10:05'),
       -200,
-      scrollable: find.descendant(
-        of: find.byType(BottomSheet),
-        matching: find.byType(Scrollable),
-      ).first,
+      scrollable: find
+          .descendant(
+            of: find.byType(BottomSheet),
+            matching: find.byType(Scrollable),
+          )
+          .first,
     );
     expect(find.text('模擬時間：2026/09/22 10:05'), findsOneWidget);
     expect(find.text('目前是兩項之間的空白／等待時段'), findsOneWidget);
@@ -506,7 +538,10 @@ void main() {
       requestedDeparture: now,
       travelMode: RouteTravelMode.transit,
     );
-    expect(realGoogle.modes, [RouteTravelMode.walking, RouteTravelMode.transit]);
+    expect(realGoogle.modes, [
+      RouteTravelMode.walking,
+      RouteTravelMode.transit,
+    ]);
     await debug.showAlternativeAvailable(lateMinutes: 15, nextStopName: '測試站');
     expect(notifications.testTitles, ['行程可能延誤']);
     expect(notifications.testBodies.single, contains('測試站'));
@@ -514,10 +549,12 @@ void main() {
     await tester.scrollUntilVisible(
       find.byTooltip('關閉'),
       -200,
-      scrollable: find.descendant(
-        of: find.byType(BottomSheet),
-        matching: find.byType(Scrollable),
-      ).first,
+      scrollable: find
+          .descendant(
+            of: find.byType(BottomSheet),
+            matching: find.byType(Scrollable),
+          )
+          .first,
     );
     await tester.tap(find.byTooltip('關閉'));
     await tester.pumpAndSettle();
@@ -543,6 +580,295 @@ void main() {
       isEmpty,
     );
 
+    await location.close();
+  }, variant: TargetPlatformVariant.only(TargetPlatform.android));
+
+  testWidgets('Debug 快速跳時段不檢查；送出模擬 GPS 才詢問進度', (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final now = DateTime(2026, 9, 22, 9, 50);
+    final location = _FakeLocationGateway(
+      const LocationPoint(latitude: 25.04, longitude: 121.52),
+    );
+    final debug = GuardianDebugController(
+      realLocation: location,
+      realRealtime: _FakeRealtimeGateway(),
+      realRouting: _FakeRoutingGateway(),
+      realGoogle: _FakeGoogleGateway(),
+      realWeather: _FakeWeatherGateway(),
+      realNotifications: _FakeNotifications(),
+      realNow: () => now,
+      initialTime: now,
+      simulatedLocation: const LocationPoint(latitude: 23.05, longitude: 120.2),
+    )..setEnabled(true);
+    final dependencies = ItineraryResultDependencies(
+      locationGateway: debug,
+      now: debug.now,
+      realtimeGateway: debug,
+      routingGateway: debug,
+      googleRoutingGateway: debug,
+      weatherGateway: debug,
+      notificationGateway: debug,
+      debugController: debug,
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ItineraryResultPage(
+          itinerary: _delayedItinerary(now),
+          dependencies: dependencies,
+        ),
+      ),
+    );
+    await tester.tap(find.byTooltip('開始行程'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(find.text('確認今天的行程進度'), findsNothing);
+
+    await tester.tap(find.byTooltip('保母測試控制台'));
+    await tester.pumpAndSettle();
+    final consoleScroll = find
+        .descendant(
+          of: find.byType(BottomSheet),
+          matching: find.byType(Scrollable),
+        )
+        .first;
+    await tester.scrollUntilVisible(
+      find.text('快速跳到原訂時段'),
+      -180,
+      scrollable: consoleScroll,
+    );
+    await tester.pumpAndSettle();
+    final secondTravelSegment = find.textContaining('10:30 交通');
+    expect(secondTravelSegment, findsOneWidget);
+    await tester.tap(secondTravelSegment);
+    await tester.pumpAndSettle();
+    expect(debug.simulatedNow, DateTime(2026, 9, 22, 10, 30));
+    expect(debug.simulatedLocation.latitude, 25.04);
+    expect(debug.simulatedLocation.longitude, 121.52);
+    expect(find.textContaining('（第一站）'), findsOneWidget);
+    expect(find.text('確認今天的行程進度'), findsNothing);
+    expect(find.text('行程備案'), findsNothing);
+    await tester.pump(const Duration(seconds: 31));
+    expect(find.text('確認今天的行程進度'), findsNothing);
+    ActiveGuardianSession.active!.tracker.checkNow();
+    await tester.pump();
+    expect(find.text('確認今天的行程進度'), findsNothing);
+
+    debug.setLocation(
+      const LocationPoint(latitude: 23.05, longitude: 120.2),
+      label: '遠離行程的位置',
+    );
+    await tester.pumpAndSettle();
+    expect(find.textContaining('（第一站）'), findsNothing);
+
+    await tester.scrollUntilVisible(
+      find.text('送出模擬 GPS 更新'),
+      -180,
+      scrollable: consoleScroll,
+    );
+    await tester.tap(find.text('送出模擬 GPS 更新'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(find.text('確認今天的行程進度'), findsOneWidget);
+    expect(find.textContaining('依原訂結束時間推估，已完成至 第一站'), findsOneWidget);
+    final confirmed = find.ancestor(
+      of: find.text('已完成至 第一站'),
+      matching: find.byType(ListTile),
+    );
+    expect(
+      find.descendant(
+        of: confirmed,
+        matching: find.byIcon(Icons.radio_button_checked),
+      ),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('已完成至 第二站'));
+    await tester.pump();
+    expect(find.textContaining('尚未到原訂結束時間'), findsOneWidget);
+    expect(
+      tester
+          .widget<FilledButton>(find.widgetWithText(FilledButton, '確認進度'))
+          .onPressed,
+      isNull,
+    );
+    await tester.tap(find.text('已完成至 第一站'));
+    await tester.pump();
+    await tester.tap(find.text('確認進度').last);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(find.text('行程備案'), findsOneWidget);
+    expect(find.text('原行程 Before'), findsOneWidget);
+    expect(find.text('建議行程 After'), findsOneWidget);
+    await tester.runAsync(() async => ActiveGuardianSession.active?.stop());
+    await location.close();
+  }, variant: TargetPlatformVariant.only(TargetPlatform.android));
+
+  testWidgets('Debug 可只指定第二段臺鐵，並模擬前段晚到造成轉乘風險', (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final now = DateTime(2026, 9, 22, 10, 5);
+    final location = _FakeLocationGateway(
+      const LocationPoint(latitude: 25, longitude: 121),
+    );
+    final debug = GuardianDebugController(
+      realLocation: location,
+      realRealtime: _FakeRealtimeGateway(),
+      realRouting: _FakeRoutingGateway(),
+      realGoogle: _FakeGoogleGateway(),
+      realWeather: _FakeWeatherGateway(),
+      realNotifications: _FakeNotifications(),
+      realNow: () => now,
+      initialTime: now,
+    )..setEnabled(true);
+    final itinerary = _multiTransferItinerary(now);
+    final sections = transitSectionsForDay(itinerary.days.single);
+    expect(sections, hasLength(2));
+    expect(sections.last.section.serviceId, 'train-123');
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: GuardianDebugConsole(
+            controller: debug,
+            itinerary: itinerary,
+            isTracking: true,
+          ),
+        ),
+      ),
+    );
+    expect(find.text('保母測試控制台'), findsOneWidget);
+    expect(find.text('啟用模擬模式'), findsOneWidget);
+    expect(find.byType(ListView), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    final scrollable = find.byType(Scrollable).first;
+    await tester.scrollUntilVisible(
+      find.byType(DropdownButtonFormField<int>),
+      180,
+      scrollable: scrollable,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('全部班次'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.textContaining('第 2 班').last);
+    await tester.pumpAndSettle();
+    expect(debug.transitTarget?.section.serviceId, 'train-123');
+    expect(debug.transitIncoming?.section.serviceId, 'bus-307');
+
+    debug.setTransitScenario(GuardianTransitScenario.cancelled);
+    final bus = await debug.load(sections.first);
+    final train = await debug.load(sections.last);
+    expect(bus?.cancelled, isFalse);
+    expect(train?.cancelled, isTrue);
+
+    await tester.scrollUntilVisible(
+      find.text('跳到所選轉乘前 1 分鐘'),
+      180,
+      scrollable: scrollable,
+    );
+    await tester.tap(find.text('跳到所選轉乘前 1 分鐘'));
+    await tester.pumpAndSettle();
+    expect(debug.simulatedNow, DateTime(2026, 9, 22, 10, 14));
+    expect(debug.simulatedLocation.latitude, 25.05);
+    expect(debug.simulatedLocation.longitude, 121.5);
+
+    debug.setTransitScenario(GuardianTransitScenario.missedTransfer);
+    final lateBus = await debug.load(sections.first);
+    final onTimeTrain = await debug.load(sections.last);
+    expect(lateBus!.expectedArrival!.isAfter(debug.simulatedNow), isTrue);
+    expect(onTimeTrain?.expectedDeparture, DateTime(2026, 9, 22, 10, 15));
+    expect(onTimeTrain?.cancelled, isFalse);
+    final risk = await TransitRealtimeMonitor(gateway: debug).check(
+      day: itinerary.days.single,
+      location: debug.simulatedLocation,
+      now: debug.simulatedNow,
+    );
+    expect(risk?.kind, TransitRiskKind.transfer);
+    expect(risk?.incomingSection?.section.serviceId, 'bus-307');
+    expect(risk?.affectedSection.section.serviceId, 'train-123');
+    expect(tester.takeException(), isNull);
+    await location.close();
+  }, variant: TargetPlatformVariant.only(TargetPlatform.android));
+
+  testWidgets('Debug 選定中途轉乘後，送出 GPS 才顯示交通備案選擇', (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final now = DateTime(2026, 9, 22, 10, 5);
+    final location = _FakeLocationGateway(
+      const LocationPoint(latitude: 25, longitude: 121),
+    );
+    final debug = GuardianDebugController(
+      realLocation: location,
+      realRealtime: _FakeRealtimeGateway(),
+      realRouting: _FakeRoutingGateway(),
+      realGoogle: _FakeGoogleGateway(),
+      realWeather: _FakeWeatherGateway(),
+      realNotifications: _FakeNotifications(),
+      realNow: () => now,
+      initialTime: now,
+    )..setEnabled(true);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ItineraryResultPage(
+          itinerary: _multiTransferItinerary(now),
+          dependencies: ItineraryResultDependencies(
+            locationGateway: debug,
+            now: debug.now,
+            realtimeGateway: debug,
+            routingGateway: debug,
+            googleRoutingGateway: debug,
+            weatherGateway: debug,
+            notificationGateway: debug,
+            debugController: debug,
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.byTooltip('開始行程'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.tap(find.byTooltip('保母測試控制台'));
+    await tester.pumpAndSettle();
+    final scrollable = find
+        .descendant(
+          of: find.byType(BottomSheet),
+          matching: find.byType(Scrollable),
+        )
+        .first;
+    await tester.scrollUntilVisible(
+      find.byType(DropdownButtonFormField<int>),
+      180,
+      scrollable: scrollable,
+    );
+    await tester.tap(find.text('全部班次'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.textContaining('第 2 班').last);
+    await tester.pumpAndSettle();
+    debug.setTransitScenario(GuardianTransitScenario.missedTransfer);
+    await tester.scrollUntilVisible(
+      find.text('跳到所選轉乘前 1 分鐘'),
+      180,
+      scrollable: scrollable,
+    );
+    await tester.tap(find.text('跳到所選轉乘前 1 分鐘'));
+    await tester.pumpAndSettle();
+    expect(find.text('可能趕不上原班次'), findsNothing);
+    await tester.scrollUntilVisible(
+      find.text('送出模擬 GPS 更新'),
+      180,
+      scrollable: scrollable,
+    );
+    await tester.tap(find.text('送出模擬 GPS 更新'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.text('可能趕不上原班次'), findsOneWidget);
+    expect(find.textContaining('轉乘月台'), findsWidgets);
+    await tester.runAsync(() async => ActiveGuardianSession.active?.stop());
     await location.close();
   }, variant: TargetPlatformVariant.only(TargetPlatform.android));
 }
@@ -623,6 +949,64 @@ RouteItinerary _transitOnlyItinerary(DateTime now) {
     origin,
     visits: [_visit(place, 1, 620, 680)],
     legs: [_leg(origin, destination, 600, 620, route: route)],
+  );
+}
+
+RouteItinerary _multiTransferItinerary(DateTime now) {
+  const origin = RouteStop(
+    id: 'origin',
+    name: '起點',
+    latitude: 25,
+    longitude: 121,
+  );
+  final place = _place('destination', '終點', 25.06, 121.51);
+  final destination = RouteStop.fromPlace(place);
+  final route = TdxRoute(
+    transfers: 1,
+    travelTime: 4800,
+    sections: [
+      RouteSection(
+        mode: 'bus',
+        lineName: '307',
+        serviceId: 'bus-307',
+        departureTitle: '公車起點',
+        arrivalTitle: '轉乘站',
+        departureLatitude: 25,
+        departureLongitude: 121,
+        scheduledDeparture: DateTime(2026, 9, 22, 9, 40),
+        scheduledArrival: DateTime(2026, 9, 22, 10),
+        travelTime: 1200,
+        stopCount: 0,
+        intermediateStops: const [],
+      ),
+      RouteSection(
+        mode: 'pedestrian',
+        travelTime: 120,
+        stopCount: 0,
+        intermediateStops: const [],
+      ),
+      RouteSection(
+        mode: 'train',
+        operatorCode: 'TRA',
+        lineName: '123',
+        serviceId: 'train-123',
+        departureTitle: '臺鐵轉乘站',
+        arrivalTitle: '終點站',
+        departureLatitude: 25.05,
+        departureLongitude: 121.5,
+        scheduledDeparture: DateTime(2026, 9, 22, 10, 15),
+        scheduledArrival: DateTime(2026, 9, 22, 11),
+        travelTime: 2700,
+        stopCount: 0,
+        intermediateStops: const [],
+      ),
+    ],
+  );
+  return _itinerary(
+    now,
+    origin,
+    visits: [_visit(place, 1, 660, 720)],
+    legs: [_leg(origin, destination, 580, 660, route: route)],
   );
 }
 

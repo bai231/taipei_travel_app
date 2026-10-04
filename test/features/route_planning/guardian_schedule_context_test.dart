@@ -22,6 +22,8 @@ void main() {
     expect(travel.day?.day, 1);
     expect(travel.phase, GuardianSchedulePhase.travel);
     expect(travel.current?.label, '起點 → Day 1 景點');
+    expect(travel.current?.location.latitude, 25.03);
+    expect(travel.current?.locationName, '起點');
 
     final visit = guardianScheduleContext(
       itinerary,
@@ -29,6 +31,8 @@ void main() {
     );
     expect(visit.phase, GuardianSchedulePhase.visit);
     expect(visit.current?.label, 'Day 1 景點');
+    expect(visit.current?.location.latitude, 25.04);
+    expect(visit.current?.locationName, 'Day 1 景點');
 
     final after = guardianScheduleContext(itinerary, DateTime(2026, 9, 22, 10));
     expect(after.phase, GuardianSchedulePhase.afterLast);
