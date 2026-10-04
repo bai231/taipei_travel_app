@@ -6,7 +6,8 @@ class ItineraryAiSummaryBuilder {
   static Map<String, dynamic> build(RouteItinerary itinerary) {
     return {
       'title': itinerary.request.title,
-      'location': itinerary.request.location,
+      'location': itinerary.request.locationLabel,
+      'locations': itinerary.request.locations,
       'dayCount': itinerary.days.length,
       'startDate': _formatDate(itinerary.request.startDate),
       'endDate': _formatDate(itinerary.request.endDate),
